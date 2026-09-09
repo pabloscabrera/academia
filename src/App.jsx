@@ -961,7 +961,7 @@ function FieldLabel({ children, style }) {
 }
 
 const styles = {
-  app: { fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", background: "#FBF9F4", minHeight: "100%", color: "#14213D", WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none", fontSize: 17 },
+app: { fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", background: "#FBF9F4", minHeight: "100vh", color: "#14213D", WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none", fontSize: 17 },
   center: { display: "flex", alignItems: "center", justifyContent: "center" },
   h1: { fontFamily: "Georgia, serif", fontSize: 32, margin: "0 0 10px", color: "#14213D" },
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 24px", borderBottom: "1px solid #E4E1D8" },
