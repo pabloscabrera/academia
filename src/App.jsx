@@ -281,8 +281,9 @@ function Simulacros({ questions, user, onFinish }) {
     setPool(shuffled); setIdx(0); setAnswers([]); setSelected(null); setRevealed(false); setSeconds(0); setModo("normal"); setState("running");
   };
 
-  const elegir = (i) => {
+    const elegir = (i, e) => {
     if (revealed) return;
+    if (e && e.currentTarget) e.currentTarget.blur();
     setSelected(i);
     setRevealed(true);
   };
@@ -385,7 +386,7 @@ function Simulacros({ questions, user, onFinish }) {
               else if (i === selected) estilo = { ...estilo, ...styles.daypoOpcionIncorrecta };
             }
             return (
-              <button type="button" key={i} className={claseExtra} onClick={() => elegir(i)} disabled={revealed} style={estilo}>
+              <button type="button" key={`${idx}-${i}`} className={claseExtra} onClick={(e) => elegir(i, e)} disabled={revealed} style={estilo}>
                 <span style={styles.daypoLetra}>{letra}</span>
                 <span style={{ flex: 1 }}>{op}</span>
                 {revealed && i === q.correcta && <Check size={18} color="#2E7D6B" />}
@@ -1043,7 +1044,7 @@ const styles = {
   vsHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "14px 6px", borderBottom: "1px solid #E4E1D8" },
   daypoCard: { background: "#fff", border: "1px solid #ccc", borderRadius: 4, padding: 22 },
   daypoPregunta: { fontFamily: "Arial, Helvetica, sans-serif", fontSize: 19, fontWeight: 700, color: "#222", lineHeight: 1.5, marginBottom: 18 },
-  daypoOpcion: { display: "flex", alignItems: "center", gap: 12, width: "100%", boxSizing: "border-box", textAlign: "left", padding: "13px 14px", borderRadius: 6, border: "2px solid #6b6b6b", marginBottom: 10, fontFamily: "Arial, Helvetica, sans-serif", fontSize: 16, color: "#222", background: "#f2f2f2", cursor: "pointer", WebkitAppearance: "none", appearance: "none", outline: "none", boxShadow: "0 1px 2px rgba(0,0,0,0.08)" },
+  daypoOpcion: { display: "flex", alignItems: "center", gap: 12, width: "100%", boxSizing: "border-box", textAlign: "left", padding: "13px 14px", borderRadius: 4, border: "1px solid #ccc", marginBottom: 8, fontFamily: "Arial, Helvetica, sans-serif", fontSize: 16, color: "#222", background: "#fff", cursor: "pointer", WebkitAppearance: "none", appearance: "none", outline: "none" },
   daypoOpcionCorrecta: { borderColor: "#4caf50", background: "#e8f8e8" },
   daypoOpcionIncorrecta: { borderColor: "#e05353", background: "#fbe6e6" },
   daypoLetra: { display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: "50%", border: "1px solid #999", fontSize: 13, fontWeight: 700, flexShrink: 0 },
