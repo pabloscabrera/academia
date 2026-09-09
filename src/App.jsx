@@ -180,7 +180,7 @@ export default function AcademiaPIR() {
 
 function LoginScreen({ nameInput, setNameInput, onSubmit }) {
   return (
-    <div style={{ ...styles.app, ...styles.center, minHeight: 520 }}>
+<div style={{ ...styles.app, ...styles.center, minHeight: "100vh" }}>
       <div style={{ maxWidth: 340, width: "100%", padding: "0 24px", textAlign: "center" }}>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
           <Compass size={34} color="#2E7D6B" strokeWidth={1.6} />
