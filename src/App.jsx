@@ -556,23 +556,26 @@ function EditarPregunta({ q, onSave, onCancel }) {
 
 const DURACION_PREGUNTA = 60;
 const PAUSA_REVELACION = 5;
-const PREGUNTAS_POR_DUELO = 10;
+const PREGUNTAS_POR_DUELO = 200; // reserva grande; el duelo no termina por agotarlas, solo por vidas
 
 function Duelo({ user, questions }) {
   const [fase, setFase] = useState("lobby");
   const [duelo, setDuelo] = useState(null);
   const [preguntasDuelo, setPreguntasDuelo] = useState([]);
   const [miRespuesta, setMiRespuesta] = useState(null);
-  const [respuestas, setRespuestas] = useState({});
+  const [respuestasTodas, setRespuestasTodas] = useState({});
   const [tiempoRestante, setTiempoRestante] = useState(DURACION_PREGUNTA);
   const [cuentaRevelacion, setCuentaRevelacion] = useState(null);
   const [buscando, setBuscando] = useState(false);
-  const channelRef = useRef(null);
+  const duelRef = useRef(null);
   const avanzadoRef = useRef(null);
+
+  useEffect(() => { duelRef.current = duelo; }, [duelo]);
 
   const soyJugador1 = duelo && user.name === duelo.jugador1;
   const miClave = soyJugador1 ? "jugador1" : "jugador2";
   const oponenteNombre = duelo ? (soyJugador1 ? duelo.jugador2 : duelo.jugador1) : null;
+  const respuestas = (duelo && respuestasTodas[duelo.indice]) || {};
 
   useEffect(() => {
     if (!duelo || !duelo.id) return;
@@ -583,14 +586,14 @@ function Duelo({ user, questions }) {
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "duelo_respuestas", filter: `duelo_id=eq.${duelo.id}` }, (payload) => {
         const r = payload.new;
-        setRespuestas((prev) => {
-          if (r.indice !== (duelo ? duelo.indice : -1)) return prev;
-          const key = r.jugador === duelo.jugador1 ? "jugador1" : "jugador2";
-          return { ...prev, [key]: r.opcion };
-        });
+        const actual = duelRef.current;
+        const key = actual && r.jugador === actual.jugador1 ? "jugador1" : "jugador2";
+        setRespuestasTodas((prev) => ({
+          ...prev,
+          [r.indice]: { ...(prev[r.indice] || {}), [key]: r.opcion },
+        }));
       })
       .subscribe();
-    channelRef.current = channel;
     return () => { supabase.removeChannel(channel); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [duelo && duelo.id]);
@@ -598,7 +601,6 @@ function Duelo({ user, questions }) {
   useEffect(() => {
     if (!duelo) return;
     setMiRespuesta(null);
-    setRespuestas({});
     setTiempoRestante(DURACION_PREGUNTA);
     avanzadoRef.current = null;
     if (duelo.estado === "jugando") setFase("jugando");
@@ -606,10 +608,10 @@ function Duelo({ user, questions }) {
     if (duelo.estado === "esperando") setFase("esperando");
     (async () => {
       const { data } = await supabase.from("duelo_respuestas").select("*").eq("duelo_id", duelo.id).eq("indice", duelo.indice);
-      if (data) {
+      if (data && data.length) {
         const r = {};
         data.forEach((row) => { r[row.jugador === duelo.jugador1 ? "jugador1" : "jugador2"] = row.opcion; });
-        setRespuestas(r);
+        setRespuestasTodas((prev) => ({ ...prev, [duelo.indice]: { ...(prev[duelo.indice] || {}), ...r } }));
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -678,7 +680,8 @@ function Duelo({ user, questions }) {
         setFase("jugando");
       }
     } else {
-      const barajadas = [...questions].sort(() => Math.random() - 0.5).slice(0, PREGUNTAS_POR_DUELO);
+      const cantidad = Math.min(PREGUNTAS_POR_DUELO, questions.length);
+      const barajadas = [...questions].sort(() => Math.random() - 0.5).slice(0, cantidad);
       if (barajadas.length < 4) { setBuscando(false); return; }
       const ids = barajadas.map((q) => q.id);
       const { data: nuevo } = await supabase
@@ -705,16 +708,17 @@ function Duelo({ user, questions }) {
   const responder = async (opcion) => {
     if (miRespuesta !== null || !duelo) return;
     setMiRespuesta(opcion);
-    setRespuestas((prev) => ({ ...prev, [miClave]: opcion }));
+    setRespuestasTodas((prev) => ({ ...prev, [duelo.indice]: { ...(prev[duelo.indice] || {}), [miClave]: opcion } }));
     await supabase.from("duelo_respuestas").insert([{ duelo_id: duelo.id, jugador: user.name, indice: duelo.indice, opcion }]);
   };
 
   const resolverPregunta = async () => {
     if (!duelo || duelo.revelado_en) return;
-    const preguntaActual = preguntasDuelo[duelo.indice];
+    const preguntaActual = preguntasDuelo[duelo.indice % preguntasDuelo.length];
     if (!preguntaActual) return;
-    const r1 = respuestas.jugador1 !== undefined ? respuestas.jugador1 : -1;
-    const r2 = respuestas.jugador2 !== undefined ? respuestas.jugador2 : -1;
+    const actuales = respuestasTodas[duelo.indice] || {};
+    const r1 = actuales.jugador1 !== undefined ? actuales.jugador1 : -1;
+    const r2 = actuales.jugador2 !== undefined ? actuales.jugador2 : -1;
     const nuevasVidas1 = r1 === preguntaActual.correcta ? duelo.vidas1 : duelo.vidas1 - 1;
     const nuevasVidas2 = r2 === preguntaActual.correcta ? duelo.vidas2 : duelo.vidas2 - 1;
     await supabase.from("duelos").update({
@@ -732,11 +736,6 @@ function Duelo({ user, questions }) {
       await supabase.from("duelos").update({ estado: "terminado", ganador }).eq("id", duelo.id);
       return;
     }
-    if (duelo.indice + 1 >= duelo.preguntas_ids.length) {
-      const ganador = vidas1 === vidas2 ? null : (vidas1 > vidas2 ? duelo.jugador1 : duelo.jugador2);
-      await supabase.from("duelos").update({ estado: "terminado", ganador }).eq("id", duelo.id);
-      return;
-    }
     await supabase.from("duelos").update({
       indice: duelo.indice + 1,
       pregunta_inicio: new Date().toISOString(),
@@ -747,6 +746,7 @@ function Duelo({ user, questions }) {
   const salirDuelo = () => {
     setDuelo(null);
     setPreguntasDuelo([]);
+    setRespuestasTodas({});
     setFase("lobby");
   };
 
@@ -763,7 +763,7 @@ function Duelo({ user, questions }) {
     }
     return (
       <div>
-        <SectionTitle title="Duelo 1v1" subtitle="Reta a otra persona en tiempo real. 3 vidas, 60 segundos por pregunta." />
+        <SectionTitle title="Duelo 1v1" subtitle="Reta a otra persona en tiempo real. 3 vidas, sin límite de preguntas." />
         <Card style={{ textAlign: "center", padding: "32px 20px" }}>
           <Swords size={30} color="#2E7D6B" style={{ marginBottom: 14 }} />
           <p style={{ color: "#5B6472", fontSize: 14, marginBottom: 20 }}>
@@ -808,7 +808,7 @@ function Duelo({ user, questions }) {
     );
   }
 
-  const preguntaActual = preguntasDuelo[duelo.indice];
+  const preguntaActual = preguntasDuelo[duelo.indice % preguntasDuelo.length];
   const revelando = !!duelo.revelado_en;
   const miVidas = soyJugador1 ? duelo.vidas1 : duelo.vidas2;
   const suVidas = soyJugador1 ? duelo.vidas2 : duelo.vidas1;
@@ -822,7 +822,7 @@ function Duelo({ user, questions }) {
         </div>
         <div style={{ fontSize: 12, color: "#8A93A3", textAlign: "center" }}>
           <div>VS</div>
-          <div>{duelo.indice + 1}/{duelo.preguntas_ids.length}</div>
+          <div>Pregunta {duelo.indice + 1}</div>
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 13, color: "#14213D", fontWeight: 600 }}>{oponenteNombre || "..."}</div>
@@ -886,7 +886,6 @@ function Corazones({ vidas, align }) {
     </div>
   );
 }
-
 function Temario() {
   return (
     <div>
