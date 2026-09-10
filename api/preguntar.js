@@ -29,7 +29,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const modelo = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+  const modelo = process.env.GEMINI_MODEL || "gemini-3.6-flash";
   const prompt = `Eres un tutor que ayuda a preparar un examen de psicología (PIR) usando exclusivamente el temario de esta app. Responde solo con información del siguiente temario. Si la pregunta no se puede responder con este temario, dilo claramente en vez de inventar información. Responde en español, de forma clara y breve.
 
 TEMARIO:
