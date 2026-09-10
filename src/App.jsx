@@ -1,13 +1,29 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
-  Compass, BookOpen, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
+  Compass, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
   Plus, Check, X, Loader2, User, LogOut, Flag, Pencil, Trash2,
-   Zap, Heart, Swords, Flame, Sparkles
+   Zap, Heart, Swords, Flame, Sparkles, Star, Award, Lock, Target
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { TEMARIO } from "./temario";
 
 const ADMIN_NAME = "pabloadmin";
+const META_DIARIA_RACHA = 10;
+const INSIGNIAS = [
+  { id: "bronce", umbral: 50, nombre: "Bronce", titulo: "Aprendiz", emoji: "🥉", color: "#B08D57" },
+  { id: "plata", umbral: 150, nombre: "Plata", titulo: "Estudiante aplicado", emoji: "🥈", color: "#9AA5B1" },
+  { id: "oro", umbral: 300, nombre: "Oro", titulo: "Opositor experto", emoji: "🥇", color: "#D4AF37" },
+  { id: "platino", umbral: 600, nombre: "Platino", titulo: "Sabio PIR", emoji: "💎", color: "#5EC9C0" },
+  { id: "diamante", umbral: 1000, nombre: "Diamante", titulo: "Leyenda del PIR", emoji: "👑", color: "#8A5A9E" },
+];
+function insigniaActual(totalCorrectas) {
+  let actual = null;
+  for (const ins of INSIGNIAS) { if (totalCorrectas >= ins.umbral) actual = ins; }
+  return actual;
+}
+function siguienteInsignia(totalCorrectas) {
+  return INSIGNIAS.find((ins) => totalCorrectas < ins.umbral) || null;
+}
 
 async function loadPersonal(key, fallback) {
   try {
@@ -30,6 +46,8 @@ export default function AcademiaPIR() {
   const [questions, setQuestions] = useState([]);
   const [ranking, setRanking] = useState([]);
   const [rachas, setRachas] = useState([]);
+  const [fallos, setFallos] = useState([]);
+  const [favoritos, setFavoritos] = useState([]);
   const [dueloEsperando, setDueloEsperando] = useState(null);
   const [autoUnirseDuelo, setAutoUnirseDuelo] = useState(false);
 
@@ -96,6 +114,20 @@ export default function AcademiaPIR() {
       .subscribe();
 
     return () => { activo = false; supabase.removeChannel(channel); };
+  }, [user && user.name]);
+
+  useEffect(() => {
+    if (!user) return;
+    let activo = true;
+    (async () => {
+      const { data: fData } = await supabase.from("fallos").select("*").eq("name", user.name);
+      const { data: favData } = await supabase.from("favoritos").select("*").eq("name", user.name);
+      if (activo) {
+        setFallos(fData || []);
+        setFavoritos(favData || []);
+      }
+    })();
+    return () => { activo = false; };
   }, [user && user.name]);
 
   const unirseAlDueloEnEspera = () => {
@@ -220,6 +252,78 @@ export default function AcademiaPIR() {
     }
   };
 
+  const registrarProgresoDiario = async (correcto) => {
+    const actual = rachas.find((r) => r.name === user.name);
+    const hoy = new Date().toISOString().slice(0, 10);
+    const totalRespondidasPrevio = actual ? (actual.total_respondidas || 0) : 0;
+    const totalCorrectasPrevio = actual ? (actual.total_correctas || 0) : 0;
+    const fechaCorrectasHoy = actual ? actual.fecha_correctas_hoy : null;
+    const correctasHoyPrevias = fechaCorrectasHoy === hoy ? (actual ? (actual.correctas_hoy || 0) : 0) : 0;
+
+    const payload = { name: user.name, total_respondidas: totalRespondidasPrevio + 1 };
+
+    if (correcto) {
+      const nuevasCorrectasHoy = correctasHoyPrevias + 1;
+      payload.total_correctas = totalCorrectasPrevio + 1;
+      payload.correctas_hoy = nuevasCorrectasHoy;
+      payload.fecha_correctas_hoy = hoy;
+
+      let nuevaRachaDias = actual ? (actual.racha_dias_actual || 0) : 0;
+      let nuevoRecordDias = actual ? (actual.racha_dias_record || 0) : 0;
+      const ultimoDia = actual ? actual.ultimo_dia_racha : null;
+      if (nuevasCorrectasHoy >= META_DIARIA_RACHA && ultimoDia !== hoy) {
+        const ayer = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+        nuevaRachaDias = ultimoDia === ayer ? nuevaRachaDias + 1 : 1;
+        nuevoRecordDias = Math.max(nuevoRecordDias, nuevaRachaDias);
+        payload.racha_dias_actual = nuevaRachaDias;
+        payload.racha_dias_record = nuevoRecordDias;
+        payload.ultimo_dia_racha = hoy;
+      }
+    }
+
+    try {
+      const { data, error } = await supabase.from("rachas").upsert(payload, { onConflict: "name" }).select();
+      if (error) { console.error("No se pudo guardar el progreso:", error.message); return; }
+      if (data && data[0]) {
+        setRachas((prev) => [...prev.filter((r) => r.name !== user.name), data[0]]);
+      }
+    } catch (err) {
+      console.error("No se pudo guardar el progreso:", err);
+    }
+  };
+
+  const registrarFallo = async (pregunta) => {
+    if (!pregunta || !pregunta.id) return;
+    const previa = fallos.find((f) => f.pregunta_id === pregunta.id);
+    const nuevasVeces = (previa ? previa.veces : 0) + 1;
+    try {
+      const { data, error } = await supabase
+        .from("fallos")
+        .upsert({ name: user.name, pregunta_id: pregunta.id, veces: nuevasVeces, updated_at: new Date().toISOString() }, { onConflict: "name,pregunta_id" })
+        .select();
+      if (!error && data && data[0]) {
+        setFallos((prev) => [...prev.filter((f) => f.pregunta_id !== pregunta.id), data[0]]);
+      }
+    } catch (err) {
+      console.error("No se pudo guardar el fallo:", err);
+    }
+  };
+
+  const toggleFavorito = async (pregunta) => {
+    if (!pregunta || !pregunta.id) return;
+    const esFavorita = favoritos.some((f) => f.pregunta_id === pregunta.id);
+    if (esFavorita) {
+      const { error } = await supabase.from("favoritos").delete().eq("name", user.name).eq("pregunta_id", pregunta.id);
+      if (!error) setFavoritos((prev) => prev.filter((f) => f.pregunta_id !== pregunta.id));
+    } else {
+      const { data, error } = await supabase
+        .from("favoritos")
+        .insert([{ name: user.name, pregunta_id: pregunta.id }])
+        .select();
+      if (!error && data && data[0]) setFavoritos((prev) => [...prev, data[0]]);
+    }
+  };
+
   if (!ready) {
     return <div style={{ ...styles.center, height: "100%", minHeight: 400 }}><Loader2 className="animate-spin" size={28} color="#2E7D6B" /></div>;
   }
@@ -246,7 +350,7 @@ export default function AcademiaPIR() {
           100% { transform: scale(1); }
         }
       `}</style>
-      <Header user={user} onLogout={handleLogout} />
+      <Header user={user} onLogout={handleLogout} miRacha={rachas.find((r) => r.name === user.name)} />
       <Nav section={section} setSection={setSection} alerta={!!dueloEsperando} />
       {dueloEsperando && section !== "duelo" && (
         <button
@@ -258,7 +362,29 @@ export default function AcademiaPIR() {
         </button>
       )}
       <main style={styles.main}>
-        {section === "simulacros" && <Simulacros questions={questions} user={user} onFinish={submitScore} onStreakAnswer={registrarAcierto} />}
+        {section === "perfil" && (
+          <MiPerfil
+            user={user}
+            miRacha={rachas.find((r) => r.name === user.name)}
+            questions={questions}
+            fallos={fallos}
+            favoritos={favoritos}
+            onToggleFavorito={toggleFavorito}
+            onIrA={setSection}
+          />
+        )}
+        {section === "simulacros" && (
+          <Simulacros
+            questions={questions}
+            user={user}
+            onFinish={submitScore}
+            onStreakAnswer={registrarAcierto}
+            onProgresoDiario={registrarProgresoDiario}
+            onFallo={registrarFallo}
+            favoritos={favoritos}
+            onToggleFavorito={toggleFavorito}
+          />
+        )}
         {section === "banco" && (
           <BancoPreguntas
             questions={questions}
@@ -266,14 +392,16 @@ export default function AcademiaPIR() {
             onAdd={addQuestion}
             onUpdate={updateQuestion}
             onDelete={deleteQuestion}
+            favoritos={favoritos}
+            onToggleFavorito={toggleFavorito}
           />
         )}
-        {section === "temario" && <Temario />}
         {section === "duelo" && (
           <Duelo
             user={user}
             questions={questions}
             onDueloEnd={registrarResultadoDuelo}
+            onProgresoDiario={registrarProgresoDiario}
             autoUnirse={autoUnirseDuelo}
             onAutoUnirseConsumido={() => setAutoUnirseDuelo(false)}
           />
@@ -311,7 +439,8 @@ function LoginScreen({ nameInput, setNameInput, onSubmit }) {
   );
 }
 
-function Header({ user, onLogout }) {
+function Header({ user, onLogout, miRacha }) {
+  const rachaDias = (miRacha && miRacha.racha_dias_actual) || 0;
   return (
     <header style={styles.header}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -319,6 +448,13 @@ function Header({ user, onLogout }) {
         <span style={{ fontFamily: "Georgia, serif", fontSize: 18, color: "#14213D" }}>Ruta PIR</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span
+          title={rachaDias > 0 ? `${rachaDias} día${rachaDias === 1 ? "" : "s"} seguidos entrando y acertando ${META_DIARIA_RACHA}+ preguntas` : `Acierta ${META_DIARIA_RACHA} preguntas hoy para empezar tu racha`}
+          style={{ ...styles.rachaDiasChip, ...(rachaDias > 0 ? styles.rachaDiasChipActiva : {}) }}
+        >
+          <Flame size={14} color={rachaDias > 0 ? "#B0533E" : "#B7BEC8"} fill={rachaDias > 0 ? "#B0533E" : "none"} />
+          {rachaDias}
+        </span>
         <span style={{ fontSize: 13, color: "#5B6472", display: "flex", alignItems: "center", gap: 4 }}>
           <User size={14} /> {user.name}{user.isAdmin ? " · admin" : ""}
         </span>
@@ -332,9 +468,9 @@ function Header({ user, onLogout }) {
 
 function Nav({ section, setSection, alerta }) {
   const items = [
+    { id: "perfil", label: "Mi perfil", icon: User },
     { id: "simulacros", label: "Autoevaluaciones", icon: Clock },
     { id: "banco", label: "Banco de preguntas", icon: ListChecks },
-    { id: "temario", label: "Temario", icon: BookOpen },
     { id: "duelo", label: "Duelo 1v1", icon: Zap },
     { id: "ranking", label: "Ranking", icon: Trophy },
   ];
@@ -362,7 +498,7 @@ function Nav({ section, setSection, alerta }) {
   );
 }
 
-function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
+function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiario, onFallo, favoritos, onToggleFavorito }) {
   const [incluirInventadas, setIncluirInventadas] = useState(false);
   const base = useMemo(() => (incluirInventadas ? questions : questions.filter((q) => !q.inventada)), [questions, incluirInventadas]);
   const cursos = useMemo(() => ["Todos", ...new Set(base.map((q) => q.curso))], [base]);
@@ -405,7 +541,10 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
     setSelected(i);
     setRevealed(true);
     const q = pool[idx];
-    onStreakAnswer(i === q.correcta);
+    const correcto = i === q.correcta;
+    onStreakAnswer(correcto);
+    if (onProgresoDiario) onProgresoDiario(correcto);
+    if (!correcto && onFallo && ronda === 1) onFallo(q);
   };
 
   const next = async () => {
@@ -579,7 +718,12 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
         </div>
         {abierta && (
           <Card style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 11, color: "#2E7D6B", marginBottom: 8 }}>{abierta.pregunta.curso} · {abierta.pregunta.tema}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+              <div style={{ fontSize: 11, color: "#2E7D6B" }}>{abierta.pregunta.curso} · {abierta.pregunta.tema}</div>
+              {onToggleFavorito && (
+                <FavoritoBtn pregunta={abierta.pregunta} favoritos={favoritos} onToggle={onToggleFavorito} />
+              )}
+            </div>
             <p style={{ fontSize: 15, color: "#14213D", lineHeight: 1.5, marginBottom: 14 }}>{abierta.pregunta.pregunta}</p>
             {abierta.pregunta.opciones.map((op, i) => (
               <div key={i} style={{ ...styles.opcion, cursor: "default", ...(i === abierta.pregunta.correcta ? styles.opcionCorrectaLegacy : {}) }}>
@@ -598,7 +742,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
   );
 }
 
-function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete }) {
+function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos, onToggleFavorito }) {
   const [origen, setOrigen] = useState("reales");
   const [filtro, setFiltro] = useState("Todos");
   const [showForm, setShowForm] = useState(false);
@@ -646,15 +790,13 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete }) {
         <NuevaPregunta onAdd={(q) => { onAdd(q); setShowForm(false); }} cursos={cursos.filter((c) => c !== "Todos")} />
       )}
 
-      {origen === "inventadas" && user.isAdmin && (
-        <GenerarPreguntasIA onGuardar={onAdd} />
-      )}
-      {origen === "inventadas" && !user.isAdmin && porOrigen.length === 0 && (
-        <Card style={{ textAlign: "center", color: "#8A93A3", padding: "24px 16px" }}>
-          Todavía no hay preguntas inventadas por IA.
-        </Card>
+      {origen === "inventadas" && (
+        <GenerarPreguntasIA user={user} onGuardar={user.isAdmin ? onAdd : null} />
       )}
 
+      {origen === "inventadas" && porOrigen.length > 0 && (
+        <FieldLabel style={{ marginTop: 4 }}>Preguntas ya guardadas en el banco</FieldLabel>
+      )}
       {porOrigen.length > 0 && (
         <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "14px 0 14px" }}>
           {cursos.map((c) => (
@@ -670,13 +812,13 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete }) {
         </div>
       )}
       {filtered.map((q) => (
-        <PreguntaCard key={q.id} q={q} isAdmin={user.isAdmin} onUpdate={onUpdate} onDelete={onDelete} />
+        <PreguntaCard key={q.id} q={q} isAdmin={user.isAdmin} onUpdate={onUpdate} onDelete={onDelete} favoritos={favoritos} onToggleFavorito={onToggleFavorito} />
       ))}
     </div>
   );
 }
 
-function GenerarPreguntasIA({ onGuardar }) {
+function GenerarPreguntasIA({ user, onGuardar }) {
   const [curso, setCurso] = useState("");
   const [tema, setTema] = useState("");
   const [instruccion, setInstruccion] = useState("");
@@ -685,6 +827,7 @@ function GenerarPreguntasIA({ onGuardar }) {
   const [error, setError] = useState(null);
   const [generadas, setGeneradas] = useState([]);
   const [guardadas, setGuardadas] = useState({});
+  const [restantesHoy, setRestantesHoy] = useState(null);
 
   const temasDelCurso = TEMARIO.find((c) => c.curso === curso)?.temas || [];
 
@@ -699,11 +842,12 @@ function GenerarPreguntasIA({ onGuardar }) {
       const resp = await fetch("/api/generar-preguntas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instruccion: texto, cantidad, curso, tema }),
+        body: JSON.stringify({ nombre: user.name, instruccion: texto, cantidad, curso, tema }),
       });
       const datos = await resp.json();
       if (!resp.ok) throw new Error(datos.error || "No se pudieron generar las preguntas.");
       setGeneradas(datos.preguntas.map((p) => ({ ...p, inventada: true })));
+      if (typeof datos.restantesHoy === "number") setRestantesHoy(datos.restantesHoy);
     } catch (err) {
       setError(err.message || "No se pudieron generar las preguntas.");
     } finally {
@@ -712,6 +856,7 @@ function GenerarPreguntasIA({ onGuardar }) {
   };
 
   const guardar = async (i) => {
+    if (!onGuardar) return;
     const ok = await onGuardar(generadas[i]);
     if (ok) setGuardadas((prev) => ({ ...prev, [i]: true }));
   };
@@ -724,10 +869,13 @@ function GenerarPreguntasIA({ onGuardar }) {
 
   return (
     <Card style={{ marginBottom: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
         <Sparkles size={16} color="#8A5A9E" />
-        <span style={{ fontSize: 15, color: "#14213D", fontFamily: "Georgia, serif" }}>Generar preguntas con IA</span>
+        <span style={{ fontSize: 15, color: "#14213D", fontFamily: "Georgia, serif" }}>Pídele preguntas a la IA</span>
       </div>
+      <p style={{ fontSize: 12.5, color: "#8A93A3", marginTop: 0, marginBottom: 12 }}>
+        {restantesHoy === null ? `Hasta 10 preguntas personalizadas al día.` : `Te quedan ${restantesHoy} pregunta${restantesHoy === 1 ? "" : "s"} personalizada${restantesHoy === 1 ? "" : "s"} hoy.`}
+      </p>
       <FieldLabel>Curso (opcional, para basarse en el temario real)</FieldLabel>
       <select value={curso} onChange={(e) => { setCurso(e.target.value); setTema(""); }} style={styles.select}>
         <option value="">Sin curso concreto</option>
@@ -766,29 +914,16 @@ function GenerarPreguntasIA({ onGuardar }) {
       {generadas.length > 0 && (
         <div style={{ marginTop: 18 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <FieldLabel style={{ margin: 0 }}>Revisa y guarda las que quieras</FieldLabel>
-            <button type="button" onClick={guardarTodas} style={styles.btnSecondary}>Guardar todas</button>
+            <FieldLabel style={{ margin: 0 }}>{onGuardar ? "Responde y guarda las que quieras" : "Responde para practicar"}</FieldLabel>
+            {onGuardar && <button type="button" onClick={guardarTodas} style={styles.btnSecondary}>Guardar todas</button>}
           </div>
           {generadas.map((p, i) => (
-            <Card key={i} style={{ marginBottom: 10, borderLeft: "3px solid #8A5A9E" }}>
-              <div style={{ fontSize: 11, color: "#8A5A9E", marginBottom: 4 }}>{p.curso} · {p.tema}</div>
-              <div style={{ fontSize: 14, color: "#14213D", marginBottom: 8 }}>{p.pregunta}</div>
-              {p.opciones.map((op, oi) => (
-                <div key={oi} style={{ ...styles.opcion, cursor: "default", ...(oi === p.correcta ? styles.opcionCorrectaLegacy : {}) }}>
-                  {oi === p.correcta && <Check size={13} color="#2E7D6B" />}
-                  {op}
-                </div>
-              ))}
-              {p.explicacion && <p style={{ fontSize: 13, color: "#5B6472", marginTop: 8 }}>{p.explicacion}</p>}
-              <button
-                type="button"
-                onClick={() => guardar(i)}
-                disabled={!!guardadas[i]}
-                style={{ ...styles.btnSecondary, marginTop: 10, ...(guardadas[i] ? { opacity: 0.6 } : {}) }}
-              >
-                {guardadas[i] ? <><Check size={13} style={{ marginRight: 4 }} /> Guardada</> : "Guardar en el banco"}
-              </button>
-            </Card>
+            <PreguntaGeneradaCard
+              key={i}
+              p={p}
+              guardada={!!guardadas[i]}
+              onGuardar={onGuardar ? () => guardar(i) : null}
+            />
           ))}
         </div>
       )}
@@ -796,7 +931,57 @@ function GenerarPreguntasIA({ onGuardar }) {
   );
 }
 
-function PreguntaCard({ q, isAdmin, onUpdate, onDelete }) {
+function PreguntaGeneradaCard({ p, guardada, onGuardar }) {
+  const [selected, setSelected] = useState(null);
+  const revealed = selected !== null;
+  return (
+    <Card style={{ marginBottom: 10, borderLeft: "3px solid #8A5A9E" }}>
+      <div style={{ fontSize: 11, color: "#8A5A9E", marginBottom: 4 }}>{p.curso} · {p.tema}</div>
+      <div style={{ fontSize: 14, color: "#14213D", marginBottom: 8 }}>{p.pregunta}</div>
+      {p.opciones.map((op, oi) => {
+        let estilo = { ...styles.opcion };
+        if (revealed) {
+          if (oi === p.correcta) estilo = { ...estilo, ...styles.opcionCorrectaLegacy };
+          else if (oi === selected) estilo = { ...estilo, borderColor: "#B0533E", background: "#FBEDEA" };
+        }
+        return (
+          <button type="button" key={oi} onClick={() => !revealed && setSelected(oi)} disabled={revealed} style={{ ...estilo, cursor: revealed ? "default" : "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+            {revealed && oi === p.correcta && <Check size={13} color="#2E7D6B" />}
+            {revealed && oi === selected && oi !== p.correcta && <X size={13} color="#B0533E" />}
+            {op}
+          </button>
+        );
+      })}
+      {revealed && p.explicacion && <p style={{ fontSize: 13, color: "#5B6472", marginTop: 8 }}>{p.explicacion}</p>}
+      {onGuardar && (
+        <button
+          type="button"
+          onClick={onGuardar}
+          disabled={guardada}
+          style={{ ...styles.btnSecondary, marginTop: 10, ...(guardada ? { opacity: 0.6 } : {}) }}
+        >
+          {guardada ? <><Check size={13} style={{ marginRight: 4 }} /> Guardada</> : "Guardar en el banco"}
+        </button>
+      )}
+    </Card>
+  );
+}
+
+function FavoritoBtn({ pregunta, favoritos, onToggle, size = 16 }) {
+  const esFavorita = favoritos && favoritos.some((f) => f.pregunta_id === pregunta.id);
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onToggle(pregunta); }}
+      style={{ ...styles.iconBtn, padding: 4, flexShrink: 0 }}
+      title={esFavorita ? "Quitar de favoritas" : "Guardar como favorita"}
+    >
+      <Star size={size} color={esFavorita ? "#C89B3C" : "#B7BEC8"} fill={esFavorita ? "#C89B3C" : "none"} />
+    </button>
+  );
+}
+
+function PreguntaCard({ q, isAdmin, onUpdate, onDelete, favoritos, onToggleFavorito }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -816,16 +1001,19 @@ function PreguntaCard({ q, isAdmin, onUpdate, onDelete }) {
 
   return (
     <Card style={{ marginBottom: 10, ...(q.inventada ? { borderLeft: "3px solid #8A5A9E" } : {}) }}>
-      <button type="button" onClick={() => setOpen((o) => !o)} style={styles.expandBtn}>
-        <div style={{ textAlign: "left", flex: 1 }}>
-          <div style={{ fontSize: 11, color: q.inventada ? "#8A5A9E" : "#2E7D6B", marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>
-            {q.inventada && <Sparkles size={11} />}
-            {q.curso} · {q.tema}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+        <button type="button" onClick={() => setOpen((o) => !o)} style={{ ...styles.expandBtn, flex: 1 }}>
+          <div style={{ textAlign: "left", flex: 1 }}>
+            <div style={{ fontSize: 11, color: q.inventada ? "#8A5A9E" : "#2E7D6B", marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>
+              {q.inventada && <Sparkles size={11} />}
+              {q.curso} · {q.tema}
+            </div>
+            <div style={{ fontSize: 14, color: "#14213D", lineHeight: 1.4 }}>{q.pregunta}</div>
           </div>
-          <div style={{ fontSize: 14, color: "#14213D", lineHeight: 1.4 }}>{q.pregunta}</div>
-        </div>
-        {open ? <ChevronDown size={16} color="#8A93A3" /> : <ChevronRight size={16} color="#8A93A3" />}
-      </button>
+          {open ? <ChevronDown size={16} color="#8A93A3" /> : <ChevronRight size={16} color="#8A93A3" />}
+        </button>
+        {onToggleFavorito && <FavoritoBtn pregunta={q} favoritos={favoritos} onToggle={onToggleFavorito} />}
+      </div>
       {open && (
         <div style={{ marginTop: 12 }}>
           {q.opciones.map((op, i) => (
@@ -940,7 +1128,7 @@ const PAUSA_REVELACION = 5;
 const PREGUNTAS_POR_DUELO = 200;
 const DUELO_ESPERA_MAX_MS = 30 * 1000;
 
-function Duelo({ user, questions, onDueloEnd, autoUnirse, onAutoUnirseConsumido }) {
+function Duelo({ user, questions, onDueloEnd, onProgresoDiario, autoUnirse, onAutoUnirseConsumido }) {
   const questionsReales = useMemo(() => questions.filter((q) => !q.inventada), [questions]);
   const [fase, setFase] = useState("lobby");
   const [duelo, setDuelo] = useState(null);
@@ -1125,6 +1313,8 @@ function Duelo({ user, questions, onDueloEnd, autoUnirse, onAutoUnirseConsumido 
     setMiRespuesta(opcion);
     setRespuestasTodas((prev) => ({ ...prev, [duelo.indice]: { ...(prev[duelo.indice] || {}), [miClave]: opcion } }));
     await supabase.from("duelo_respuestas").insert([{ duelo_id: duelo.id, jugador: user.name, indice: duelo.indice, opcion }]);
+    const preguntaActual = preguntasDuelo[duelo.indice % preguntasDuelo.length];
+    if (onProgresoDiario && preguntaActual) onProgresoDiario(opcion === preguntaActual.correcta);
   };
 
   const resolverPregunta = async () => {
@@ -1309,34 +1499,165 @@ function Corazones({ vidas, align }) {
   );
 }
 
-function Temario() {
+function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorito, onIrA }) {
+  const [verTodosFallos, setVerTodosFallos] = useState(false);
+  const [abiertaId, setAbiertaId] = useState(null);
+
+  const totalCorrectas = (miRacha && miRacha.total_correctas) || 0;
+  const totalRespondidas = (miRacha && miRacha.total_respondidas) || 0;
+  const pctAcierto = totalRespondidas > 0 ? Math.round((totalCorrectas / totalRespondidas) * 100) : 0;
+  const rachaDias = (miRacha && miRacha.racha_dias_actual) || 0;
+  const rachaDiasRecord = (miRacha && miRacha.racha_dias_record) || 0;
+  const rachaPreguntas = (miRacha && miRacha.racha_actual) || 0;
+  const rachaPreguntasRecord = (miRacha && miRacha.racha_record) || 0;
+  const correctasHoy = (miRacha && miRacha.fecha_correctas_hoy === new Date().toISOString().slice(0, 10)) ? (miRacha.correctas_hoy || 0) : 0;
+
+  const actual = insigniaActual(totalCorrectas);
+  const siguiente = siguienteInsignia(totalCorrectas);
+  const progresoSiguiente = siguiente ? Math.min(100, Math.round((totalCorrectas / siguiente.umbral) * 100)) : 100;
+
+  const preguntasPorId = useMemo(() => {
+    const m = {};
+    questions.forEach((q) => { m[q.id] = q; });
+    return m;
+  }, [questions]);
+
+  const fallosConPregunta = useMemo(
+    () => fallos
+      .map((f) => ({ ...f, pregunta: preguntasPorId[f.pregunta_id] }))
+      .filter((f) => f.pregunta)
+      .sort((a, b) => b.veces - a.veces),
+    [fallos, preguntasPorId]
+  );
+  const favoritasConPregunta = useMemo(
+    () => favoritos
+      .map((f) => ({ ...f, pregunta: preguntasPorId[f.pregunta_id] }))
+      .filter((f) => f.pregunta),
+    [favoritos, preguntasPorId]
+  );
+
+  const fallosVisibles = verTodosFallos ? fallosConPregunta : fallosConPregunta.slice(0, 5);
+  const abierta = abiertaId != null ? (preguntasPorId[abiertaId] || null) : null;
+
   return (
     <div>
-      <SectionTitle title="Temario por cursos" subtitle={`${TEMARIO.length} cursos`} />
-      {TEMARIO.map((curso) => (<CursoBlock key={curso.curso} curso={curso} />))}
-    </div>
-  );
-}
+      <SectionTitle title="Mi perfil" subtitle={user.name} />
 
-function CursoBlock({ curso }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Card style={{ marginBottom: 10, borderLeft: `3px solid ${curso.color}` }}>
-      <button type="button" onClick={() => setOpen((o) => !o)} style={styles.expandBtn}>
-        <div style={{ fontSize: 15, color: "#14213D", fontFamily: "Georgia, serif" }}>{curso.curso}</div>
-        {open ? <ChevronDown size={16} color="#8A93A3" /> : <ChevronRight size={16} color="#8A93A3" />}
-      </button>
-      {open && (
-        <div style={{ marginTop: 10 }}>
-          {curso.temas.map((t) => (
-            <div key={t.nombre} style={{ marginBottom: 12 }}>
-              <div style={{ fontSize: 13.5, color: "#14213D", fontWeight: 600, marginBottom: 3 }}>{t.nombre}</div>
-              <p style={{ fontSize: 13, color: "#5B6472", lineHeight: 1.5, margin: 0 }}>{t.contenido}</p>
-            </div>
-          ))}
+      <div style={styles.perfilGrid}>
+        <Card style={{ ...styles.perfilStatCard, borderTop: "3px solid #B0533E" }}>
+          <Flame size={22} color="#B0533E" fill={rachaDias > 0 ? "#B0533E" : "none"} />
+          <div style={styles.perfilStatNum}>{rachaDias}</div>
+          <div style={styles.perfilStatLabel}>días de racha{rachaDiasRecord > 0 ? ` · récord ${rachaDiasRecord}` : ""}</div>
+          <div style={{ fontSize: 11, color: "#8A93A3", marginTop: 4 }}>
+            {correctasHoy}/{META_DIARIA_RACHA} aciertos hoy para sumar el día
+          </div>
+        </Card>
+        <Card style={{ ...styles.perfilStatCard, borderTop: "3px solid #2E7D6B" }}>
+          <Target size={22} color="#2E7D6B" />
+          <div style={styles.perfilStatNum}>{pctAcierto}%</div>
+          <div style={styles.perfilStatLabel}>acierto global ({totalRespondidas} respondidas)</div>
+        </Card>
+        <Card style={{ ...styles.perfilStatCard, borderTop: "3px solid #C89B3C" }}>
+          <Zap size={22} color="#C89B3C" />
+          <div style={styles.perfilStatNum}>{rachaPreguntas}</div>
+          <div style={styles.perfilStatLabel}>racha de aciertos en vivo{rachaPreguntasRecord > 0 ? ` · récord ${rachaPreguntasRecord}` : ""}</div>
+        </Card>
+      </div>
+
+      <div style={{ marginTop: 26 }}>
+        <SectionTitle title="Insignias" subtitle={actual ? `Nivel actual: ${actual.emoji} ${actual.nombre} — "${actual.titulo}"` : "Responde preguntas para desbloquear tu primera insignia"} />
+        <div style={styles.insigniasGrid}>
+          {INSIGNIAS.map((ins) => {
+            const desbloqueada = totalCorrectas >= ins.umbral;
+            return (
+              <div key={ins.id} style={{ ...styles.insigniaCard, borderColor: desbloqueada ? ins.color : "#E4E1D8", opacity: desbloqueada ? 1 : 0.55 }}>
+                <div style={{ fontSize: 26 }}>{desbloqueada ? ins.emoji : <Lock size={20} color="#B7BEC8" />}</div>
+                <div style={{ fontSize: 12.5, fontWeight: 600, color: "#14213D", marginTop: 6 }}>{ins.nombre}</div>
+                <div style={{ fontSize: 10.5, color: "#8A93A3", marginTop: 2 }}>{ins.umbral} correctas</div>
+              </div>
+            );
+          })}
         </div>
-      )}
-    </Card>
+        {siguiente && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ fontSize: 12, color: "#5B6472", marginBottom: 5 }}>
+              {siguiente.umbral - totalCorrectas} correctas más para {siguiente.emoji} {siguiente.nombre}
+            </div>
+            <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${progresoSiguiente}%`, background: siguiente.color }} /></div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ marginTop: 26 }}>
+        <SectionTitle
+          title="Historial de fallos"
+          subtitle={fallosConPregunta.length === 0 ? "Todavía no has fallado ninguna pregunta." : "Las preguntas que más se te atascan, arriba del todo."}
+        />
+        {fallosVisibles.map((f) => (
+          <Card key={f.pregunta_id} style={{ marginBottom: 8 }}>
+            <button type="button" onClick={() => setAbiertaId(abiertaId === f.pregunta_id ? null : f.pregunta_id)} style={styles.expandBtn}>
+              <div style={{ textAlign: "left", flex: 1 }}>
+                <div style={{ fontSize: 11, color: "#B0533E", marginBottom: 4 }}>{f.pregunta.curso} · {f.pregunta.tema} · fallada {f.veces} {f.veces === 1 ? "vez" : "veces"}</div>
+                <div style={{ fontSize: 14, color: "#14213D", lineHeight: 1.4 }}>{f.pregunta.pregunta}</div>
+              </div>
+              {abiertaId === f.pregunta_id ? <ChevronDown size={16} color="#8A93A3" /> : <ChevronRight size={16} color="#8A93A3" />}
+            </button>
+            {abiertaId === f.pregunta_id && (
+              <div style={{ marginTop: 12 }}>
+                {f.pregunta.opciones.map((op, i) => (
+                  <div key={i} style={{ ...styles.opcion, cursor: "default", ...(i === f.pregunta.correcta ? styles.opcionCorrectaLegacy : {}) }}>
+                    {i === f.pregunta.correcta && <Check size={13} color="#2E7D6B" />}
+                    {op}
+                  </div>
+                ))}
+                {f.pregunta.explicacion && <p style={{ fontSize: 13, color: "#5B6472", marginTop: 10, lineHeight: 1.5 }}>{f.pregunta.explicacion}</p>}
+              </div>
+            )}
+          </Card>
+        ))}
+        {fallosConPregunta.length > 5 && (
+          <button type="button" onClick={() => setVerTodosFallos((v) => !v)} style={styles.btnSecondary}>
+            {verTodosFallos ? "Ver menos" : `Ver las ${fallosConPregunta.length} preguntas falladas`}
+          </button>
+        )}
+      </div>
+
+      <div style={{ marginTop: 26, marginBottom: 10 }}>
+        <SectionTitle
+          title="Favoritas"
+          subtitle={favoritasConPregunta.length === 0 ? "Toca la estrella en cualquier pregunta para guardarla aquí." : `${favoritasConPregunta.length} pregunta${favoritasConPregunta.length === 1 ? "" : "s"} guardada${favoritasConPregunta.length === 1 ? "" : "s"}.`}
+        />
+        {favoritasConPregunta.map((f) => (
+          <Card key={f.pregunta_id} style={{ marginBottom: 8 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+              <button type="button" onClick={() => setAbiertaId(abiertaId === f.pregunta_id ? null : f.pregunta_id)} style={{ ...styles.expandBtn, flex: 1 }}>
+                <div style={{ textAlign: "left", flex: 1 }}>
+                  <div style={{ fontSize: 11, color: "#2E7D6B", marginBottom: 4 }}>{f.pregunta.curso} · {f.pregunta.tema}</div>
+                  <div style={{ fontSize: 14, color: "#14213D", lineHeight: 1.4 }}>{f.pregunta.pregunta}</div>
+                </div>
+                {abiertaId === f.pregunta_id ? <ChevronDown size={16} color="#8A93A3" /> : <ChevronRight size={16} color="#8A93A3" />}
+              </button>
+              <FavoritoBtn pregunta={f.pregunta} favoritos={favoritos} onToggle={onToggleFavorito} />
+            </div>
+            {abiertaId === f.pregunta_id && (
+              <div style={{ marginTop: 12 }}>
+                {f.pregunta.opciones.map((op, i) => (
+                  <div key={i} style={{ ...styles.opcion, cursor: "default", ...(i === f.pregunta.correcta ? styles.opcionCorrectaLegacy : {}) }}>
+                    {i === f.pregunta.correcta && <Check size={13} color="#2E7D6B" />}
+                    {op}
+                  </div>
+                ))}
+                {f.pregunta.explicacion && <p style={{ fontSize: 13, color: "#5B6472", marginTop: 10, lineHeight: 1.5 }}>{f.pregunta.explicacion}</p>}
+              </div>
+            )}
+          </Card>
+        ))}
+      </div>
+
+      <button type="button" onClick={() => onIrA("simulacros")} style={{ ...styles.btnPrimary, width: "100%" }}>
+        <Award size={16} style={{ marginRight: 6 }} /> Ir a practicar
+      </button>
+    </div>
   );
 }
 
@@ -1473,6 +1794,14 @@ const styles = {
   tabOrigenBtn: { flex: 1, padding: "11px 14px", borderRadius: 8, border: "1px solid #E4E1D8", background: "#fff", color: "#8A93A3", fontSize: 14, fontWeight: 600, cursor: "pointer" },
   tabOrigenActivo: { background: "#14213D", borderColor: "#14213D", color: "#fff" },
   tabOrigenActivoIA: { background: "#8A5A9E", borderColor: "#8A5A9E", color: "#fff" },
+  rachaDiasChip: { display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: "#B7BEC8", background: "#F3F1EA", borderRadius: 20, padding: "5px 10px" },
+  rachaDiasChipActiva: { color: "#B0533E", background: "#FBEDEA" },
+  perfilGrid: { display: "flex", gap: 12, flexWrap: "wrap" },
+  perfilStatCard: { flex: 1, minWidth: 150, textAlign: "center", padding: "18px 14px" },
+  perfilStatNum: { fontSize: 26, fontFamily: "Georgia, serif", color: "#14213D", marginTop: 6 },
+  perfilStatLabel: { fontSize: 11.5, color: "#8A93A3", marginTop: 2, lineHeight: 1.4 },
+  insigniasGrid: { display: "flex", gap: 10, flexWrap: "wrap" },
+  insigniaCard: { width: 92, textAlign: "center", background: "#fff", border: "2px solid", borderRadius: 10, padding: "14px 8px" },
   puntoVivo: { width: 8, height: 8, borderRadius: "50%", background: "#2E7D6B", animation: "dueloPulso 1.4s ease-in-out infinite" },
   h3Ranking: { fontFamily: "Georgia, serif", fontSize: 20, color: "#14213D", margin: 0 },
   rankingColumnas: { display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 4, alignItems: "stretch" },

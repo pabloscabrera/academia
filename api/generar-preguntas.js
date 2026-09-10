@@ -1,4 +1,11 @@
+import { createClient } from "@supabase/supabase-js";
 import { TEMARIO } from "../src/temario.js";
+
+const supabaseUrl = "https://slwifwjwtipoqtkhbhbr.supabase.co";
+const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNsd2lmd2p3dGlwb3F0a2hiaGJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NjA0OTcsImV4cCI6MjEwNDUzNjQ5N30.1doJMfmoNSSl5L6bPWrjVSfwWATewbpKlZIBl3u33EM";
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+const LIMITE_DIARIO = 10;
 
 function buscarTema(cursoBuscado, temaBuscado) {
   if (!cursoBuscado || !temaBuscado) return null;
@@ -16,6 +23,12 @@ export default async function handler(req, res) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     res.status(500).json({ error: "Falta configurar GEMINI_API_KEY en el servidor." });
+    return;
+  }
+
+  const nombre = req.body && typeof req.body.nombre === "string" ? req.body.nombre.trim() : "";
+  if (!nombre) {
+    res.status(400).json({ error: "Falta identificar quién pide las preguntas." });
     return;
   }
 
@@ -37,6 +50,28 @@ export default async function handler(req, res) {
   let cantidad = parseInt(req.body && req.body.cantidad, 10);
   if (!Number.isFinite(cantidad)) cantidad = 3;
   cantidad = Math.max(1, Math.min(10, cantidad));
+
+  const hoy = new Date().toISOString().slice(0, 10);
+  const { data: usoFila, error: usoError } = await supabase
+    .from("ia_uso")
+    .select("cantidad")
+    .eq("name", nombre)
+    .eq("fecha", hoy)
+    .maybeSingle();
+  if (usoError) {
+    res.status(500).json({ error: "No se pudo comprobar tu límite diario de preguntas." });
+    return;
+  }
+  const usadasHoy = (usoFila && usoFila.cantidad) || 0;
+  if (usadasHoy + cantidad > LIMITE_DIARIO) {
+    const restantes = Math.max(0, LIMITE_DIARIO - usadasHoy);
+    res.status(429).json({
+      error: restantes > 0
+        ? `Solo te quedan ${restantes} pregunta${restantes === 1 ? "" : "s"} personalizada${restantes === 1 ? "" : "s"} hoy. Pide menos cantidad o vuelve mañana.`
+        : "Has agotado tu límite de preguntas personalizadas de hoy. Vuelve mañana.",
+    });
+    return;
+  }
 
   const modelo = process.env.GEMINI_MODEL || "gemini-3.6-flash";
   const prompt = temaEncontrado
@@ -135,6 +170,9 @@ Devuelve ÚNICAMENTE un JSON con este formato exacto, sin texto adicional:
       return;
     }
 
+    const nuevoUso = usadasHoy + validas.length;
+    await supabase.from("ia_uso").upsert({ name: nombre, fecha: hoy, cantidad: nuevoUso }, { onConflict: "name,fecha" });
+
     res.status(200).json({
       preguntas: validas.map((p) => ({
         curso: (typeof p.curso === "string" && p.curso.trim()) || "General",
@@ -144,6 +182,7 @@ Devuelve ÚNICAMENTE un JSON con este formato exacto, sin texto adicional:
         correcta: p.correcta,
         explicacion: typeof p.explicacion === "string" ? p.explicacion.trim() : "",
       })),
+      restantesHoy: Math.max(0, LIMITE_DIARIO - nuevoUso),
     });
   } catch (err) {
     res.status(500).json({ error: "No se pudo contactar con la IA." });
