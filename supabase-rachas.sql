@@ -3,7 +3,18 @@
 -- tanto de autoevaluaciones como de duelos, y permite que la app (con la
 -- clave anon) pueda leerla y escribirla.
 
--- 1) Columnas necesarias (no borra ni toca las que ya existan)
+-- 1) Crea la tabla si no existe (con la app ya tenía código que la usaba,
+--    pero la tabla nunca llegó a crearse en Supabase).
+create table if not exists public.rachas (
+  name text primary key,
+  racha_actual integer not null default 0,
+  racha_record integer not null default 0,
+  racha_duelo_actual integer not null default 0,
+  racha_duelos_record integer not null default 0
+);
+
+-- Y añade cualquier columna que falte por si la tabla ya existía a medias
+-- (no borra ni toca las columnas que ya hubiera).
 alter table public.rachas
   add column if not exists racha_actual integer not null default 0,
   add column if not exists racha_record integer not null default 0,
