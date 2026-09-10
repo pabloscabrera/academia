@@ -2,13 +2,21 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Compass, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
   Plus, Check, X, Loader2, User, LogOut, Flag, Pencil, Trash2,
-   Zap, Heart, Swords, Flame, Sparkles, Star, Award, Lock, Target
+   Zap, Heart, Swords, Flame, Sparkles, Star, Award, Target, Settings
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { TEMARIO } from "./temario";
 
 const ADMIN_NAME = "pabloadmin";
 const META_DIARIA_RACHA = 10;
+const AJUSTES_DEFECTO = { escala: 1, fondo: "#FBF9F4" };
+const ESCALAS = [
+  { id: "pequena", label: "A", escala: 0.9, tamPreview: 13 },
+  { id: "normal", label: "A", escala: 1, tamPreview: 16 },
+  { id: "grande", label: "A", escala: 1.15, tamPreview: 19 },
+  { id: "muygrande", label: "A", escala: 1.3, tamPreview: 22 },
+];
+const COLORES_FONDO = ["#FBF9F4", "#FFFFFF", "#F3F1EA", "#EAF2EF", "#EDF1F7", "#F7ECEC"];
 const INSIGNIAS = [
   { id: "bronce", umbral: 50, nombre: "Bronce", titulo: "Aprendiz", emoji: "🥉", color: "#B08D57" },
   { id: "plata", umbral: 150, nombre: "Plata", titulo: "Estudiante aplicado", emoji: "🥈", color: "#9AA5B1" },
@@ -37,11 +45,22 @@ async function savePersonal(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
 }
 
+const DOMINIO_CUENTAS = "ruta-pir.local";
+function emailDeUsuario(username) {
+  return `${username.trim().toLowerCase()}@${DOMINIO_CUENTAS}`;
+}
+function usuarioFromSession(session) {
+  if (!session || !session.user) return null;
+  const meta = session.user.user_metadata || {};
+  const username = meta.username || (session.user.email ? session.user.email.split("@")[0] : "");
+  const isAdmin = username.toLowerCase() === ADMIN_NAME.toLowerCase();
+  return { name: isAdmin ? "Pablo" : username, isAdmin };
+}
+
 export default function AcademiaPIR() {
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [user, setUser] = useState(null);
-  const [nameInput, setNameInput] = useState("");
   const [section, setSection] = useState("simulacros");
   const [questions, setQuestions] = useState([]);
   const [ranking, setRanking] = useState([]);
@@ -50,11 +69,22 @@ export default function AcademiaPIR() {
   const [favoritos, setFavoritos] = useState([]);
   const [dueloEsperando, setDueloEsperando] = useState(null);
   const [autoUnirseDuelo, setAutoUnirseDuelo] = useState(false);
+  const [ajustes, setAjustes] = useState(() => {
+    try {
+      const raw = localStorage.getItem("pir-ajustes");
+      return raw ? { ...AJUSTES_DEFECTO, ...JSON.parse(raw) } : AJUSTES_DEFECTO;
+    } catch {
+      return AJUSTES_DEFECTO;
+    }
+  });
+  const [mostrarAjustes, setMostrarAjustes] = useState(false);
+
+  useEffect(() => { savePersonal("pir-ajustes", ajustes); }, [ajustes]);
 
   useEffect(() => {
     (async () => {
       try {
-        const u = await loadPersonal("pir-user", null);
+        const { data: sessionData } = await supabase.auth.getSession();
         const { data: qData, error: qErr } = await supabase
           .from("preguntas")
           .select("*")
@@ -67,7 +97,7 @@ export default function AcademiaPIR() {
           .limit(100);
         if (rErr) throw rErr;
         const { data: rachasData } = await supabase.from("rachas").select("*");
-        setUser(u);
+        setUser(usuarioFromSession(sessionData && sessionData.session));
         setQuestions(qData || []);
         setRanking(rData || []);
         setRachas(rachasData || []);
@@ -77,6 +107,11 @@ export default function AcademiaPIR() {
         setReady(true);
       }
     })();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(usuarioFromSession(session));
+    });
+    return () => { sub.subscription.unsubscribe(); };
   }, []);
 
   useEffect(() => {
@@ -151,18 +186,41 @@ export default function AcademiaPIR() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const handleLogin = async () => {
-    const trimmed = nameInput.trim();
-    if (!trimmed) return;
-    const isAdmin = trimmed.toLowerCase() === ADMIN_NAME.toLowerCase();
-    const u = { name: isAdmin ? "Pablo" : trimmed, isAdmin };
-    setUser(u);
-    await savePersonal("pir-user", u);
+  const validarUsuario = (username) => {
+    const limpio = (username || "").trim();
+    if (!limpio) return "Escribe un nombre de usuario.";
+    if (!/^[a-zA-Z0-9_]{3,20}$/.test(limpio)) return "El usuario debe tener entre 3 y 20 letras, números o _ (sin espacios ni acentos).";
+    return null;
+  };
+
+  const handleLogin = async (username, password) => {
+    const errorUsuario = validarUsuario(username);
+    if (errorUsuario) return { error: errorUsuario };
+    if (!password) return { error: "Escribe tu contraseña." };
+    const { error } = await supabase.auth.signInWithPassword({ email: emailDeUsuario(username), password });
+    if (error) return { error: "Usuario o contraseña incorrectos." };
+    return { error: null };
+  };
+
+  const handleSignup = async (username, password) => {
+    const errorUsuario = validarUsuario(username);
+    if (errorUsuario) return { error: errorUsuario };
+    if (!password || password.length < 6) return { error: "La contraseña debe tener al menos 6 caracteres." };
+    const limpio = username.trim();
+    const { error } = await supabase.auth.signUp({
+      email: emailDeUsuario(limpio),
+      password,
+      options: { data: { username: limpio } },
+    });
+    if (error) {
+      if (/registered|exists/i.test(error.message || "")) return { error: "Ese nombre de usuario ya está en uso. Elige otro." };
+      return { error: error.message || "No se pudo crear la cuenta." };
+    }
+    return { error: null };
   };
 
   const handleLogout = async () => {
-    setUser(null);
-    await savePersonal("pir-user", null);
+    await supabase.auth.signOut();
   };
 
   const addQuestion = async (q) => {
@@ -324,122 +382,237 @@ export default function AcademiaPIR() {
     }
   };
 
+  let contenido;
   if (!ready) {
-    return <div style={{ ...styles.center, height: "100%", minHeight: 400 }}><Loader2 className="animate-spin" size={28} color="#2E7D6B" /></div>;
-  }
-
-  if (loadError) {
-    return (
-      <div style={{ ...styles.app, padding: 24 }}>
+    contenido = <div style={{ ...styles.center, height: "100%", minHeight: 400 }}><Loader2 className="animate-spin" size={28} color="#2E7D6B" /></div>;
+  } else if (loadError) {
+    contenido = (
+      <div style={{ padding: 24 }}>
         <h2 style={{ fontFamily: "Georgia, serif", color: "#B0533E" }}>No se pudo conectar</h2>
         <p style={{ color: "#5B6472", fontSize: 14, lineHeight: 1.5 }}>{loadError}</p>
       </div>
     );
-  }
-
-  if (!user) {
-    return <LoginScreen nameInput={nameInput} setNameInput={setNameInput} onSubmit={handleLogin} />;
+  } else if (!user) {
+    contenido = <AuthScreen onLogin={handleLogin} onSignup={handleSignup} />;
+  } else {
+    contenido = (
+      <div>
+        <style>{`
+          @keyframes dueloPulso {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.06); }
+            100% { transform: scale(1); }
+          }
+        `}</style>
+        <Header user={user} onLogout={handleLogout} miRacha={rachas.find((r) => r.name === user.name)} onAjustes={() => setMostrarAjustes(true)} />
+        <Nav section={section} setSection={setSection} alerta={!!dueloEsperando} />
+        {dueloEsperando && section !== "duelo" && (
+          <button
+            type="button"
+            onClick={unirseAlDueloEnEspera}
+            style={styles.dueloAviso}
+          >
+            <Zap size={16} /> {dueloEsperando.jugador1} está buscando duelo — ¡Únete!
+          </button>
+        )}
+        <main style={styles.main}>
+          {section === "perfil" && (
+            <MiPerfil
+              user={user}
+              miRacha={rachas.find((r) => r.name === user.name)}
+              questions={questions}
+              fallos={fallos}
+              favoritos={favoritos}
+              onToggleFavorito={toggleFavorito}
+              onIrA={setSection}
+            />
+          )}
+          {section === "simulacros" && (
+            <Simulacros
+              questions={questions}
+              user={user}
+              onFinish={submitScore}
+              onStreakAnswer={registrarAcierto}
+              onProgresoDiario={registrarProgresoDiario}
+              onFallo={registrarFallo}
+              favoritos={favoritos}
+              onToggleFavorito={toggleFavorito}
+            />
+          )}
+          {section === "banco" && (
+            <BancoPreguntas
+              questions={questions}
+              user={user}
+              onAdd={addQuestion}
+              onUpdate={updateQuestion}
+              onDelete={deleteQuestion}
+              favoritos={favoritos}
+              onToggleFavorito={toggleFavorito}
+            />
+          )}
+          {section === "duelo" && (
+            <Duelo
+              user={user}
+              questions={questions}
+              onDueloEnd={registrarResultadoDuelo}
+              onProgresoDiario={registrarProgresoDiario}
+              autoUnirse={autoUnirseDuelo}
+              onAutoUnirseConsumido={() => setAutoUnirseDuelo(false)}
+            />
+          )}
+          {section === "ranking" && <Ranking rachas={rachas} user={user} />}
+        </main>
+      </div>
+    );
   }
 
   return (
-    <div style={styles.app}>
-      <style>{`
-        @keyframes dueloPulso {
-          0% { transform: scale(1); }
-          50% { transform: scale(1.06); }
-          100% { transform: scale(1); }
-        }
-      `}</style>
-      <Header user={user} onLogout={handleLogout} miRacha={rachas.find((r) => r.name === user.name)} />
-      <Nav section={section} setSection={setSection} alerta={!!dueloEsperando} />
-      {dueloEsperando && section !== "duelo" && (
-        <button
-          type="button"
-          onClick={unirseAlDueloEnEspera}
-          style={styles.dueloAviso}
-        >
-          <Zap size={16} /> {dueloEsperando.jugador1} está buscando duelo — ¡Únete!
-        </button>
-      )}
-      <main style={styles.main}>
-        {section === "perfil" && (
-          <MiPerfil
-            user={user}
-            miRacha={rachas.find((r) => r.name === user.name)}
-            questions={questions}
-            fallos={fallos}
-            favoritos={favoritos}
-            onToggleFavorito={toggleFavorito}
-            onIrA={setSection}
-          />
-        )}
-        {section === "simulacros" && (
-          <Simulacros
-            questions={questions}
-            user={user}
-            onFinish={submitScore}
-            onStreakAnswer={registrarAcierto}
-            onProgresoDiario={registrarProgresoDiario}
-            onFallo={registrarFallo}
-            favoritos={favoritos}
-            onToggleFavorito={toggleFavorito}
-          />
-        )}
-        {section === "banco" && (
-          <BancoPreguntas
-            questions={questions}
-            user={user}
-            onAdd={addQuestion}
-            onUpdate={updateQuestion}
-            onDelete={deleteQuestion}
-            favoritos={favoritos}
-            onToggleFavorito={toggleFavorito}
-          />
-        )}
-        {section === "duelo" && (
-          <Duelo
-            user={user}
-            questions={questions}
-            onDueloEnd={registrarResultadoDuelo}
-            onProgresoDiario={registrarProgresoDiario}
-            autoUnirse={autoUnirseDuelo}
-            onAutoUnirseConsumido={() => setAutoUnirseDuelo(false)}
-          />
-        )}
-        {section === "ranking" && <Ranking rachas={rachas} user={user} />}
-      </main>
+    <div style={{ ...styles.app, background: ajustes.fondo, zoom: ajustes.escala }}>
+      {contenido}
+      {mostrarAjustes && <AjustesPanel ajustes={ajustes} setAjustes={setAjustes} onClose={() => setMostrarAjustes(false)} />}
     </div>
   );
 }
 
-function LoginScreen({ nameInput, setNameInput, onSubmit }) {
+function AuthScreen({ onLogin, onSignup }) {
+  const [modo, setModo] = useState("login");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [password2, setPassword2] = useState("");
+  const [error, setError] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [cuentaCreada, setCuentaCreada] = useState(false);
+
+  const cambiarModo = (m) => { setModo(m); setError(null); setCuentaCreada(false); };
+
+  const submit = async () => {
+    if (cargando) return;
+    setError(null);
+    if (modo === "signup" && password !== password2) {
+      setError("Las contraseñas no coinciden.");
+      return;
+    }
+    setCargando(true);
+    const resultado = modo === "login" ? await onLogin(username, password) : await onSignup(username, password);
+    setCargando(false);
+    if (resultado.error) {
+      setError(resultado.error);
+    } else if (modo === "signup") {
+      setCuentaCreada(true);
+    }
+  };
+
   return (
-    <div style={{ ...styles.app, ...styles.center, minHeight: "100vh" }}>
+    <div style={{ ...styles.center, minHeight: "100vh" }}>
       <div style={{ maxWidth: 340, width: "100%", padding: "0 24px", textAlign: "center" }}>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
           <Compass size={34} color="#2E7D6B" strokeWidth={1.6} />
         </div>
         <h1 style={styles.h1}>Ruta PIR</h1>
-        <p style={{ color: "#5B6472", fontSize: 15, lineHeight: 1.5, marginBottom: 28 }}>
+        <p style={{ color: "#5B6472", fontSize: 15, lineHeight: 1.5, marginBottom: 24 }}>
           Autoevaluaciones, banco de preguntas, duelos 1v1 y ranking en un mismo sitio.
         </p>
-        <input
-          value={nameInput}
-          onChange={(e) => setNameInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && onSubmit()}
-          placeholder="Tu nombre"
-          style={styles.input}
-          autoFocus
-        />
-        <button type="button" onClick={onSubmit} style={{ ...styles.btnPrimary, width: "100%", marginTop: 12 }}>
-          Entrar
+        <div style={styles.tabsOrigen}>
+          <button type="button" onClick={() => cambiarModo("login")} style={{ ...styles.tabOrigenBtn, ...(modo === "login" ? styles.tabOrigenActivo : {}) }}>Entrar</button>
+          <button type="button" onClick={() => cambiarModo("signup")} style={{ ...styles.tabOrigenBtn, ...(modo === "signup" ? styles.tabOrigenActivo : {}) }}>Crear cuenta</button>
+        </div>
+        {cuentaCreada ? (
+          <Card style={{ textAlign: "left" }}>
+            <p style={{ fontSize: 14, color: "#14213D", lineHeight: 1.5, margin: 0 }}>
+              Cuenta creada. Ya puedes entrar con tu usuario y contraseña.
+            </p>
+            <button type="button" onClick={() => { setPassword(""); setPassword2(""); cambiarModo("login"); }} style={{ ...styles.btnPrimary, width: "100%", marginTop: 14 }}>
+              Ir a entrar
+            </button>
+          </Card>
+        ) : (
+          <>
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+              placeholder="Nombre de usuario"
+              style={{ ...styles.input, marginBottom: 10 }}
+              autoCapitalize="none"
+              autoCorrect="off"
+              autoFocus
+            />
+            <input
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+              placeholder="Contraseña"
+              type="password"
+              style={{ ...styles.input, marginBottom: modo === "signup" ? 10 : 0 }}
+            />
+            {modo === "signup" && (
+              <input
+                value={password2}
+                onChange={(e) => setPassword2(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+                placeholder="Repite la contraseña"
+                type="password"
+                style={styles.input}
+              />
+            )}
+            {error && <p style={{ color: "#B0533E", fontSize: 13, marginTop: 10, textAlign: "left" }}>{error}</p>}
+            <button type="button" onClick={submit} disabled={cargando} style={{ ...styles.btnPrimary, width: "100%", marginTop: 14, opacity: cargando ? 0.6 : 1 }}>
+              {cargando ? <Loader2 className="animate-spin" size={16} /> : modo === "login" ? "Entrar" : "Crear cuenta"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AjustesPanel({ ajustes, setAjustes, onClose }) {
+  return (
+    <div style={styles.modalOverlay} onClick={onClose}>
+      <div style={styles.modalCard} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+          <span style={{ fontSize: 17, fontFamily: "Georgia, serif", color: "#14213D" }}>Ajustes</span>
+          <button type="button" onClick={onClose} style={styles.iconBtn}><X size={18} color="#5B6472" /></button>
+        </div>
+
+        <FieldLabel>Tamaño de letra</FieldLabel>
+        <div style={{ display: "flex", gap: 8, marginBottom: 22 }}>
+          {ESCALAS.map((e) => (
+            <button
+              key={e.id}
+              type="button"
+              onClick={() => setAjustes((prev) => ({ ...prev, escala: e.escala }))}
+              style={{ ...styles.escalaBtn, ...(ajustes.escala === e.escala ? styles.escalaBtnActivo : {}), fontSize: e.tamPreview }}
+            >
+              A
+            </button>
+          ))}
+        </div>
+
+        <FieldLabel>Color de fondo</FieldLabel>
+        <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+          {COLORES_FONDO.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setAjustes((prev) => ({ ...prev, fondo: c }))}
+              title={c}
+              style={{ ...styles.colorSwatch, background: c, borderColor: ajustes.fondo === c ? "#14213D" : "#E4E1D8" }}
+            >
+              {ajustes.fondo === c && <Check size={14} color="#14213D" />}
+            </button>
+          ))}
+        </div>
+
+        <button type="button" onClick={() => setAjustes(AJUSTES_DEFECTO)} style={styles.btnSecondary}>
+          Restablecer
         </button>
       </div>
     </div>
   );
 }
 
-function Header({ user, onLogout, miRacha }) {
+function Header({ user, onLogout, miRacha, onAjustes }) {
   const rachaDias = (miRacha && miRacha.racha_dias_actual) || 0;
   return (
     <header style={styles.header}>
@@ -458,6 +631,9 @@ function Header({ user, onLogout, miRacha }) {
         <span style={{ fontSize: 13, color: "#5B6472", display: "flex", alignItems: "center", gap: 4 }}>
           <User size={14} /> {user.name}{user.isAdmin ? " · admin" : ""}
         </span>
+        <button type="button" onClick={onAjustes} style={styles.iconBtn} title="Ajustes">
+          <Settings size={15} color="#5B6472" />
+        </button>
         <button type="button" onClick={onLogout} style={styles.iconBtn} title="Salir">
           <LogOut size={15} color="#5B6472" />
         </button>
@@ -542,9 +718,11 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
     setRevealed(true);
     const q = pool[idx];
     const correcto = i === q.correcta;
-    onStreakAnswer(correcto);
-    if (onProgresoDiario) onProgresoDiario(correcto);
-    if (!correcto && onFallo && ronda === 1) onFallo(q);
+    if (ronda === 1) {
+      onStreakAnswer(correcto);
+      if (onProgresoDiario) onProgresoDiario(correcto);
+      if (!correcto && onFallo) onFallo(q);
+    }
   };
 
   const next = async () => {
@@ -1499,6 +1677,44 @@ function Corazones({ vidas, align }) {
   );
 }
 
+function BarraNivel({ actual, siguiente, totalCorrectas, progreso }) {
+  const desde = actual ? actual.umbral : 0;
+  const hasta = siguiente ? siguiente.umbral : desde;
+  const rango = Math.max(1, hasta - desde);
+  const puntosEnNivel = Math.min(rango, Math.max(0, totalCorrectas - desde));
+  const pct = siguiente ? Math.round((puntosEnNivel / rango) * 100) : 100;
+  return (
+    <Card style={{ padding: "18px 20px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 30 }}>{actual ? actual.emoji : "🔓"}</span>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "#14213D" }}>{actual ? actual.titulo : "Sin insignia todavía"}</div>
+            <div style={{ fontSize: 11.5, color: "#8A93A3" }}>{totalCorrectas} preguntas acertadas en total</div>
+          </div>
+        </div>
+        {siguiente ? (
+          <div style={{ fontSize: 12, color: "#5B6472", textAlign: "right" }}>
+            {siguiente.umbral - totalCorrectas} más para <b>{siguiente.emoji} {siguiente.nombre}</b>
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: "#8A5A9E", fontWeight: 600 }}>¡Nivel máximo alcanzado!</div>
+        )}
+      </div>
+      <div style={styles.progressTrack}>
+        <div style={{ ...styles.progressFill, width: `${pct}%`, background: siguiente ? siguiente.color : "#8A5A9E" }} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}>
+        {INSIGNIAS.map((ins) => (
+          <span key={ins.id} title={`${ins.nombre} (${ins.umbral})`} style={{ fontSize: 13, opacity: totalCorrectas >= ins.umbral ? 1 : 0.3 }}>
+            {ins.emoji}
+          </span>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorito, onIrA }) {
   const [verTodosFallos, setVerTodosFallos] = useState(false);
   const [abiertaId, setAbiertaId] = useState(null);
@@ -1543,7 +1759,9 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
     <div>
       <SectionTitle title="Mi perfil" subtitle={user.name} />
 
-      <div style={styles.perfilGrid}>
+      <BarraNivel actual={actual} siguiente={siguiente} totalCorrectas={totalCorrectas} progreso={progresoSiguiente} />
+
+      <div style={{ ...styles.perfilGrid, marginTop: 18 }}>
         <Card style={{ ...styles.perfilStatCard, borderTop: "3px solid #B0533E" }}>
           <Flame size={22} color="#B0533E" fill={rachaDias > 0 ? "#B0533E" : "none"} />
           <div style={styles.perfilStatNum}>{rachaDias}</div>
@@ -1562,30 +1780,6 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
           <div style={styles.perfilStatNum}>{rachaPreguntas}</div>
           <div style={styles.perfilStatLabel}>racha de aciertos en vivo{rachaPreguntasRecord > 0 ? ` · récord ${rachaPreguntasRecord}` : ""}</div>
         </Card>
-      </div>
-
-      <div style={{ marginTop: 26 }}>
-        <SectionTitle title="Insignias" subtitle={actual ? `Nivel actual: ${actual.emoji} ${actual.nombre} — "${actual.titulo}"` : "Responde preguntas para desbloquear tu primera insignia"} />
-        <div style={styles.insigniasGrid}>
-          {INSIGNIAS.map((ins) => {
-            const desbloqueada = totalCorrectas >= ins.umbral;
-            return (
-              <div key={ins.id} style={{ ...styles.insigniaCard, borderColor: desbloqueada ? ins.color : "#E4E1D8", opacity: desbloqueada ? 1 : 0.55 }}>
-                <div style={{ fontSize: 26 }}>{desbloqueada ? ins.emoji : <Lock size={20} color="#B7BEC8" />}</div>
-                <div style={{ fontSize: 12.5, fontWeight: 600, color: "#14213D", marginTop: 6 }}>{ins.nombre}</div>
-                <div style={{ fontSize: 10.5, color: "#8A93A3", marginTop: 2 }}>{ins.umbral} correctas</div>
-              </div>
-            );
-          })}
-        </div>
-        {siguiente && (
-          <div style={{ marginTop: 12 }}>
-            <div style={{ fontSize: 12, color: "#5B6472", marginBottom: 5 }}>
-              {siguiente.umbral - totalCorrectas} correctas más para {siguiente.emoji} {siguiente.nombre}
-            </div>
-            <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${progresoSiguiente}%`, background: siguiente.color }} /></div>
-          </div>
-        )}
       </div>
 
       <div style={{ marginTop: 26 }}>
@@ -1796,12 +1990,15 @@ const styles = {
   tabOrigenActivoIA: { background: "#8A5A9E", borderColor: "#8A5A9E", color: "#fff" },
   rachaDiasChip: { display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: "#B7BEC8", background: "#F3F1EA", borderRadius: 20, padding: "5px 10px" },
   rachaDiasChipActiva: { color: "#B0533E", background: "#FBEDEA" },
+  modalOverlay: { position: "fixed", inset: 0, background: "rgba(20,33,61,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 },
+  modalCard: { background: "#fff", borderRadius: 14, padding: 24, maxWidth: 340, width: "100%", boxShadow: "0 12px 40px rgba(0,0,0,0.22)" },
+  escalaBtn: { flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #E4E1D8", background: "#fff", color: "#14213D", fontWeight: 700, cursor: "pointer" },
+  escalaBtnActivo: { borderColor: "#14213D", background: "#14213D", color: "#fff" },
+  colorSwatch: { width: 34, height: 34, borderRadius: "50%", border: "2px solid", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 },
   perfilGrid: { display: "flex", gap: 12, flexWrap: "wrap" },
   perfilStatCard: { flex: 1, minWidth: 150, textAlign: "center", padding: "18px 14px" },
   perfilStatNum: { fontSize: 26, fontFamily: "Georgia, serif", color: "#14213D", marginTop: 6 },
   perfilStatLabel: { fontSize: 11.5, color: "#8A93A3", marginTop: 2, lineHeight: 1.4 },
-  insigniasGrid: { display: "flex", gap: 10, flexWrap: "wrap" },
-  insigniaCard: { width: 92, textAlign: "center", background: "#fff", border: "2px solid", borderRadius: 10, padding: "14px 8px" },
   puntoVivo: { width: 8, height: 8, borderRadius: "50%", background: "#2E7D6B", animation: "dueloPulso 1.4s ease-in-out infinite" },
   h3Ranking: { fontFamily: "Georgia, serif", fontSize: 20, color: "#14213D", margin: 0 },
   rankingColumnas: { display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 4, alignItems: "stretch" },
