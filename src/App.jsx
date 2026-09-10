@@ -10,6 +10,8 @@ import { TEMARIO } from "./temario";
 
 const ADMIN_NAME = "pabloadmin";
 const META_DIARIA_RACHA = 10;
+const DURACION_RELAMPAGO = 60;
+const PREGUNTAS_RELAMPAGO = 5;
 const AJUSTES_DEFECTO = { escala: 1, fondo: "#FBF9F4" };
 const ESCALAS = [
   { id: "pequena", label: "A", escala: 0.9, tamPreview: 13 },
@@ -33,6 +35,14 @@ function insigniaActual(totalCorrectas) {
 function siguienteInsignia(totalCorrectas) {
   return INSIGNIAS.find((ins) => totalCorrectas < ins.umbral) || null;
 }
+function lunesDeLaSemana(fecha) {
+  const d = new Date(fecha);
+  const dia = d.getDay();
+  const diff = (dia === 0 ? -6 : 1) - dia;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+const CURSOS_RULETA_COLORES = ["#2E7D6B", "#C89B3C", "#B0533E", "#5EC9C0", "#8A5A9E", "#3B6FA0"];
 
 async function loadPersonal(key, fallback) {
   try {
@@ -79,6 +89,7 @@ export default function AcademiaPIR() {
     }
   });
   const [mostrarAjustes, setMostrarAjustes] = useState(false);
+  const [insigniaDesbloqueada, setInsigniaDesbloqueada] = useState(null);
 
   useEffect(() => { savePersonal("pir-ajustes", ajustes); }, [ajustes]);
 
@@ -314,18 +325,24 @@ export default function AcademiaPIR() {
   const registrarProgresoDiario = async (correcto) => {
     const actual = rachas.find((r) => r.name === user.name);
     const hoy = new Date().toISOString().slice(0, 10);
+    const lunes = lunesDeLaSemana(new Date());
     const totalRespondidasPrevio = actual ? (actual.total_respondidas || 0) : 0;
     const totalCorrectasPrevio = actual ? (actual.total_correctas || 0) : 0;
     const fechaCorrectasHoy = actual ? actual.fecha_correctas_hoy : null;
     const correctasHoyPrevias = fechaCorrectasHoy === hoy ? (actual ? (actual.correctas_hoy || 0) : 0) : 0;
+    const semanaGuardada = actual ? actual.semana_actual : null;
+    const correctasSemanaPrevias = semanaGuardada === lunes ? (actual ? (actual.correctas_semana || 0) : 0) : 0;
 
     const payload = { name: user.name, total_respondidas: totalRespondidasPrevio + 1 };
 
     if (correcto) {
       const nuevasCorrectasHoy = correctasHoyPrevias + 1;
-      payload.total_correctas = totalCorrectasPrevio + 1;
+      const nuevoTotalCorrectas = totalCorrectasPrevio + 1;
+      payload.total_correctas = nuevoTotalCorrectas;
       payload.correctas_hoy = nuevasCorrectasHoy;
       payload.fecha_correctas_hoy = hoy;
+      payload.correctas_semana = correctasSemanaPrevias + 1;
+      payload.semana_actual = lunes;
 
       let nuevaRachaDias = actual ? (actual.racha_dias_actual || 0) : 0;
       let nuevoRecordDias = actual ? (actual.racha_dias_record || 0) : 0;
@@ -338,6 +355,12 @@ export default function AcademiaPIR() {
         payload.racha_dias_record = nuevoRecordDias;
         payload.ultimo_dia_racha = hoy;
       }
+
+      const insigniaPrevia = insigniaActual(totalCorrectasPrevio);
+      const insigniaNueva = insigniaActual(nuevoTotalCorrectas);
+      if (insigniaNueva && (!insigniaPrevia || insigniaPrevia.id !== insigniaNueva.id)) {
+        setInsigniaDesbloqueada(insigniaNueva);
+      }
     }
 
     try {
@@ -348,6 +371,23 @@ export default function AcademiaPIR() {
       }
     } catch (err) {
       console.error("No se pudo guardar el progreso:", err);
+    }
+  };
+
+  const girarRuleta = async () => {
+    const actual = rachas.find((r) => r.name === user.name);
+    const hoy = new Date().toISOString().slice(0, 10);
+    try {
+      const { data, error } = await supabase
+        .from("rachas")
+        .upsert({ name: user.name, ultimo_giro_ruleta: hoy }, { onConflict: "name" })
+        .select();
+      if (error) { console.error("No se pudo registrar el giro de la ruleta:", error.message); return; }
+      if (data && data[0]) {
+        setRachas((prev) => [...prev.filter((r) => r.name !== user.name), data[0]]);
+      }
+    } catch (err) {
+      console.error("No se pudo registrar el giro de la ruleta:", err);
     }
   };
 
@@ -416,6 +456,21 @@ export default function AcademiaPIR() {
             <Zap size={16} /> {dueloEsperando.jugador1} está buscando duelo — ¡Únete!
           </button>
         )}
+        {(() => {
+          const miRachaActual = rachas.find((r) => r.name === user.name);
+          const hoy = new Date().toISOString().slice(0, 10);
+          const correctasHoyActual = miRachaActual && miRachaActual.fecha_correctas_hoy === hoy ? (miRachaActual.correctas_hoy || 0) : 0;
+          const rachaDiasActual = (miRachaActual && miRachaActual.racha_dias_actual) || 0;
+          if (rachaDiasActual > 0 && correctasHoyActual < META_DIARIA_RACHA && section !== "simulacros") {
+            const faltan = META_DIARIA_RACHA - correctasHoyActual;
+            return (
+              <button type="button" onClick={() => setSection("simulacros")} style={styles.rachaAviso}>
+                <Flame size={16} color="#B0533E" fill="#B0533E" /> Te quedan {faltan} acierto{faltan === 1 ? "" : "s"} para no perder tu racha de {rachaDiasActual} día{rachaDiasActual === 1 ? "" : "s"}
+              </button>
+            );
+          }
+          return null;
+        })()}
         <main style={styles.main}>
           {section === "perfil" && (
             <MiPerfil
@@ -425,6 +480,7 @@ export default function AcademiaPIR() {
               fallos={fallos}
               favoritos={favoritos}
               onToggleFavorito={toggleFavorito}
+              onGirarRuleta={girarRuleta}
             />
           )}
           {section === "simulacros" && (
@@ -470,6 +526,7 @@ export default function AcademiaPIR() {
     <div style={{ ...styles.app, background: ajustes.fondo, zoom: ajustes.escala }}>
       {contenido}
       {mostrarAjustes && <AjustesPanel ajustes={ajustes} setAjustes={setAjustes} onClose={() => setMostrarAjustes(false)} />}
+      {insigniaDesbloqueada && <InsigniaDesbloqueadaModal insignia={insigniaDesbloqueada} onClose={() => setInsigniaDesbloqueada(null)} />}
     </div>
   );
 }
@@ -645,6 +702,56 @@ function AjustesPanel({ ajustes, setAjustes, onClose }) {
   );
 }
 
+const CONFETI_COLORES = ["#2E7D6B", "#C89B3C", "#B0533E", "#8A5A9E", "#5EC9C0"];
+
+function InsigniaDesbloqueadaModal({ insignia, onClose }) {
+  const Icono = insignia.icon;
+  const piezas = useMemo(() => Array.from({ length: 26 }, (_, i) => ({
+    izquierda: Math.random() * 100,
+    retraso: Math.random() * 0.5,
+    duracion: 1.6 + Math.random() * 1,
+    color: CONFETI_COLORES[i % CONFETI_COLORES.length],
+    rotacion: Math.random() * 360,
+  })), []);
+  return (
+    <div style={styles.modalOverlay} onClick={onClose}>
+      <style>{`
+        @keyframes confetiCae {
+          0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+          100% { transform: translateY(340px) rotate(360deg); opacity: 0; }
+        }
+        @keyframes insigniaPop {
+          0% { transform: scale(0.6); opacity: 0; }
+          60% { transform: scale(1.08); opacity: 1; }
+          100% { transform: scale(1); }
+        }
+      `}</style>
+      <div style={{ ...styles.modalCard, textAlign: "center", position: "relative", overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
+        {piezas.map((p, i) => (
+          <span
+            key={i}
+            style={{
+              position: "absolute", top: 0, left: `${p.izquierda}%`, width: 7, height: 10,
+              background: p.color, borderRadius: 2,
+              animation: `confetiCae ${p.duracion}s ease-in ${p.retraso}s forwards`,
+              transform: `rotate(${p.rotacion}deg)`,
+            }}
+          />
+        ))}
+        <div style={{ animation: "insigniaPop 0.5s ease-out" }}>
+          <Icono size={48} color={insignia.color} strokeWidth={1.5} style={{ margin: "8px 0 14px" }} />
+        </div>
+        <div style={{ fontSize: 12, color: "#8A93A3", textTransform: "uppercase", letterSpacing: 1 }}>Nueva insignia</div>
+        <div style={{ fontSize: 20, fontFamily: "Georgia, serif", color: "#14213D", marginTop: 4 }}>{insignia.titulo}</div>
+        <div style={{ fontSize: 13, color: "#5B6472", marginTop: 4 }}>Has llegado a {insignia.umbral} preguntas acertadas</div>
+        <button type="button" onClick={onClose} style={{ ...styles.btnPrimary, marginTop: 20, justifyContent: "center" }}>
+          Genial
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Header({ user, onLogout, miRacha, onAjustes }) {
   const rachaDias = (miRacha && miRacha.racha_dias_actual) || 0;
   const totalCorrectas = (miRacha && miRacha.total_correctas) || 0;
@@ -737,12 +844,25 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
   const [revealed, setRevealed] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [relampago, setRelampago] = useState(false);
+  const [segundosRestantes, setSegundosRestantes] = useState(DURACION_RELAMPAGO);
 
   useEffect(() => {
     let timer;
-    if (state === "running") timer = setInterval(() => setSeconds((s) => s + 1), 1000);
+    if (state === "running") {
+      if (relampago) {
+        timer = setInterval(() => setSegundosRestantes((s) => Math.max(0, s - 1)), 1000);
+      } else {
+        timer = setInterval(() => setSeconds((s) => s + 1), 1000);
+      }
+    }
     return () => clearInterval(timer);
-  }, [state]);
+  }, [state, relampago]);
+
+  useEffect(() => {
+    if (relampago && state === "running" && segundosRestantes === 0) finalizarRelampago();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segundosRestantes]);
 
   const start = () => {
     const filtered = curso === "Todos" ? base : base.filter((q) => q.curso === curso);
@@ -751,7 +871,38 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
     setPool(shuffled); setPoolOriginal(shuffled);
     setIdx(0); setAnswers([]); setSelected(null); setRevealed(false); setSeconds(0);
     setRonda(1); setResultados({}); setPrimerIntento(null); setPreguntaAbierta(null);
+    setRelampago(false);
     setState("running");
+  };
+
+  const startRelampago = () => {
+    const reales = questions.filter((q) => !q.inventada);
+    const cantidad = Math.min(PREGUNTAS_RELAMPAGO, reales.length);
+    if (cantidad === 0) return;
+    const shuffled = [...reales].sort(() => Math.random() - 0.5).slice(0, cantidad);
+    setPool(shuffled); setPoolOriginal(shuffled);
+    setIdx(0); setAnswers([]); setSelected(null); setRevealed(false); setSeconds(0);
+    setRonda(1); setResultados({}); setPrimerIntento(null); setPreguntaAbierta(null);
+    setRelampago(true); setSegundosRestantes(DURACION_RELAMPAGO);
+    setState("running");
+  };
+
+  const finalizarRelampago = async () => {
+    setSubmitting((prev) => {
+      if (prev) return prev;
+      (async () => {
+        const correctCount = answers.filter((a) => a.correct).length;
+        const total = poolOriginal.length;
+        const pct = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+        try {
+          await onFinish({ name: user.name, score: correctCount, total, pct, seconds: DURACION_RELAMPAGO, date: new Date().toISOString() });
+        } catch {}
+        setPrimerIntento({ correctCount, total });
+        setState("done");
+        setSubmitting(false);
+      })();
+      return true;
+    });
   };
 
   const elegir = (i, e) => {
@@ -786,7 +937,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
       setPrimerIntento({ correctCount: nextAnswers.filter((a) => a.correct).length, total: nextAnswers.length });
     }
 
-    const falladas = nextAnswers.filter((a) => !a.correct).map((a) => a.pregunta);
+    const falladas = relampago ? [] : nextAnswers.filter((a) => !a.correct).map((a) => a.pregunta);
     if (falladas.length > 0) {
       setPool(falladas);
       setIdx(0);
@@ -799,7 +950,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
     const resumenPrimerIntento = primerIntento || { correctCount: nextAnswers.filter((a) => a.correct).length, total: nextAnswers.length };
     const pct = Math.round((resumenPrimerIntento.correctCount / resumenPrimerIntento.total) * 100);
     try {
-      await onFinish({ name: user.name, score: resumenPrimerIntento.correctCount, total: resumenPrimerIntento.total, pct, seconds, date: new Date().toISOString() });
+      await onFinish({ name: user.name, score: resumenPrimerIntento.correctCount, total: resumenPrimerIntento.total, pct, seconds: relampago ? DURACION_RELAMPAGO - segundosRestantes : seconds, date: new Date().toISOString() });
     } catch {}
     setSubmitting(false);
     setState("done");
@@ -843,6 +994,14 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
             Incluir preguntas inventadas por IA
           </label>
           <button type="button" onClick={start} style={{ ...styles.btnPrimary, width: "100%", marginTop: 22 }}>Empezar autoevaluación</button>
+          <button
+            type="button"
+            onClick={startRelampago}
+            disabled={questions.filter((q) => !q.inventada).length === 0}
+            style={{ ...styles.btnSecondary, width: "100%", marginTop: 10, justifyContent: "center", borderColor: "#C89B3C", color: "#9C7A2C" }}
+          >
+            <Zap size={14} style={{ marginRight: 6 }} /> Modo relámpago ({PREGUNTAS_RELAMPAGO} preguntas · {DURACION_RELAMPAGO}s)
+          </button>
         </Card>
       </div>
     );
@@ -864,10 +1023,13 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
           .acierto-anim { animation: acertarPulso 0.6s ease-out; }
         `}</style>
         <div style={styles.runHeader}>
-          <span style={{ fontSize: 13, color: "#5B6472" }}>
-            {ronda > 1 ? `Repaso de falladas (ronda ${ronda}) · ` : ""}Pregunta {idx + 1} de {pool.length}
+          <span style={{ fontSize: 13, color: relampago ? "#9C7A2C" : "#5B6472", fontWeight: relampago ? 700 : 400, display: "flex", alignItems: "center", gap: 4 }}>
+            {relampago && <Zap size={13} color="#C89B3C" />}
+            {relampago ? "Modo relámpago · " : (ronda > 1 ? `Repaso de falladas (ronda ${ronda}) · ` : "")}Pregunta {idx + 1} de {pool.length}
           </span>
-          <span style={{ fontSize: 13, color: "#5B6472", display: "flex", alignItems: "center", gap: 4 }}><Clock size={13} /> {mm}:{ss}</span>
+          <span style={{ fontSize: 13, color: relampago && segundosRestantes <= 10 ? "#B0533E" : "#5B6472", fontWeight: relampago ? 700 : 400, display: "flex", alignItems: "center", gap: 4 }}>
+            <Clock size={13} /> {relampago ? `${segundosRestantes}s` : `${mm}:${ss}`}
+          </span>
         </div>
         <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${(idx / pool.length) * 100}%` }} /></div>
         <Card style={{ marginTop: 16, ...styles.daypoCard }}>
@@ -1757,7 +1919,85 @@ function BarraNivel({ actual, siguiente, totalCorrectas }) {
   );
 }
 
-function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorito }) {
+function RuletaDiaria({ questions, miRacha, onGirarRuleta }) {
+  const cursosDisponibles = useMemo(() => {
+    const reales = questions.filter((q) => !q.inventada);
+    return [...new Set(reales.map((q) => q.curso))].slice(0, 6);
+  }, [questions]);
+
+  const [girando, setGirando] = useState(false);
+  const [angulo, setAngulo] = useState(0);
+  const [resultado, setResultado] = useState(null);
+
+  const hoy = new Date().toISOString().slice(0, 10);
+  const yaGirasteHoy = miRacha && miRacha.ultimo_giro_ruleta === hoy;
+
+  if (cursosDisponibles.length === 0) return null;
+
+  const numSegmentos = cursosDisponibles.length;
+  const anguloPorSegmento = 360 / numSegmentos;
+  const gradiente = cursosDisponibles
+    .map((c, i) => `${CURSOS_RULETA_COLORES[i % CURSOS_RULETA_COLORES.length]} ${i * anguloPorSegmento}deg ${(i + 1) * anguloPorSegmento}deg`)
+    .join(", ");
+
+  const girar = () => {
+    if (girando || yaGirasteHoy) return;
+    setGirando(true);
+    setResultado(null);
+    const indiceGanador = Math.floor(Math.random() * numSegmentos);
+    const cursoGanador = cursosDisponibles[indiceGanador];
+    const anguloCentro = indiceGanador * anguloPorSegmento + anguloPorSegmento / 2;
+    const vueltas = 5;
+    const nuevoAngulo = angulo - (angulo % 360) + vueltas * 360 + (360 - anguloCentro);
+    setAngulo(nuevoAngulo);
+    setTimeout(() => {
+      const delCurso = questions.filter((q) => !q.inventada && q.curso === cursoGanador);
+      const pregunta = delCurso[Math.floor(Math.random() * delCurso.length)];
+      setResultado({ curso: cursoGanador, pregunta });
+      setGirando(false);
+      if (onGirarRuleta) onGirarRuleta();
+    }, 3000);
+  };
+
+  return (
+    <Card style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+        <div style={{ position: "relative", width: 88, height: 88, flexShrink: 0 }}>
+          <div
+            style={{
+              width: 88, height: 88, borderRadius: "50%",
+              background: `conic-gradient(${gradiente})`,
+              transform: `rotate(${angulo}deg)`,
+              transition: girando ? "transform 3s cubic-bezier(0.17,0.67,0.12,0.99)" : "none",
+              boxShadow: "0 0 0 3px #fff, 0 0 0 4px #E4E1D8",
+            }}
+          />
+          <div style={{ position: "absolute", top: -7, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: "10px solid #14213D" }} />
+        </div>
+        <div style={{ flex: 1, minWidth: 170 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "#14213D", marginBottom: 4 }}>Ruleta del día</div>
+          {yaGirasteHoy && !resultado ? (
+            <div style={{ fontSize: 12.5, color: "#8A93A3" }}>Ya has girado hoy. Vuelve mañana para otra pregunta sorpresa.</div>
+          ) : (
+            <>
+              <div style={{ fontSize: 12.5, color: "#8A93A3", marginBottom: 8 }}>Gira y te toca una pregunta sorpresa de un curso al azar.</div>
+              <button type="button" onClick={girar} disabled={girando || yaGirasteHoy} style={{ ...styles.btnSecondary, opacity: girando ? 0.6 : 1 }}>
+                {girando ? "Girando..." : "Girar"}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+      {resultado && (
+        <div style={{ marginTop: 16 }}>
+          <PreguntaGeneradaCard p={resultado.pregunta} guardada={false} onGuardar={null} />
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorito, onGirarRuleta }) {
   const [verTodosFallos, setVerTodosFallos] = useState(false);
   const [abiertaId, setAbiertaId] = useState(null);
 
@@ -1800,6 +2040,8 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
   return (
     <div>
       <SectionTitle title="Mi perfil" subtitle={user.name} />
+
+      <RuletaDiaria questions={questions} miRacha={miRacha} onGirarRuleta={onGirarRuleta} />
 
       <BarraNivel actual={actual} siguiente={siguiente} totalCorrectas={totalCorrectas} />
 
@@ -1921,6 +2163,10 @@ function Ranking({ rachas, user }) {
   const historicoDuelo = [...rachas]
     .filter((r) => (r.racha_duelos_record || 0) > 0)
     .sort((a, b) => (b.racha_duelos_record || 0) - (a.racha_duelos_record || 0));
+  const lunesActual = lunesDeLaSemana(new Date());
+  const ligaSemanal = [...rachas]
+    .filter((r) => r.semana_actual === lunesActual && (r.correctas_semana || 0) > 0)
+    .sort((a, b) => (b.correctas_semana || 0) - (a.correctas_semana || 0));
 
   return (
     <div>
@@ -1944,6 +2190,16 @@ function Ranking({ rachas, user }) {
           <ListaRachas
             datos={vivoDuelo} campo="racha_duelo_actual" icono={Swords} colorIcono="#B0533E"
             user={user} vacioTexto="Sin racha activa." enVivo
+          />
+        </ColumnaRanking>
+      </div>
+
+      <div style={{ marginTop: 30 }}>
+        <SectionTitle title="Liga semanal" subtitle="Aciertos desde el lunes. Se reinicia cada semana." />
+        <ColumnaRanking titulo="Esta semana" icono={Trophy} color="#2E7D6B">
+          <ListaRachas
+            datos={ligaSemanal} campo="correctas_semana" icono={Trophy} colorIcono="#2E7D6B"
+            user={user} vacioTexto="Todavía nadie ha respondido esta semana."
           />
         </ColumnaRanking>
       </div>
@@ -2060,6 +2316,7 @@ const styles = {
   energiaWrap: { position: "relative", borderRadius: 9, padding: 1.5, marginBottom: 8, overflow: "hidden" },
   energiaAnillo: { position: "absolute", inset: -20, animation: "energiaGiro 3.5s linear infinite" },
   dueloAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "12px 16px", borderRadius: 10, border: "none", background: "#B0533E", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", animation: "dueloPulso 1.6s ease-in-out infinite" },
+  rachaAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "11px 16px", borderRadius: 10, border: "1px solid #F0C4B4", background: "#FBEDEA", color: "#8A3F2B", fontSize: 13.5, fontWeight: 600, cursor: "pointer" },
   main: { padding: "24px 22px 50px", maxWidth: 820, margin: "0 auto" },
   card: { background: "#fff", border: "1px solid #E4E1D8", borderRadius: 10, padding: 26 },
   input: { width: "100%", padding: "13px 15px", borderRadius: 8, border: "1px solid #D9D5C9", fontSize: 17, fontFamily: "inherit", color: "#14213D", boxSizing: "border-box" },
