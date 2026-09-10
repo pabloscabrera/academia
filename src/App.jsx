@@ -53,6 +53,8 @@ export default function AcademiaPIR() {
   const [questions, setQuestions] = useState([]);
   const [ranking, setRanking] = useState([]);
   const [rachas, setRachas] = useState([]);
+  const [dueloEsperando, setDueloEsperando] = useState(null);
+  const [autoUnirseDuelo, setAutoUnirseDuelo] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -81,6 +83,48 @@ export default function AcademiaPIR() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    let activo = true;
+    const cutoffIso = () => new Date(Date.now() - DUELO_ESPERA_MAX_MS).toISOString();
+
+    const cargarEsperando = async () => {
+      const { data } = await supabase
+        .from("duelos")
+        .select("id, jugador1, created_at")
+        .eq("estado", "esperando")
+        .is("jugador2", null)
+        .neq("jugador1", user.name)
+        .gte("created_at", cutoffIso())
+        .order("created_at", { ascending: true })
+        .limit(1);
+      if (activo) setDueloEsperando((data && data[0]) || null);
+    };
+    cargarEsperando();
+
+    const channel = supabase
+      .channel("duelos-lobby")
+      .on("postgres_changes", { event: "*", schema: "public", table: "duelos" }, (payload) => {
+        const fila = payload.eventType === "DELETE" ? payload.old : payload.new;
+        if (!fila) return;
+        if (payload.eventType === "INSERT" && fila.estado === "esperando" && fila.jugador1 !== user.name) {
+          setDueloEsperando(fila);
+        } else if (payload.eventType === "UPDATE" && fila.estado !== "esperando") {
+          setDueloEsperando((prev) => (prev && prev.id === fila.id ? null : prev));
+        } else if (payload.eventType === "DELETE") {
+          setDueloEsperando((prev) => (prev && prev.id === fila.id ? null : prev));
+        }
+      })
+      .subscribe();
+
+    return () => { activo = false; supabase.removeChannel(channel); };
+  }, [user && user.name]);
+
+  const unirseAlDueloEnEspera = () => {
+    setSection("duelo");
+    setAutoUnirseDuelo(true);
+  };
 
   const handleLogin = async () => {
     const trimmed = nameInput.trim();
@@ -176,8 +220,24 @@ export default function AcademiaPIR() {
 
   return (
     <div style={styles.app}>
+      <style>{`
+        @keyframes dueloPulso {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.06); }
+          100% { transform: scale(1); }
+        }
+      `}</style>
       <Header user={user} onLogout={handleLogout} />
-      <Nav section={section} setSection={setSection} />
+      <Nav section={section} setSection={setSection} alerta={!!dueloEsperando} />
+      {dueloEsperando && section !== "duelo" && (
+        <button
+          type="button"
+          onClick={unirseAlDueloEnEspera}
+          style={styles.dueloAviso}
+        >
+          <Zap size={16} /> {dueloEsperando.jugador1} está buscando duelo — ¡Únete!
+        </button>
+      )}
       <main style={styles.main}>
         {section === "simulacros" && <Simulacros questions={questions} user={user} onFinish={submitScore} onStreakAnswer={registrarAcierto} />}
         {section === "banco" && (
@@ -190,8 +250,16 @@ export default function AcademiaPIR() {
           />
         )}
         {section === "temario" && <Temario />}
-        {section === "duelo" && <Duelo user={user} questions={questions} onDueloEnd={registrarResultadoDuelo} />}
-        {section === "ranking" && <Ranking ranking={ranking} rachas={rachas} user={user} />}
+        {section === "duelo" && (
+          <Duelo
+            user={user}
+            questions={questions}
+            onDueloEnd={registrarResultadoDuelo}
+            autoUnirse={autoUnirseDuelo}
+            onAutoUnirseConsumido={() => setAutoUnirseDuelo(false)}
+          />
+        )}
+        {section === "ranking" && <Ranking rachas={rachas} user={user} />}
       </main>
     </div>
   );
@@ -243,7 +311,7 @@ function Header({ user, onLogout }) {
   );
 }
 
-function Nav({ section, setSection }) {
+function Nav({ section, setSection, alerta }) {
   const items = [
     { id: "simulacros", label: "Autoevaluaciones", icon: Clock },
     { id: "banco", label: "Banco de preguntas", icon: ListChecks },
@@ -261,10 +329,13 @@ function Nav({ section, setSection }) {
             type="button"
             key={it.id}
             onClick={() => setSection(it.id)}
-            style={{ ...styles.navBtn, color: active ? "#14213D" : "#8A93A3", borderBottom: active ? "2px solid #2E7D6B" : "2px solid transparent" }}
+            style={{ ...styles.navBtn, color: active ? "#14213D" : "#8A93A3", borderBottom: active ? "2px solid #2E7D6B" : "2px solid transparent", position: "relative" }}
           >
             <Icon size={15} />
             <span>{it.label}</span>
+            {it.id === "duelo" && alerta && (
+              <span style={styles.navDot} />
+            )}
           </button>
         );
       })}
@@ -639,8 +710,9 @@ function EditarPregunta({ q, onSave, onCancel }) {
 const DURACION_PREGUNTA = 60;
 const PAUSA_REVELACION = 5;
 const PREGUNTAS_POR_DUELO = 200;
+const DUELO_ESPERA_MAX_MS = 3 * 60 * 1000;
 
-function Duelo({ user, questions, onDueloEnd }) {
+function Duelo({ user, questions, onDueloEnd, autoUnirse, onAutoUnirseConsumido }) {
   const [fase, setFase] = useState("lobby");
   const [duelo, setDuelo] = useState(null);
   const [preguntasDuelo, setPreguntasDuelo] = useState([]);
@@ -654,6 +726,15 @@ function Duelo({ user, questions, onDueloEnd }) {
   const streakRegistradaRef = useRef(null);
 
   useEffect(() => { duelRef.current = duelo; }, [duelo]);
+
+  useEffect(() => {
+    return () => {
+      const actual = duelRef.current;
+      if (actual && actual.estado === "esperando" && actual.jugador1 === user.name) {
+        supabase.from("duelos").delete().eq("id", actual.id).eq("estado", "esperando");
+      }
+    };
+  }, [user.name]);
 
   const soyJugador1 = duelo && user.name === duelo.jugador1;
   const miClave = soyJugador1 ? "jugador1" : "jugador2";
@@ -741,12 +822,14 @@ function Duelo({ user, questions, onDueloEnd }) {
 
   const buscarDuelo = async () => {
     setBuscando(true);
+    const cutoffIso = new Date(Date.now() - DUELO_ESPERA_MAX_MS).toISOString();
     const { data: esperando } = await supabase
       .from("duelos")
       .select("*")
       .eq("estado", "esperando")
       .is("jugador2", null)
       .neq("jugador1", user.name)
+      .gte("created_at", cutoffIso)
       .order("created_at", { ascending: true })
       .limit(1);
 
@@ -779,6 +862,14 @@ function Duelo({ user, questions, onDueloEnd }) {
     }
     setBuscando(false);
   };
+
+  useEffect(() => {
+    if (autoUnirse && fase === "lobby" && !duelo && !buscando) {
+      buscarDuelo();
+      if (onAutoUnirseConsumido) onAutoUnirseConsumido();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoUnirse]);
 
   const cargarPreguntasDuelo = async (ids) => {
     const { data } = await supabase.from("preguntas").select("*").in("id", ids);
@@ -826,7 +917,10 @@ function Duelo({ user, questions, onDueloEnd }) {
     }).eq("id", duelo.id);
   };
 
-  const salirDuelo = () => {
+  const salirDuelo = async () => {
+    if (duelo && duelo.estado === "esperando" && soyJugador1) {
+      await supabase.from("duelos").delete().eq("id", duelo.id).eq("estado", "esperando");
+    }
     setDuelo(null);
     setPreguntasDuelo([]);
     setRespuestasTodas({});
@@ -1005,39 +1099,31 @@ function CursoBlock({ curso }) {
   );
 }
 
-function Ranking({ ranking, rachas, user }) {
-  const sorted = [...ranking].sort((a, b) => b.pct - a.pct);
-  const rachaPorNombre = (name) => rachas.find((r) => r.name === name);
+function Ranking({ rachas, user }) {
+  const mejoresRachas = [...rachas]
+    .filter((r) => r.racha_record > 0)
+    .sort((a, b) => b.racha_record - a.racha_record);
   const duelosOrdenados = [...rachas]
     .filter((r) => r.racha_duelos_record > 0)
     .sort((a, b) => b.racha_duelos_record - a.racha_duelos_record);
 
   return (
     <div>
-      <SectionTitle title="Ranking" subtitle="Mejores puntuaciones de la comunidad" />
-      {sorted.length === 0 && (
+      <SectionTitle title="Ranking" subtitle="Mejor racha de aciertos seguidos de cada persona" />
+      {mejoresRachas.length === 0 && (
         <Card style={{ textAlign: "center", color: "#8A93A3", padding: "28px 16px" }}>
-          Todavía no hay resultados. Haz un simulacro para aparecer aquí.
+          Todavía no hay rachas. Responde preguntas en Autoevaluaciones para aparecer aquí.
         </Card>
       )}
-      {sorted.map((r, i) => {
-        const racha = rachaPorNombre(r.name);
-        return (
-          <div key={r.id || i} style={{ ...styles.rankRow, background: r.name === user.name ? "#EEF3F1" : "#fff" }}>
-            <span style={{ width: 26, fontSize: 13, color: i < 3 ? "#C89B3C" : "#8A93A3", fontFamily: "Georgia, serif" }}>{i + 1}</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 14, color: "#14213D" }}>{r.name}</div>
-              {racha && racha.racha_record > 0 && (
-                <div style={{ fontSize: 11, color: "#C89B3C", display: "flex", alignItems: "center", gap: 3, marginTop: 2 }}>
-                  <Flame size={11} /> Récord: {racha.racha_record} seguidas
-                </div>
-              )}
-            </div>
-            <span style={{ fontSize: 13, color: "#5B6472" }}>{r.score}/{r.total}</span>
-            <span style={{ fontSize: 14, color: "#2E7D6B", fontWeight: 600, width: 44, textAlign: "right" }}>{r.pct}%</span>
-          </div>
-        );
-      })}
+      {mejoresRachas.map((r, i) => (
+        <div key={r.name} style={{ ...styles.rankRow, background: r.name === user.name ? "#EEF3F1" : "#fff" }}>
+          <span style={{ width: 26, fontSize: 13, color: i < 3 ? "#C89B3C" : "#8A93A3", fontFamily: "Georgia, serif" }}>{i + 1}</span>
+          <span style={{ flex: 1, fontSize: 14, color: "#14213D" }}>{r.name}</span>
+          <span style={{ fontSize: 14, color: "#C89B3C", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+            <Flame size={13} /> {r.racha_record} seguidas
+          </span>
+        </div>
+      ))}
 
       {duelosOrdenados.length > 0 && (
         <div style={{ marginTop: 28 }}>
@@ -1084,6 +1170,8 @@ const styles = {
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 24px", borderBottom: "1px solid #E4E1D8" },
   nav: { display: "flex", gap: 6, padding: "0 18px", borderBottom: "1px solid #E4E1D8", overflowX: "auto" },
   navBtn: { display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: "16px 14px", fontSize: 16, cursor: "pointer", whiteSpace: "nowrap" },
+  navDot: { position: "absolute", top: 10, right: 6, width: 8, height: 8, borderRadius: "50%", background: "#B0533E", animation: "dueloPulso 1.2s ease-in-out infinite" },
+  dueloAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "12px 16px", borderRadius: 10, border: "none", background: "#B0533E", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", animation: "dueloPulso 1.6s ease-in-out infinite" },
   main: { padding: "24px 22px 50px", maxWidth: 820, margin: "0 auto" },
   card: { background: "#fff", border: "1px solid #E4E1D8", borderRadius: 10, padding: 26 },
   input: { width: "100%", padding: "13px 15px", borderRadius: 8, border: "1px solid #D9D5C9", fontSize: 17, fontFamily: "inherit", color: "#14213D", boxSizing: "border-box" },
