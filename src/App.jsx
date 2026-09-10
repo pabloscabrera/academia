@@ -2,35 +2,12 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Compass, BookOpen, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
   Plus, Check, X, Loader2, User, LogOut, Flag, Pencil, Trash2,
-   Zap, Heart, Swords, Flame
+   Zap, Heart, Swords, Flame, Sparkles
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
+import { TEMARIO } from "./temario";
 
 const ADMIN_NAME = "pabloadmin";
-
-const TEMARIO = [
-  { curso: "Psicopatología", color: "#2E7D6B", temas: [
-    { nombre: "Trastornos del estado de ánimo", contenido: "Episodio depresivo mayor, trastorno bipolar tipo I y II, ciclotimia, distimia. Criterios diagnósticos, curso y diagnóstico diferencial." },
-    { nombre: "Trastornos de ansiedad", contenido: "Trastorno de pánico, TAG, fobia específica, fobia social, agorafobia. Modelos explicativos cognitivo-conductuales." },
-    { nombre: "Trastornos psicóticos", contenido: "Esquizofrenia, trastorno esquizoafectivo, trastorno delirante. Síntomas positivos y negativos, criterios temporales." }
-  ]},
-  { curso: "Evaluación psicológica", color: "#3B6FA0", temas: [
-    { nombre: "Instrumentos de evaluación", contenido: "Tests de personalidad (MMPI, 16PF), tests de inteligencia (WAIS, WISC), entrevistas estructuradas." },
-    { nombre: "Fiabilidad y validez", contenido: "Consistencia interna, fiabilidad test-retest, validez de contenido, de constructo y de criterio." }
-  ]},
-  { curso: "Psicología clínica", color: "#C89B3C", temas: [
-    { nombre: "Terapia cognitivo-conductual", contenido: "Modelo ABC, reestructuración cognitiva, técnicas conductuales de exposición y activación." },
-    { nombre: "Terapias de tercera generación", contenido: "ACT, terapia dialéctico-conductual, mindfulness aplicado a clínica." },
-    { nombre: "Trastornos de la conducta alimentaria", contenido: "Anorexia, bulimia, trastorno por atracón. Criterios diferenciales y abordaje terapéutico." }
-  ]},
-  { curso: "Neuropsicología", color: "#8A5A9E", temas: [
-    { nombre: "Funciones cognitivas", contenido: "Atención, memoria, funciones ejecutivas, lenguaje. Síndromes neuropsicológicos principales (afasias, apraxias, agnosias)." }
-  ]},
-  { curso: "Psicología social", color: "#B0533E", temas: [
-    { nombre: "Procesos grupales", contenido: "Pensamiento grupal, polarización, facilitación social, dinámica de roles." },
-    { nombre: "Influencia social", contenido: "Conformidad (Asch), obediencia (Milgram), persuasión y cambio de actitudes." }
-  ]}
-];
 
 async function loadPersonal(key, fallback) {
   try {
@@ -290,6 +267,7 @@ export default function AcademiaPIR() {
           />
         )}
         {section === "temario" && <Temario />}
+        {section === "ia" && <PreguntaIA />}
         {section === "duelo" && (
           <Duelo
             user={user}
@@ -356,6 +334,7 @@ function Nav({ section, setSection, alerta }) {
     { id: "simulacros", label: "Autoevaluaciones", icon: Clock },
     { id: "banco", label: "Banco de preguntas", icon: ListChecks },
     { id: "temario", label: "Temario", icon: BookOpen },
+    { id: "ia", label: "Pregunta IA", icon: Sparkles },
     { id: "duelo", label: "Duelo 1v1", icon: Zap },
     { id: "ranking", label: "Ranking", icon: Trophy },
   ];
@@ -1187,6 +1166,73 @@ function CursoBlock({ curso }) {
         </div>
       )}
     </Card>
+  );
+}
+
+function PreguntaIA() {
+  const [pregunta, setPregunta] = useState("");
+  const [historial, setHistorial] = useState([]);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState(null);
+
+  const enviar = async () => {
+    const texto = pregunta.trim();
+    if (!texto || cargando) return;
+    setPregunta("");
+    setError(null);
+    setCargando(true);
+    setHistorial((prev) => [...prev, { rol: "usuario", texto }]);
+    try {
+      const resp = await fetch("/api/preguntar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pregunta: texto }),
+      });
+      const datos = await resp.json();
+      if (!resp.ok) throw new Error(datos.error || "No se pudo obtener respuesta.");
+      setHistorial((prev) => [...prev, { rol: "ia", texto: datos.respuesta }]);
+    } catch (err) {
+      setError(err.message || "No se pudo contactar con la IA.");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  return (
+    <div>
+      <SectionTitle title="Pregunta a la IA" subtitle="Responde solo con el temario incluido en la app." />
+      <Card>
+        {historial.length === 0 && (
+          <p style={{ color: "#8A93A3", fontSize: 14, margin: 0 }}>Escribe una duda sobre el temario y la IA te responderá.</p>
+        )}
+        {historial.map((m, i) => (
+          <div key={i} style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: m.rol === "usuario" ? "#14213D" : "#2E7D6B", fontWeight: 600, marginBottom: 4 }}>
+              {m.rol === "usuario" ? "Tú" : "IA"}
+            </div>
+            <p style={{ fontSize: 14, color: "#14213D", lineHeight: 1.5, whiteSpace: "pre-wrap", margin: 0 }}>{m.texto}</p>
+          </div>
+        ))}
+        {cargando && (
+          <p style={{ color: "#8A93A3", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+            <Loader2 className="animate-spin" size={14} /> Pensando...
+          </p>
+        )}
+        {error && <p style={{ color: "#B0533E", fontSize: 13 }}>{error}</p>}
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <input
+            value={pregunta}
+            onChange={(e) => setPregunta(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && enviar()}
+            placeholder="Escribe tu pregunta..."
+            style={{ ...styles.input, flex: 1 }}
+          />
+          <button type="button" onClick={enviar} disabled={cargando} style={{ ...styles.btnPrimary, opacity: cargando ? 0.6 : 1 }}>
+            Preguntar
+          </button>
+        </div>
+      </Card>
+    </div>
   );
 }
 
