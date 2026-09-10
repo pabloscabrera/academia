@@ -55,8 +55,6 @@ export default function AcademiaPIR() {
   const [rachas, setRachas] = useState([]);
   const [dueloEsperando, setDueloEsperando] = useState(null);
   const [autoUnirseDuelo, setAutoUnirseDuelo] = useState(false);
-  const rachaActualRef = useRef(0);
-  const rachaDueloRef = useRef(0);
 
   useEffect(() => {
     (async () => {
@@ -128,6 +126,22 @@ export default function AcademiaPIR() {
     setAutoUnirseDuelo(true);
   };
 
+  useEffect(() => {
+    const channel = supabase
+      .channel("rachas-vivo")
+      .on("postgres_changes", { event: "*", schema: "public", table: "rachas" }, (payload) => {
+        const fila = payload.eventType === "DELETE" ? payload.old : payload.new;
+        if (!fila) return;
+        if (payload.eventType === "DELETE") {
+          setRachas((prev) => prev.filter((r) => r.name !== fila.name));
+        } else {
+          setRachas((prev) => [...prev.filter((r) => r.name !== fila.name), fila]);
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
   const handleLogin = async () => {
     const trimmed = nameInput.trim();
     if (!trimmed) return;
@@ -188,14 +202,15 @@ export default function AcademiaPIR() {
   };
 
   const registrarAcierto = async (correcto) => {
-    rachaActualRef.current = correcto ? rachaActualRef.current + 1 : 0;
-    if (!correcto) return;
     const actual = rachas.find((r) => r.name === user.name);
-    if (actual && rachaActualRef.current <= (actual.racha_record || 0)) return;
+    const vivoPrevio = actual ? (actual.racha_actual || 0) : 0;
+    const recordPrevio = actual ? (actual.racha_record || 0) : 0;
+    const nuevoVivo = correcto ? vivoPrevio + 1 : 0;
+    const nuevoRecord = Math.max(recordPrevio, nuevoVivo);
     try {
       const { data, error } = await supabase
         .from("rachas")
-        .upsert({ name: user.name, racha_record: rachaActualRef.current }, { onConflict: "name" })
+        .upsert({ name: user.name, racha_actual: nuevoVivo, racha_record: nuevoRecord }, { onConflict: "name" })
         .select();
       if (error) { console.error("No se pudo guardar la racha:", error.message); return; }
       if (data && data[0]) {
@@ -207,14 +222,15 @@ export default function AcademiaPIR() {
   };
 
   const registrarResultadoDuelo = async (gano) => {
-    rachaDueloRef.current = gano ? rachaDueloRef.current + 1 : 0;
-    if (!gano) return;
     const actual = rachas.find((r) => r.name === user.name);
-    if (actual && rachaDueloRef.current <= (actual.racha_duelos_record || 0)) return;
+    const vivoPrevio = actual ? (actual.racha_duelo_actual || 0) : 0;
+    const recordPrevio = actual ? (actual.racha_duelos_record || 0) : 0;
+    const nuevoVivo = gano ? vivoPrevio + 1 : 0;
+    const nuevoRecord = Math.max(recordPrevio, nuevoVivo);
     try {
       const { data, error } = await supabase
         .from("rachas")
-        .upsert({ name: user.name, racha_duelos_record: rachaDueloRef.current }, { onConflict: "name" })
+        .upsert({ name: user.name, racha_duelo_actual: nuevoVivo, racha_duelos_record: nuevoRecord }, { onConflict: "name" })
         .select();
       if (error) { console.error("No se pudo guardar la racha de duelos:", error.message); return; }
       if (data && data[0]) {
@@ -407,10 +423,8 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
     if (e && e.currentTarget) e.currentTarget.blur();
     setSelected(i);
     setRevealed(true);
-    if (ronda === 1) {
-      const q = pool[idx];
-      onStreakAnswer(i === q.correcta);
-    }
+    const q = pool[idx];
+    onStreakAnswer(i === q.correcta);
   };
 
   const next = async () => {
@@ -1174,46 +1188,71 @@ function CursoBlock({ curso }) {
 }
 
 function Ranking({ rachas, user }) {
-  const mejoresRachas = [...rachas]
-    .filter((r) => r.racha_record > 0)
-    .sort((a, b) => b.racha_record - a.racha_record);
-  const duelosOrdenados = [...rachas]
-    .filter((r) => r.racha_duelos_record > 0)
-    .sort((a, b) => b.racha_duelos_record - a.racha_duelos_record);
+  const vivoQuiz = [...rachas]
+    .filter((r) => (r.racha_actual || 0) > 0)
+    .sort((a, b) => (b.racha_actual || 0) - (a.racha_actual || 0));
+  const vivoDuelo = [...rachas]
+    .filter((r) => (r.racha_duelo_actual || 0) > 0)
+    .sort((a, b) => (b.racha_duelo_actual || 0) - (a.racha_duelo_actual || 0));
+  const historicoQuiz = [...rachas]
+    .filter((r) => (r.racha_record || 0) > 0)
+    .sort((a, b) => (b.racha_record || 0) - (a.racha_record || 0));
+  const historicoDuelo = [...rachas]
+    .filter((r) => (r.racha_duelos_record || 0) > 0)
+    .sort((a, b) => (b.racha_duelos_record || 0) - (a.racha_duelos_record || 0));
 
   return (
     <div>
-      <SectionTitle title="Ranking" subtitle="Mejor racha de aciertos seguidos de cada persona" />
-      {mejoresRachas.length === 0 && (
-        <Card style={{ textAlign: "center", color: "#8A93A3", padding: "28px 16px" }}>
-          Todavía no hay rachas. Responde preguntas en Autoevaluaciones para aparecer aquí.
-        </Card>
-      )}
-      {mejoresRachas.map((r, i) => (
+      <SectionTitle title="Ranking" subtitle="Rachas de la comunidad" />
+
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14 }}>
+        <span style={styles.puntoVivo} />
+        <h3 style={styles.h3Ranking}>Rachas en vivo</h3>
+      </div>
+      <FieldLabel>Autoevaluaciones</FieldLabel>
+      <ListaRachas
+        datos={vivoQuiz} campo="racha_actual" icono={Flame} colorIcono="#C89B3C" sufijo="seguidas"
+        user={user} vacioTexto="Nadie tiene una racha activa ahora mismo."
+      />
+      <FieldLabel style={{ marginTop: 18 }}>Duelo 1v1</FieldLabel>
+      <ListaRachas
+        datos={vivoDuelo} campo="racha_duelo_actual" icono={Swords} colorIcono="#B0533E" sufijo="victorias seguidas"
+        user={user} vacioTexto="Nadie tiene una racha de victorias activa ahora mismo."
+      />
+
+      <div style={{ marginTop: 30 }}>
+        <SectionTitle title="Rachas históricas" subtitle="Mejor racha conseguida por cada persona" />
+        <FieldLabel>Autoevaluaciones</FieldLabel>
+        <ListaRachas
+          datos={historicoQuiz} campo="racha_record" icono={Flame} colorIcono="#C89B3C" sufijo="seguidas"
+          user={user} vacioTexto="Todavía no hay récords. Responde preguntas en Autoevaluaciones para aparecer aquí."
+        />
+        <FieldLabel style={{ marginTop: 18 }}>Duelo 1v1</FieldLabel>
+        <ListaRachas
+          datos={historicoDuelo} campo="racha_duelos_record" icono={Swords} colorIcono="#B0533E" sufijo="victorias seguidas"
+          user={user} vacioTexto="Todavía no hay récords de duelos."
+        />
+      </div>
+    </div>
+  );
+}
+
+function ListaRachas({ datos, campo, icono: Icono, colorIcono, sufijo, user, vacioTexto }) {
+  if (datos.length === 0) {
+    return <p style={{ fontSize: 13, color: "#8A93A3", padding: "6px 0 4px" }}>{vacioTexto}</p>;
+  }
+  return (
+    <>
+      {datos.map((r, i) => (
         <div key={r.name} style={{ ...styles.rankRow, background: r.name === user.name ? "#EEF3F1" : "#fff" }}>
           <span style={{ width: 26, fontSize: 13, color: i < 3 ? "#C89B3C" : "#8A93A3", fontFamily: "Georgia, serif" }}>{i + 1}</span>
           <span style={{ flex: 1, fontSize: 14, color: "#14213D" }}>{r.name}</span>
-          <span style={{ fontSize: 14, color: "#C89B3C", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-            <Flame size={13} /> {r.racha_record} seguidas
+          <span style={{ fontSize: 14, color: colorIcono, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+            <Icono size={13} /> {r[campo]} {sufijo}
           </span>
         </div>
       ))}
-
-      {duelosOrdenados.length > 0 && (
-        <div style={{ marginTop: 28 }}>
-          <SectionTitle title="Récord de duelos 1v1" subtitle="Más victorias seguidas" />
-          {duelosOrdenados.map((r, i) => (
-            <div key={r.name} style={{ ...styles.rankRow, background: r.name === user.name ? "#EEF3F1" : "#fff" }}>
-              <span style={{ width: 26, fontSize: 13, color: i < 3 ? "#C89B3C" : "#8A93A3", fontFamily: "Georgia, serif" }}>{i + 1}</span>
-              <span style={{ flex: 1, fontSize: 14, color: "#14213D" }}>{r.name}</span>
-              <span style={{ fontSize: 14, color: "#B0533E", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-                <Swords size={13} /> {r.racha_duelos_record}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    </>
   );
 }
 
@@ -1245,6 +1284,8 @@ const styles = {
   nav: { display: "flex", gap: 6, padding: "0 18px", borderBottom: "1px solid #E4E1D8", overflowX: "auto" },
   navBtn: { display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: "16px 14px", fontSize: 16, cursor: "pointer", whiteSpace: "nowrap" },
   navDot: { position: "absolute", top: 10, right: 6, width: 8, height: 8, borderRadius: "50%", background: "#B0533E", animation: "dueloPulso 1.2s ease-in-out infinite" },
+  puntoVivo: { width: 8, height: 8, borderRadius: "50%", background: "#2E7D6B", animation: "dueloPulso 1.4s ease-in-out infinite" },
+  h3Ranking: { fontFamily: "Georgia, serif", fontSize: 15, color: "#14213D", margin: 0 },
   dueloAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "12px 16px", borderRadius: 10, border: "none", background: "#B0533E", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", animation: "dueloPulso 1.6s ease-in-out infinite" },
   main: { padding: "24px 22px 50px", maxWidth: 820, margin: "0 auto" },
   card: { background: "#fff", border: "1px solid #E4E1D8", borderRadius: 10, padding: 26 },
