@@ -1206,6 +1206,9 @@ function Ranking({ rachas, user }) {
 
   return (
     <div>
+      <style>{`
+        @keyframes energiaGiro { to { transform: rotate(360deg); } }
+      `}</style>
       <SectionTitle title="Ranking" />
 
       <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14 }}>
@@ -1213,60 +1216,77 @@ function Ranking({ rachas, user }) {
         <h2 style={styles.h3Ranking}>Rachas en vivo</h2>
       </div>
       <div style={styles.rankingColumnas}>
-        <div style={{ flex: 1, minWidth: 220 }}>
-          <FieldLabel>Autoevaluaciones</FieldLabel>
+        <ColumnaRanking titulo="Autoevaluaciones" icono={Flame} color="#C89B3C">
           <ListaRachas
             datos={vivoQuiz} campo="racha_actual" icono={Flame} colorIcono="#C89B3C"
-            user={user} vacioTexto="Sin racha activa."
+            user={user} vacioTexto="Sin racha activa." enVivo
           />
-        </div>
-        <div style={{ flex: 1, minWidth: 220 }}>
-          <FieldLabel>Duelo 1v1</FieldLabel>
+        </ColumnaRanking>
+        <ColumnaRanking titulo="Duelo 1v1" icono={Swords} color="#B0533E">
           <ListaRachas
             datos={vivoDuelo} campo="racha_duelo_actual" icono={Swords} colorIcono="#B0533E"
-            user={user} vacioTexto="Sin racha activa."
+            user={user} vacioTexto="Sin racha activa." enVivo
           />
-        </div>
+        </ColumnaRanking>
       </div>
 
       <div style={{ marginTop: 30 }}>
         <SectionTitle title="Rachas históricas" />
         <div style={styles.rankingColumnas}>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <FieldLabel>Autoevaluaciones</FieldLabel>
+          <ColumnaRanking titulo="Autoevaluaciones" icono={Flame} color="#C89B3C">
             <ListaRachas
               datos={historicoQuiz} campo="racha_record" icono={Flame} colorIcono="#C89B3C"
               user={user} vacioTexto="Sin récords todavía."
             />
-          </div>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <FieldLabel>Duelo 1v1</FieldLabel>
+          </ColumnaRanking>
+          <ColumnaRanking titulo="Duelo 1v1" icono={Swords} color="#B0533E">
             <ListaRachas
               datos={historicoDuelo} campo="racha_duelos_record" icono={Swords} colorIcono="#B0533E"
               user={user} vacioTexto="Sin récords todavía."
             />
-          </div>
+          </ColumnaRanking>
         </div>
       </div>
     </div>
   );
 }
 
-function ListaRachas({ datos, campo, icono: Icono, colorIcono, user, vacioTexto }) {
+function ColumnaRanking({ titulo, icono: Icono, color, children }) {
+  return (
+    <div style={{ ...styles.columnaRanking, borderTop: `3px solid ${color}` }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
+        <Icono size={15} color={color} />
+        <span style={{ fontSize: 14, fontWeight: 600, color: "#14213D" }}>{titulo}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function ListaRachas({ datos, campo, icono: Icono, colorIcono, user, vacioTexto, enVivo }) {
   if (datos.length === 0) {
     return <p style={{ fontSize: 13, color: "#8A93A3", padding: "6px 0 4px" }}>{vacioTexto}</p>;
   }
   return (
     <>
-      {datos.map((r, i) => (
-        <div key={r.name} style={{ ...styles.rankRow, background: r.name === user.name ? "#EEF3F1" : "#fff" }}>
-          <span style={{ width: 22, fontSize: 13, color: i < 3 ? "#C89B3C" : "#8A93A3", fontFamily: "Georgia, serif" }}>{i + 1}</span>
-          <span style={{ flex: 1, fontSize: 14, color: "#14213D" }}>{r.name}</span>
-          <span style={{ fontSize: 14, color: colorIcono, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-            <Icono size={13} /> {r[campo]}
-          </span>
-        </div>
-      ))}
+      {datos.map((r, i) => {
+        const fila = (
+          <div style={{ ...styles.rankRow, position: "relative", border: enVivo ? "none" : styles.rankRow.border, marginBottom: enVivo ? 0 : styles.rankRow.marginBottom, background: r.name === user.name ? "#EEF3F1" : "#fff" }}>
+            <span style={{ width: 24, fontSize: 14, color: i < 3 ? "#C89B3C" : "#8A93A3", fontFamily: "Georgia, serif" }}>{i + 1}</span>
+            <span style={{ flex: 1, fontSize: 15, color: "#14213D" }}>{r.name}</span>
+            <span style={{ fontSize: 16, color: colorIcono, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+              <Icono size={14} /> {r[campo]}
+            </span>
+          </div>
+        );
+        if (!enVivo) return <div key={r.name}>{fila}</div>;
+        return (
+          <div key={r.name} style={styles.energiaWrap}>
+            <div style={{ ...styles.energiaAnillo, background: `conic-gradient(from 0deg, transparent 0%, transparent 62%, ${colorIcono}66 74%, ${colorIcono}ee 80%, ${colorIcono}66 86%, transparent 100%)` }} />
+            {fila}
+          </div>
+        );
+      })}
     </>
   );
 }
@@ -1301,7 +1321,10 @@ const styles = {
   navDot: { position: "absolute", top: 10, right: 6, width: 8, height: 8, borderRadius: "50%", background: "#B0533E", animation: "dueloPulso 1.2s ease-in-out infinite" },
   puntoVivo: { width: 8, height: 8, borderRadius: "50%", background: "#2E7D6B", animation: "dueloPulso 1.4s ease-in-out infinite" },
   h3Ranking: { fontFamily: "Georgia, serif", fontSize: 20, color: "#14213D", margin: 0 },
-  rankingColumnas: { display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 4 },
+  rankingColumnas: { display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 4, alignItems: "stretch" },
+  columnaRanking: { flex: 1, minWidth: 240, background: "#fff", border: "1px solid #E4E1D8", borderRadius: 12, padding: "14px 14px 16px" },
+  energiaWrap: { position: "relative", borderRadius: 9, padding: 1.5, marginBottom: 8, overflow: "hidden" },
+  energiaAnillo: { position: "absolute", inset: -20, animation: "energiaGiro 3.5s linear infinite" },
   dueloAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "12px 16px", borderRadius: 10, border: "none", background: "#B0533E", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", animation: "dueloPulso 1.6s ease-in-out infinite" },
   main: { padding: "24px 22px 50px", maxWidth: 820, margin: "0 auto" },
   card: { background: "#fff", border: "1px solid #E4E1D8", borderRadius: 10, padding: 26 },
