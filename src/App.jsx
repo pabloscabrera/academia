@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Compass, BookOpen, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
   Plus, Check, X, Loader2, User, LogOut, RotateCcw, Flag, Pencil, Trash2,
-  Zap, Heart, Swords
+   Zap, Heart, Swords, Flame
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
@@ -52,6 +52,7 @@ export default function AcademiaPIR() {
   const [section, setSection] = useState("simulacros");
   const [questions, setQuestions] = useState([]);
   const [ranking, setRanking] = useState([]);
+  const [rachas, setRachas] = useState([]);
 
   useEffect(() => {
     (async () => {
@@ -68,9 +69,11 @@ export default function AcademiaPIR() {
           .order("pct", { ascending: false })
           .limit(100);
         if (rErr) throw rErr;
+        const { data: rachasData } = await supabase.from("rachas").select("*");
         setUser(u);
         setQuestions(qData || []);
         setRanking(rData || []);
+        setRachas(rachasData || []);
         setReady(true);
       } catch (err) {
         setLoadError(err && err.message ? err.message : String(err));
@@ -138,6 +141,22 @@ export default function AcademiaPIR() {
     }
   };
 
+  const registrarAcierto = async (correcto) => {
+    try {
+      await supabase.rpc("incrementar_racha", { p_name: user.name, p_acierto: correcto });
+      const { data } = await supabase.from("rachas").select("*");
+      if (data) setRachas(data);
+    } catch {}
+  };
+
+  const registrarResultadoDuelo = async (gano) => {
+    try {
+      await supabase.rpc("incrementar_racha_duelo", { p_name: user.name, p_gano: gano });
+      const { data } = await supabase.from("rachas").select("*");
+      if (data) setRachas(data);
+    } catch {}
+  };
+
   if (!ready) {
     return <div style={{ ...styles.center, height: "100%", minHeight: 400 }}><Loader2 className="animate-spin" size={28} color="#2E7D6B" /></div>;
   }
@@ -160,7 +179,7 @@ export default function AcademiaPIR() {
       <Header user={user} onLogout={handleLogout} />
       <Nav section={section} setSection={setSection} />
       <main style={styles.main}>
-        {section === "simulacros" && <Simulacros questions={questions} user={user} onFinish={submitScore} />}
+        {section === "simulacros" && <Simulacros questions={questions} user={user} onFinish={submitScore} onStreakAnswer={registrarAcierto} />}
         {section === "banco" && (
           <BancoPreguntas
             questions={questions}
@@ -171,8 +190,8 @@ export default function AcademiaPIR() {
           />
         )}
         {section === "temario" && <Temario />}
-        {section === "duelo" && <Duelo user={user} questions={questions} />}
-        {section === "ranking" && <Ranking ranking={ranking} user={user} />}
+        {section === "duelo" && <Duelo user={user} questions={questions} onDueloEnd={registrarResultadoDuelo} />}
+        {section === "ranking" && <Ranking ranking={ranking} rachas={rachas} user={user} />}
       </main>
     </div>
   );
@@ -253,7 +272,7 @@ function Nav({ section, setSection }) {
   );
 }
 
-function Simulacros({ questions, user, onFinish }) {
+function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
   const cursos = useMemo(() => ["Todos", ...new Set(questions.map((q) => q.curso))], [questions]);
   const [curso, setCurso] = useState("Todos");
   const disponibles = useMemo(() => (curso === "Todos" ? questions.length : questions.filter((q) => q.curso === curso).length), [curso, questions]);
@@ -286,6 +305,10 @@ function Simulacros({ questions, user, onFinish }) {
     if (e && e.currentTarget) e.currentTarget.blur();
     setSelected(i);
     setRevealed(true);
+    if (modo === "normal") {
+      const q = pool[idx];
+      onStreakAnswer(i === q.correcta);
+    }
   };
 
   const next = async () => {
@@ -617,7 +640,7 @@ const DURACION_PREGUNTA = 60;
 const PAUSA_REVELACION = 5;
 const PREGUNTAS_POR_DUELO = 200;
 
-function Duelo({ user, questions }) {
+function Duelo({ user, questions, onDueloEnd }) {
   const [fase, setFase] = useState("lobby");
   const [duelo, setDuelo] = useState(null);
   const [preguntasDuelo, setPreguntasDuelo] = useState([]);
@@ -628,6 +651,7 @@ function Duelo({ user, questions }) {
   const [buscando, setBuscando] = useState(false);
   const duelRef = useRef(null);
   const avanzadoRef = useRef(null);
+  const streakRegistradaRef = useRef(null);
 
   useEffect(() => { duelRef.current = duelo; }, [duelo]);
 
@@ -852,6 +876,10 @@ function Duelo({ user, questions }) {
   if (fase === "terminado") {
     const gane = duelo.ganador === user.name;
     const empate = !duelo.ganador;
+    if (streakRegistradaRef.current !== duelo.id) {
+      streakRegistradaRef.current = duelo.id;
+      onDueloEnd(gane);
+    }
     return (
       <div>
         <SectionTitle title="Duelo terminado" />
@@ -977,8 +1005,13 @@ function CursoBlock({ curso }) {
   );
 }
 
-function Ranking({ ranking, user }) {
+function Ranking({ ranking, rachas, user }) {
   const sorted = [...ranking].sort((a, b) => b.pct - a.pct);
+  const rachaPorNombre = (name) => rachas.find((r) => r.name === name);
+  const duelosOrdenados = [...rachas]
+    .filter((r) => r.racha_duelos_record > 0)
+    .sort((a, b) => b.racha_duelos_record - a.racha_duelos_record);
+
   return (
     <div>
       <SectionTitle title="Ranking" subtitle="Mejores puntuaciones de la comunidad" />
@@ -987,14 +1020,39 @@ function Ranking({ ranking, user }) {
           Todavía no hay resultados. Haz un simulacro para aparecer aquí.
         </Card>
       )}
-      {sorted.map((r, i) => (
-        <div key={r.id || i} style={{ ...styles.rankRow, background: r.name === user.name ? "#EEF3F1" : "#fff" }}>
-          <span style={{ width: 26, fontSize: 13, color: i < 3 ? "#C89B3C" : "#8A93A3", fontFamily: "Georgia, serif" }}>{i + 1}</span>
-          <span style={{ flex: 1, fontSize: 14, color: "#14213D" }}>{r.name}</span>
-          <span style={{ fontSize: 13, color: "#5B6472" }}>{r.score}/{r.total}</span>
-          <span style={{ fontSize: 14, color: "#2E7D6B", fontWeight: 600, width: 44, textAlign: "right" }}>{r.pct}%</span>
+      {sorted.map((r, i) => {
+        const racha = rachaPorNombre(r.name);
+        return (
+          <div key={r.id || i} style={{ ...styles.rankRow, background: r.name === user.name ? "#EEF3F1" : "#fff" }}>
+            <span style={{ width: 26, fontSize: 13, color: i < 3 ? "#C89B3C" : "#8A93A3", fontFamily: "Georgia, serif" }}>{i + 1}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, color: "#14213D" }}>{r.name}</div>
+              {racha && racha.racha_record > 0 && (
+                <div style={{ fontSize: 11, color: "#C89B3C", display: "flex", alignItems: "center", gap: 3, marginTop: 2 }}>
+                  <Flame size={11} /> Récord: {racha.racha_record} seguidas
+                </div>
+              )}
+            </div>
+            <span style={{ fontSize: 13, color: "#5B6472" }}>{r.score}/{r.total}</span>
+            <span style={{ fontSize: 14, color: "#2E7D6B", fontWeight: 600, width: 44, textAlign: "right" }}>{r.pct}%</span>
+          </div>
+        );
+      })}
+
+      {duelosOrdenados.length > 0 && (
+        <div style={{ marginTop: 28 }}>
+          <SectionTitle title="Récord de duelos 1v1" subtitle="Más victorias seguidas" />
+          {duelosOrdenados.map((r, i) => (
+            <div key={r.name} style={{ ...styles.rankRow, background: r.name === user.name ? "#EEF3F1" : "#fff" }}>
+              <span style={{ width: 26, fontSize: 13, color: i < 3 ? "#C89B3C" : "#8A93A3", fontFamily: "Georgia, serif" }}>{i + 1}</span>
+              <span style={{ flex: 1, fontSize: 14, color: "#14213D" }}>{r.name}</span>
+              <span style={{ fontSize: 14, color: "#B0533E", fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                <Swords size={13} /> {r.racha_duelos_record}
+              </span>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }
