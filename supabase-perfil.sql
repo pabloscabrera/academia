@@ -17,7 +17,7 @@ alter table public.rachas
 -- 2) Historial de fallos: cuántas veces ha fallado cada persona cada pregunta.
 create table if not exists public.fallos (
   name text not null,
-  pregunta_id bigint not null references public.preguntas(id) on delete cascade,
+  pregunta_id uuid not null references public.preguntas(id) on delete cascade,
   veces integer not null default 1,
   updated_at timestamptz not null default now(),
   primary key (name, pregunta_id)
@@ -34,7 +34,7 @@ create policy "fallos_update" on public.fallos for update using (true) with chec
 -- 3) Favoritos: preguntas que cada persona ha marcado para guardarlas en su perfil.
 create table if not exists public.favoritos (
   name text not null,
-  pregunta_id bigint not null references public.preguntas(id) on delete cascade,
+  pregunta_id uuid not null references public.preguntas(id) on delete cascade,
   created_at timestamptz not null default now(),
   primary key (name, pregunta_id)
 );
