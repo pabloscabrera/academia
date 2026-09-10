@@ -138,10 +138,12 @@ export default function AcademiaPIR() {
       .from("preguntas")
       .insert([{
         curso: q.curso, tema: q.tema, pregunta: q.pregunta,
-        opciones: q.opciones, correcta: q.correcta, explicacion: q.explicacion
+        opciones: q.opciones, correcta: q.correcta, explicacion: q.explicacion,
+        inventada: !!q.inventada,
       }])
       .select();
     if (!error && data && data[0]) setQuestions((prev) => [...prev, data[0]]);
+    return !error;
   };
 
   const updateQuestion = async (id, q) => {
@@ -267,7 +269,6 @@ export default function AcademiaPIR() {
           />
         )}
         {section === "temario" && <Temario />}
-        {section === "ia" && <PreguntaIA />}
         {section === "duelo" && (
           <Duelo
             user={user}
@@ -334,7 +335,6 @@ function Nav({ section, setSection, alerta }) {
     { id: "simulacros", label: "Autoevaluaciones", icon: Clock },
     { id: "banco", label: "Banco de preguntas", icon: ListChecks },
     { id: "temario", label: "Temario", icon: BookOpen },
-    { id: "ia", label: "Pregunta IA", icon: Sparkles },
     { id: "duelo", label: "Duelo 1v1", icon: Zap },
     { id: "ranking", label: "Ranking", icon: Trophy },
   ];
@@ -363,9 +363,11 @@ function Nav({ section, setSection, alerta }) {
 }
 
 function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
-  const cursos = useMemo(() => ["Todos", ...new Set(questions.map((q) => q.curso))], [questions]);
+  const [incluirInventadas, setIncluirInventadas] = useState(false);
+  const base = useMemo(() => (incluirInventadas ? questions : questions.filter((q) => !q.inventada)), [questions, incluirInventadas]);
+  const cursos = useMemo(() => ["Todos", ...new Set(base.map((q) => q.curso))], [base]);
   const [curso, setCurso] = useState("Todos");
-  const disponibles = useMemo(() => (curso === "Todos" ? questions.length : questions.filter((q) => q.curso === curso).length), [curso, questions]);
+  const disponibles = useMemo(() => (curso === "Todos" ? base.length : base.filter((q) => q.curso === curso).length), [curso, base]);
   const [numPreguntas, setNumPreguntas] = useState(10);
   const [state, setState] = useState("config");
   const [pool, setPool] = useState([]);
@@ -388,7 +390,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
   }, [state]);
 
   const start = () => {
-    const filtered = curso === "Todos" ? questions : questions.filter((q) => q.curso === curso);
+    const filtered = curso === "Todos" ? base : base.filter((q) => q.curso === curso);
     const cantidad = Math.max(1, Math.min(numPreguntas || 1, filtered.length));
     const shuffled = [...filtered].sort(() => Math.random() - 0.5).slice(0, cantidad);
     setPool(shuffled); setPoolOriginal(shuffled);
@@ -434,10 +436,10 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
     }
 
     setSubmitting(true);
-    const base = primerIntento || { correctCount: nextAnswers.filter((a) => a.correct).length, total: nextAnswers.length };
-    const pct = Math.round((base.correctCount / base.total) * 100);
+    const resumenPrimerIntento = primerIntento || { correctCount: nextAnswers.filter((a) => a.correct).length, total: nextAnswers.length };
+    const pct = Math.round((resumenPrimerIntento.correctCount / resumenPrimerIntento.total) * 100);
     try {
-      await onFinish({ name: user.name, score: base.correctCount, total: base.total, pct, seconds, date: new Date().toISOString() });
+      await onFinish({ name: user.name, score: resumenPrimerIntento.correctCount, total: resumenPrimerIntento.total, pct, seconds, date: new Date().toISOString() });
     } catch {}
     setSubmitting(false);
     setState("done");
@@ -476,6 +478,10 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
             onBlur={() => setNumPreguntas((v) => Math.max(1, Math.min(v || 1, disponibles)))}
             style={styles.input}
           />
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16, fontSize: 13, color: "#5B6472", cursor: "pointer" }}>
+            <input type="checkbox" checked={incluirInventadas} onChange={(e) => setIncluirInventadas(e.target.checked)} />
+            Incluir preguntas inventadas por IA
+          </label>
           <button type="button" onClick={start} style={{ ...styles.btnPrimary, width: "100%", marginTop: 22 }}>Empezar autoevaluación</button>
         </Card>
       </div>
@@ -593,39 +599,182 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
 }
 
 function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete }) {
+  const [origen, setOrigen] = useState("reales");
   const [filtro, setFiltro] = useState("Todos");
   const [showForm, setShowForm] = useState(false);
-  const cursos = useMemo(() => ["Todos", ...new Set(questions.map((q) => q.curso))], [questions]);
-  const filtered = filtro === "Todos" ? questions : questions.filter((q) => q.curso === filtro);
+  const totalReales = useMemo(() => questions.filter((q) => !q.inventada).length, [questions]);
+  const totalInventadas = useMemo(() => questions.filter((q) => q.inventada).length, [questions]);
+  const porOrigen = useMemo(
+    () => questions.filter((q) => !!q.inventada === (origen === "inventadas")),
+    [questions, origen]
+  );
+  const cursos = useMemo(() => ["Todos", ...new Set(porOrigen.map((q) => q.curso))], [porOrigen]);
+  const filtered = filtro === "Todos" ? porOrigen : porOrigen.filter((q) => q.curso === filtro);
+
+  const cambiarOrigen = (o) => { setOrigen(o); setFiltro("Todos"); };
 
   return (
     <div>
       <SectionTitle
         title="Banco de preguntas"
         subtitle={`${questions.length} preguntas disponibles`}
-        action={
+        action={origen === "reales" && (
           <button type="button" onClick={() => setShowForm((s) => !s)} style={styles.btnSecondary}>
             <Plus size={14} style={{ marginRight: 4 }} /> Añadir
           </button>
-        }
+        )}
       />
-      {showForm && <NuevaPregunta onAdd={(q) => { onAdd(q); setShowForm(false); }} cursos={cursos.filter(c => c !== "Todos")} />}
-      <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "4px 0 14px" }}>
-        {cursos.map((c) => (
-          <button
-            type="button"
-            key={c}
-            onClick={() => setFiltro(c)}
-            style={{ ...styles.chip, whiteSpace: "nowrap", background: filtro === c ? "#14213D" : "transparent", color: filtro === c ? "#fff" : "#14213D", borderColor: "#14213D" }}
-          >
-            {c}
-          </button>
-        ))}
+
+      <div style={styles.tabsOrigen}>
+        <button
+          type="button"
+          onClick={() => cambiarOrigen("reales")}
+          style={{ ...styles.tabOrigenBtn, ...(origen === "reales" ? styles.tabOrigenActivo : {}) }}
+        >
+          Reales ({totalReales})
+        </button>
+        <button
+          type="button"
+          onClick={() => cambiarOrigen("inventadas")}
+          style={{ ...styles.tabOrigenBtn, ...(origen === "inventadas" ? styles.tabOrigenActivoIA : {}) }}
+        >
+          <Sparkles size={13} style={{ marginRight: 4, verticalAlign: "-2px" }} /> Inventadas por IA ({totalInventadas})
+        </button>
       </div>
+
+      {origen === "reales" && showForm && (
+        <NuevaPregunta onAdd={(q) => { onAdd(q); setShowForm(false); }} cursos={cursos.filter((c) => c !== "Todos")} />
+      )}
+
+      {origen === "inventadas" && user.isAdmin && (
+        <GenerarPreguntasIA onGuardar={onAdd} />
+      )}
+      {origen === "inventadas" && !user.isAdmin && porOrigen.length === 0 && (
+        <Card style={{ textAlign: "center", color: "#8A93A3", padding: "24px 16px" }}>
+          Todavía no hay preguntas inventadas por IA.
+        </Card>
+      )}
+
+      {porOrigen.length > 0 && (
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "14px 0 14px" }}>
+          {cursos.map((c) => (
+            <button
+              type="button"
+              key={c}
+              onClick={() => setFiltro(c)}
+              style={{ ...styles.chip, whiteSpace: "nowrap", background: filtro === c ? "#14213D" : "transparent", color: filtro === c ? "#fff" : "#14213D", borderColor: "#14213D" }}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
       {filtered.map((q) => (
         <PreguntaCard key={q.id} q={q} isAdmin={user.isAdmin} onUpdate={onUpdate} onDelete={onDelete} />
       ))}
     </div>
+  );
+}
+
+function GenerarPreguntasIA({ onGuardar }) {
+  const [instruccion, setInstruccion] = useState("");
+  const [cantidad, setCantidad] = useState(3);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState(null);
+  const [generadas, setGeneradas] = useState([]);
+  const [guardadas, setGuardadas] = useState({});
+
+  const generar = async () => {
+    const texto = instruccion.trim();
+    if (!texto || cargando) return;
+    setCargando(true);
+    setError(null);
+    setGeneradas([]);
+    setGuardadas({});
+    try {
+      const resp = await fetch("/api/generar-preguntas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instruccion: texto, cantidad }),
+      });
+      const datos = await resp.json();
+      if (!resp.ok) throw new Error(datos.error || "No se pudieron generar las preguntas.");
+      setGeneradas(datos.preguntas.map((p) => ({ ...p, inventada: true })));
+    } catch (err) {
+      setError(err.message || "No se pudieron generar las preguntas.");
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const guardar = async (i) => {
+    const ok = await onGuardar(generadas[i]);
+    if (ok) setGuardadas((prev) => ({ ...prev, [i]: true }));
+  };
+
+  const guardarTodas = async () => {
+    for (let i = 0; i < generadas.length; i++) {
+      if (!guardadas[i]) await guardar(i);
+    }
+  };
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 12 }}>
+        <Sparkles size={16} color="#8A5A9E" />
+        <span style={{ fontSize: 15, color: "#14213D", fontFamily: "Georgia, serif" }}>Generar preguntas con IA</span>
+      </div>
+      <FieldLabel>¿Sobre qué quieres las preguntas?</FieldLabel>
+      <textarea
+        value={instruccion}
+        onChange={(e) => setInstruccion(e.target.value)}
+        placeholder='Ej: "3 preguntas sobre autores de psicología clínica"'
+        style={{ ...styles.input, minHeight: 60 }}
+      />
+      <FieldLabel style={{ marginTop: 12 }}>Cuántas (máx. 10)</FieldLabel>
+      <input
+        type="number"
+        min={1}
+        max={10}
+        value={cantidad}
+        onChange={(e) => setCantidad(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
+        style={{ ...styles.input, maxWidth: 100 }}
+      />
+      <button type="button" onClick={generar} disabled={cargando} style={{ ...styles.btnPrimary, width: "100%", marginTop: 14, opacity: cargando ? 0.6 : 1 }}>
+        {cargando ? <Loader2 className="animate-spin" size={15} /> : "Generar"}
+      </button>
+      {error && <p style={{ color: "#B0533E", fontSize: 13, marginTop: 10 }}>{error}</p>}
+
+      {generadas.length > 0 && (
+        <div style={{ marginTop: 18 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <FieldLabel style={{ margin: 0 }}>Revisa y guarda las que quieras</FieldLabel>
+            <button type="button" onClick={guardarTodas} style={styles.btnSecondary}>Guardar todas</button>
+          </div>
+          {generadas.map((p, i) => (
+            <Card key={i} style={{ marginBottom: 10, borderLeft: "3px solid #8A5A9E" }}>
+              <div style={{ fontSize: 11, color: "#8A5A9E", marginBottom: 4 }}>{p.curso} · {p.tema}</div>
+              <div style={{ fontSize: 14, color: "#14213D", marginBottom: 8 }}>{p.pregunta}</div>
+              {p.opciones.map((op, oi) => (
+                <div key={oi} style={{ ...styles.opcion, cursor: "default", ...(oi === p.correcta ? styles.opcionCorrectaLegacy : {}) }}>
+                  {oi === p.correcta && <Check size={13} color="#2E7D6B" />}
+                  {op}
+                </div>
+              ))}
+              {p.explicacion && <p style={{ fontSize: 13, color: "#5B6472", marginTop: 8 }}>{p.explicacion}</p>}
+              <button
+                type="button"
+                onClick={() => guardar(i)}
+                disabled={!!guardadas[i]}
+                style={{ ...styles.btnSecondary, marginTop: 10, ...(guardadas[i] ? { opacity: 0.6 } : {}) }}
+              >
+                {guardadas[i] ? <><Check size={13} style={{ marginRight: 4 }} /> Guardada</> : "Guardar en el banco"}
+              </button>
+            </Card>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -648,10 +797,13 @@ function PreguntaCard({ q, isAdmin, onUpdate, onDelete }) {
   }
 
   return (
-    <Card style={{ marginBottom: 10 }}>
+    <Card style={{ marginBottom: 10, ...(q.inventada ? { borderLeft: "3px solid #8A5A9E" } : {}) }}>
       <button type="button" onClick={() => setOpen((o) => !o)} style={styles.expandBtn}>
         <div style={{ textAlign: "left", flex: 1 }}>
-          <div style={{ fontSize: 11, color: "#2E7D6B", marginBottom: 4 }}>{q.curso} · {q.tema}</div>
+          <div style={{ fontSize: 11, color: q.inventada ? "#8A5A9E" : "#2E7D6B", marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>
+            {q.inventada && <Sparkles size={11} />}
+            {q.curso} · {q.tema}
+          </div>
           <div style={{ fontSize: 14, color: "#14213D", lineHeight: 1.4 }}>{q.pregunta}</div>
         </div>
         {open ? <ChevronDown size={16} color="#8A93A3" /> : <ChevronRight size={16} color="#8A93A3" />}
@@ -771,6 +923,7 @@ const PREGUNTAS_POR_DUELO = 200;
 const DUELO_ESPERA_MAX_MS = 30 * 1000;
 
 function Duelo({ user, questions, onDueloEnd, autoUnirse, onAutoUnirseConsumido }) {
+  const questionsReales = useMemo(() => questions.filter((q) => !q.inventada), [questions]);
   const [fase, setFase] = useState("lobby");
   const [duelo, setDuelo] = useState(null);
   const [preguntasDuelo, setPreguntasDuelo] = useState([]);
@@ -916,8 +1069,8 @@ function Duelo({ user, questions, onDueloEnd, autoUnirse, onAutoUnirseConsumido 
         setFase("jugando");
       }
     } else {
-      const cantidad = Math.min(PREGUNTAS_POR_DUELO, questions.length);
-      const barajadas = [...questions].sort(() => Math.random() - 0.5).slice(0, cantidad);
+      const cantidad = Math.min(PREGUNTAS_POR_DUELO, questionsReales.length);
+      const barajadas = [...questionsReales].sort(() => Math.random() - 0.5).slice(0, cantidad);
       if (barajadas.length < 4) { setBuscando(false); return; }
       const ids = barajadas.map((q) => q.id);
       const { data: nuevo } = await supabase
@@ -998,7 +1151,7 @@ function Duelo({ user, questions, onDueloEnd, autoUnirse, onAutoUnirseConsumido 
   };
 
   if (fase === "lobby" || !duelo) {
-    if (questions.length < 4) {
+    if (questionsReales.length < 4) {
       return (
         <div>
           <SectionTitle title="Duelo 1v1" subtitle="Hace falta al menos 4 preguntas en el banco." />
@@ -1169,73 +1322,6 @@ function CursoBlock({ curso }) {
   );
 }
 
-function PreguntaIA() {
-  const [pregunta, setPregunta] = useState("");
-  const [historial, setHistorial] = useState([]);
-  const [cargando, setCargando] = useState(false);
-  const [error, setError] = useState(null);
-
-  const enviar = async () => {
-    const texto = pregunta.trim();
-    if (!texto || cargando) return;
-    setPregunta("");
-    setError(null);
-    setCargando(true);
-    setHistorial((prev) => [...prev, { rol: "usuario", texto }]);
-    try {
-      const resp = await fetch("/api/preguntar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pregunta: texto }),
-      });
-      const datos = await resp.json();
-      if (!resp.ok) throw new Error(datos.error || "No se pudo obtener respuesta.");
-      setHistorial((prev) => [...prev, { rol: "ia", texto: datos.respuesta }]);
-    } catch (err) {
-      setError(err.message || "No se pudo contactar con la IA.");
-    } finally {
-      setCargando(false);
-    }
-  };
-
-  return (
-    <div>
-      <SectionTitle title="Pregunta a la IA" subtitle="Responde solo con el temario incluido en la app." />
-      <Card>
-        {historial.length === 0 && (
-          <p style={{ color: "#8A93A3", fontSize: 14, margin: 0 }}>Escribe una duda sobre el temario y la IA te responderá.</p>
-        )}
-        {historial.map((m, i) => (
-          <div key={i} style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 12, color: m.rol === "usuario" ? "#14213D" : "#2E7D6B", fontWeight: 600, marginBottom: 4 }}>
-              {m.rol === "usuario" ? "Tú" : "IA"}
-            </div>
-            <p style={{ fontSize: 14, color: "#14213D", lineHeight: 1.5, whiteSpace: "pre-wrap", margin: 0 }}>{m.texto}</p>
-          </div>
-        ))}
-        {cargando && (
-          <p style={{ color: "#8A93A3", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
-            <Loader2 className="animate-spin" size={14} /> Pensando...
-          </p>
-        )}
-        {error && <p style={{ color: "#B0533E", fontSize: 13 }}>{error}</p>}
-        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-          <input
-            value={pregunta}
-            onChange={(e) => setPregunta(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && enviar()}
-            placeholder="Escribe tu pregunta..."
-            style={{ ...styles.input, flex: 1 }}
-          />
-          <button type="button" onClick={enviar} disabled={cargando} style={{ ...styles.btnPrimary, opacity: cargando ? 0.6 : 1 }}>
-            Preguntar
-          </button>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
 function Ranking({ rachas, user }) {
   const vivoQuiz = [...rachas]
     .filter((r) => (r.racha_actual || 0) > 0)
@@ -1365,6 +1451,10 @@ const styles = {
   nav: { display: "flex", gap: 6, padding: "0 18px", borderBottom: "1px solid #E4E1D8", overflowX: "auto" },
   navBtn: { display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: "16px 14px", fontSize: 16, cursor: "pointer", whiteSpace: "nowrap" },
   navDot: { position: "absolute", top: 10, right: 6, width: 8, height: 8, borderRadius: "50%", background: "#B0533E", animation: "dueloPulso 1.2s ease-in-out infinite" },
+  tabsOrigen: { display: "flex", gap: 8, marginBottom: 14 },
+  tabOrigenBtn: { flex: 1, padding: "11px 14px", borderRadius: 8, border: "1px solid #E4E1D8", background: "#fff", color: "#8A93A3", fontSize: 14, fontWeight: 600, cursor: "pointer" },
+  tabOrigenActivo: { background: "#14213D", borderColor: "#14213D", color: "#fff" },
+  tabOrigenActivoIA: { background: "#8A5A9E", borderColor: "#8A5A9E", color: "#fff" },
   puntoVivo: { width: 8, height: 8, borderRadius: "50%", background: "#2E7D6B", animation: "dueloPulso 1.4s ease-in-out infinite" },
   h3Ranking: { fontFamily: "Georgia, serif", fontSize: 20, color: "#14213D", margin: 0 },
   rankingColumnas: { display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 4, alignItems: "stretch" },
