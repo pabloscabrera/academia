@@ -1,3 +1,12 @@
+import { TEMARIO } from "../src/temario.js";
+
+function buscarTema(cursoBuscado, temaBuscado) {
+  if (!cursoBuscado || !temaBuscado) return null;
+  const curso = TEMARIO.find((c) => c.curso === cursoBuscado);
+  if (!curso) return null;
+  return curso.temas.find((t) => t.nombre === temaBuscado) || null;
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.status(405).json({ error: "Método no permitido." });
@@ -11,12 +20,17 @@ export default async function handler(req, res) {
   }
 
   const instruccion = req.body && typeof req.body.instruccion === "string" ? req.body.instruccion.trim() : "";
-  if (!instruccion) {
-    res.status(400).json({ error: "Falta describir qué preguntas quieres." });
-    return;
-  }
   if (instruccion.length > 500) {
     res.status(400).json({ error: "La instrucción es demasiado larga (máximo 500 caracteres)." });
+    return;
+  }
+
+  const cursoSel = req.body && typeof req.body.curso === "string" ? req.body.curso.trim() : "";
+  const temaSel = req.body && typeof req.body.tema === "string" ? req.body.tema.trim() : "";
+  const temaEncontrado = buscarTema(cursoSel, temaSel);
+
+  if (!instruccion && !temaEncontrado) {
+    res.status(400).json({ error: "Falta describir qué preguntas quieres, o elige un tema del temario." });
     return;
   }
 
@@ -25,7 +39,31 @@ export default async function handler(req, res) {
   cantidad = Math.max(1, Math.min(10, cantidad));
 
   const modelo = process.env.GEMINI_MODEL || "gemini-3.6-flash";
-  const prompt = `Eres un generador de preguntas tipo test para preparar un examen de psicología (PIR), estilo manual APIR. Genera exactamente ${cantidad} preguntas nuevas siguiendo esta instrucción del usuario: "${instruccion}"
+  const prompt = temaEncontrado
+    ? `Eres un generador de preguntas tipo test para preparar un examen de psicología (PIR), estilo manual APIR. Genera exactamente ${cantidad} preguntas nuevas sobre el tema "${temaSel}" (curso "${cursoSel}")${instruccion ? `, siguiendo también esta instrucción del usuario si aporta algo más específico: "${instruccion}"` : ""}.
+
+Básate ÚNICAMENTE en el siguiente contenido del temario para redactar las preguntas y sus respuestas correctas. No inventes datos, criterios ni cifras que no estén aquí:
+
+CONTENIDO DEL TEMA:
+${temaEncontrado.contenido}
+
+Cada pregunta debe tener 4 opciones de respuesta, con solo una correcta, y una breve explicación de por qué es correcta (basada en el contenido de arriba). No repitas la misma pregunta dos veces.
+
+Devuelve ÚNICAMENTE un JSON con este formato exacto, sin texto adicional:
+{
+  "preguntas": [
+    {
+      "curso": "${cursoSel}",
+      "tema": "${temaSel}",
+      "pregunta": "texto de la pregunta",
+      "opciones": ["opción A", "opción B", "opción C", "opción D"],
+      "correcta": 0,
+      "explicacion": "por qué es correcta la respuesta"
+    }
+  ]
+}
+"correcta" es el índice (0 a 3) de la opción correcta dentro de "opciones".`
+    : `Eres un generador de preguntas tipo test para preparar un examen de psicología (PIR), estilo manual APIR. Genera exactamente ${cantidad} preguntas nuevas siguiendo esta instrucción del usuario: "${instruccion}"
 
 Cada pregunta debe tener 4 opciones de respuesta, con solo una correcta, y una breve explicación de por qué es correcta. Sé preciso y riguroso con el contenido de psicología clínica. No repitas la misma pregunta dos veces.
 

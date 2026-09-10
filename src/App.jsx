@@ -677,6 +677,8 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete }) {
 }
 
 function GenerarPreguntasIA({ onGuardar }) {
+  const [curso, setCurso] = useState("");
+  const [tema, setTema] = useState("");
   const [instruccion, setInstruccion] = useState("");
   const [cantidad, setCantidad] = useState(3);
   const [cargando, setCargando] = useState(false);
@@ -684,9 +686,11 @@ function GenerarPreguntasIA({ onGuardar }) {
   const [generadas, setGeneradas] = useState([]);
   const [guardadas, setGuardadas] = useState({});
 
+  const temasDelCurso = TEMARIO.find((c) => c.curso === curso)?.temas || [];
+
   const generar = async () => {
     const texto = instruccion.trim();
-    if (!texto || cargando) return;
+    if ((!texto && !tema) || cargando) return;
     setCargando(true);
     setError(null);
     setGeneradas([]);
@@ -695,7 +699,7 @@ function GenerarPreguntasIA({ onGuardar }) {
       const resp = await fetch("/api/generar-preguntas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ instruccion: texto, cantidad }),
+        body: JSON.stringify({ instruccion: texto, cantidad, curso, tema }),
       });
       const datos = await resp.json();
       if (!resp.ok) throw new Error(datos.error || "No se pudieron generar las preguntas.");
@@ -724,11 +728,25 @@ function GenerarPreguntasIA({ onGuardar }) {
         <Sparkles size={16} color="#8A5A9E" />
         <span style={{ fontSize: 15, color: "#14213D", fontFamily: "Georgia, serif" }}>Generar preguntas con IA</span>
       </div>
-      <FieldLabel>¿Sobre qué quieres las preguntas?</FieldLabel>
+      <FieldLabel>Curso (opcional, para basarse en el temario real)</FieldLabel>
+      <select value={curso} onChange={(e) => { setCurso(e.target.value); setTema(""); }} style={styles.select}>
+        <option value="">Sin curso concreto</option>
+        {TEMARIO.map((c) => (<option key={c.curso} value={c.curso}>{c.curso}</option>))}
+      </select>
+      {curso && (
+        <>
+          <FieldLabel style={{ marginTop: 12 }}>Tema</FieldLabel>
+          <select value={tema} onChange={(e) => setTema(e.target.value)} style={styles.select}>
+            <option value="">Elige un tema</option>
+            {temasDelCurso.map((t) => (<option key={t.nombre} value={t.nombre}>{t.nombre}</option>))}
+          </select>
+        </>
+      )}
+      <FieldLabel style={{ marginTop: 12 }}>{tema ? "Algo más concreto (opcional)" : "¿Sobre qué quieres las preguntas?"}</FieldLabel>
       <textarea
         value={instruccion}
         onChange={(e) => setInstruccion(e.target.value)}
-        placeholder='Ej: "3 preguntas sobre autores de psicología clínica"'
+        placeholder={tema ? 'Ej: "céntrate en el diagnóstico diferencial"' : 'Ej: "3 preguntas sobre autores de psicología clínica"'}
         style={{ ...styles.input, minHeight: 60 }}
       />
       <FieldLabel style={{ marginTop: 12 }}>Cuántas (máx. 10)</FieldLabel>
