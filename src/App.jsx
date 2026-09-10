@@ -789,7 +789,7 @@ function EditarPregunta({ q, onSave, onCancel }) {
 const DURACION_PREGUNTA = 60;
 const PAUSA_REVELACION = 5;
 const PREGUNTAS_POR_DUELO = 200;
-const DUELO_ESPERA_MAX_MS = 3 * 60 * 1000;
+const DUELO_ESPERA_MAX_MS = 30 * 1000;
 
 function Duelo({ user, questions, onDueloEnd, autoUnirse, onAutoUnirseConsumido }) {
   const [fase, setFase] = useState("lobby");
@@ -864,7 +864,10 @@ function Duelo({ user, questions, onDueloEnd, autoUnirse, onAutoUnirseConsumido 
     if (fase !== "esperando" || !duelo) return;
     const intervalo = setInterval(async () => {
       const { data } = await supabase.from("duelos").select("*").eq("id", duelo.id).maybeSingle();
-      if (data && data.estado !== "esperando") setDuelo(data);
+      if (data && data.estado !== "esperando") { setDuelo(data); return; }
+      // "Late": mientras seguimos esperando, refrescamos created_at para que esta
+      // búsqueda no caduque mientras la pestaña siga realmente abierta y esperando.
+      await supabase.from("duelos").update({ created_at: new Date().toISOString() }).eq("id", duelo.id).eq("estado", "esperando");
     }, 2000);
     return () => clearInterval(intervalo);
   }, [fase, duelo && duelo.id]);
@@ -1203,41 +1206,53 @@ function Ranking({ rachas, user }) {
 
   return (
     <div>
-      <SectionTitle title="Ranking" subtitle="Rachas de la comunidad" />
+      <SectionTitle title="Ranking" />
 
       <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14 }}>
         <span style={styles.puntoVivo} />
-        <h3 style={styles.h3Ranking}>Rachas en vivo</h3>
+        <h2 style={styles.h3Ranking}>Rachas en vivo</h2>
       </div>
-      <FieldLabel>Autoevaluaciones</FieldLabel>
-      <ListaRachas
-        datos={vivoQuiz} campo="racha_actual" icono={Flame} colorIcono="#C89B3C" sufijo="seguidas"
-        user={user} vacioTexto="Nadie tiene una racha activa ahora mismo."
-      />
-      <FieldLabel style={{ marginTop: 18 }}>Duelo 1v1</FieldLabel>
-      <ListaRachas
-        datos={vivoDuelo} campo="racha_duelo_actual" icono={Swords} colorIcono="#B0533E" sufijo="victorias seguidas"
-        user={user} vacioTexto="Nadie tiene una racha de victorias activa ahora mismo."
-      />
+      <div style={styles.rankingColumnas}>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <FieldLabel>Autoevaluaciones</FieldLabel>
+          <ListaRachas
+            datos={vivoQuiz} campo="racha_actual" icono={Flame} colorIcono="#C89B3C"
+            user={user} vacioTexto="Sin racha activa."
+          />
+        </div>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <FieldLabel>Duelo 1v1</FieldLabel>
+          <ListaRachas
+            datos={vivoDuelo} campo="racha_duelo_actual" icono={Swords} colorIcono="#B0533E"
+            user={user} vacioTexto="Sin racha activa."
+          />
+        </div>
+      </div>
 
       <div style={{ marginTop: 30 }}>
-        <SectionTitle title="Rachas históricas" subtitle="Mejor racha conseguida por cada persona" />
-        <FieldLabel>Autoevaluaciones</FieldLabel>
-        <ListaRachas
-          datos={historicoQuiz} campo="racha_record" icono={Flame} colorIcono="#C89B3C" sufijo="seguidas"
-          user={user} vacioTexto="Todavía no hay récords. Responde preguntas en Autoevaluaciones para aparecer aquí."
-        />
-        <FieldLabel style={{ marginTop: 18 }}>Duelo 1v1</FieldLabel>
-        <ListaRachas
-          datos={historicoDuelo} campo="racha_duelos_record" icono={Swords} colorIcono="#B0533E" sufijo="victorias seguidas"
-          user={user} vacioTexto="Todavía no hay récords de duelos."
-        />
+        <SectionTitle title="Rachas históricas" />
+        <div style={styles.rankingColumnas}>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <FieldLabel>Autoevaluaciones</FieldLabel>
+            <ListaRachas
+              datos={historicoQuiz} campo="racha_record" icono={Flame} colorIcono="#C89B3C"
+              user={user} vacioTexto="Sin récords todavía."
+            />
+          </div>
+          <div style={{ flex: 1, minWidth: 220 }}>
+            <FieldLabel>Duelo 1v1</FieldLabel>
+            <ListaRachas
+              datos={historicoDuelo} campo="racha_duelos_record" icono={Swords} colorIcono="#B0533E"
+              user={user} vacioTexto="Sin récords todavía."
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function ListaRachas({ datos, campo, icono: Icono, colorIcono, sufijo, user, vacioTexto }) {
+function ListaRachas({ datos, campo, icono: Icono, colorIcono, user, vacioTexto }) {
   if (datos.length === 0) {
     return <p style={{ fontSize: 13, color: "#8A93A3", padding: "6px 0 4px" }}>{vacioTexto}</p>;
   }
@@ -1245,10 +1260,10 @@ function ListaRachas({ datos, campo, icono: Icono, colorIcono, sufijo, user, vac
     <>
       {datos.map((r, i) => (
         <div key={r.name} style={{ ...styles.rankRow, background: r.name === user.name ? "#EEF3F1" : "#fff" }}>
-          <span style={{ width: 26, fontSize: 13, color: i < 3 ? "#C89B3C" : "#8A93A3", fontFamily: "Georgia, serif" }}>{i + 1}</span>
+          <span style={{ width: 22, fontSize: 13, color: i < 3 ? "#C89B3C" : "#8A93A3", fontFamily: "Georgia, serif" }}>{i + 1}</span>
           <span style={{ flex: 1, fontSize: 14, color: "#14213D" }}>{r.name}</span>
           <span style={{ fontSize: 14, color: colorIcono, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-            <Icono size={13} /> {r[campo]} {sufijo}
+            <Icono size={13} /> {r[campo]}
           </span>
         </div>
       ))}
@@ -1285,7 +1300,8 @@ const styles = {
   navBtn: { display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: "16px 14px", fontSize: 16, cursor: "pointer", whiteSpace: "nowrap" },
   navDot: { position: "absolute", top: 10, right: 6, width: 8, height: 8, borderRadius: "50%", background: "#B0533E", animation: "dueloPulso 1.2s ease-in-out infinite" },
   puntoVivo: { width: 8, height: 8, borderRadius: "50%", background: "#2E7D6B", animation: "dueloPulso 1.4s ease-in-out infinite" },
-  h3Ranking: { fontFamily: "Georgia, serif", fontSize: 15, color: "#14213D", margin: 0 },
+  h3Ranking: { fontFamily: "Georgia, serif", fontSize: 20, color: "#14213D", margin: 0 },
+  rankingColumnas: { display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 4 },
   dueloAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "12px 16px", borderRadius: 10, border: "none", background: "#B0533E", color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", animation: "dueloPulso 1.6s ease-in-out infinite" },
   main: { padding: "24px 22px 50px", maxWidth: 820, margin: "0 auto" },
   card: { background: "#fff", border: "1px solid #E4E1D8", borderRadius: 10, padding: 26 },
