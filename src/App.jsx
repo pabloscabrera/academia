@@ -503,12 +503,13 @@ function AuthScreen({ onLogin, onSignup }) {
   };
 
   return (
-    <div style={{ ...styles.center, minHeight: "100vh" }}>
-      <div style={{ maxWidth: 340, width: "100%", padding: "0 24px", textAlign: "center" }}>
+    <div style={{ ...styles.center, minHeight: "100vh", position: "relative", overflow: "hidden" }}>
+      <FondoPortada />
+      <div style={{ maxWidth: 340, width: "100%", padding: "0 24px", textAlign: "center", position: "relative", zIndex: 1 }}>
         <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
           <Compass size={34} color="#2E7D6B" strokeWidth={1.6} />
         </div>
-        <h1 style={styles.h1}>Ruta PIR</h1>
+        <h1 style={styles.h1}>AUTOPIR</h1>
         <p style={{ color: "#5B6472", fontSize: 15, lineHeight: 1.5, marginBottom: 24 }}>
           Autoevaluaciones, banco de preguntas, duelos 1v1 y ranking en un mismo sitio.
         </p>
@@ -526,7 +527,7 @@ function AuthScreen({ onLogin, onSignup }) {
             </button>
           </Card>
         ) : (
-          <>
+          <Card style={{ textAlign: "left" }}>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -555,13 +556,45 @@ function AuthScreen({ onLogin, onSignup }) {
                 style={styles.input}
               />
             )}
-            {error && <p style={{ color: "#B0533E", fontSize: 13, marginTop: 10, textAlign: "left" }}>{error}</p>}
-            <button type="button" onClick={submit} disabled={cargando} style={{ ...styles.btnPrimary, width: "100%", marginTop: 14, opacity: cargando ? 0.6 : 1 }}>
+            {error && <p style={{ color: "#B0533E", fontSize: 13, marginTop: 10 }}>{error}</p>}
+            <button type="button" onClick={submit} disabled={cargando} style={{ ...styles.btnPrimary, width: "100%", marginTop: 14, opacity: cargando ? 0.6 : 1, justifyContent: "center" }}>
               {cargando ? <Loader2 className="animate-spin" size={16} /> : modo === "login" ? "Entrar" : "Crear cuenta"}
             </button>
-          </>
+          </Card>
         )}
       </div>
+    </div>
+  );
+}
+
+function FondoPortada() {
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 0,
+        background: `
+          radial-gradient(circle at 15% 20%, rgba(46,125,107,0.14), transparent 40%),
+          radial-gradient(circle at 85% 15%, rgba(200,155,60,0.12), transparent 38%),
+          radial-gradient(circle at 75% 85%, rgba(138,90,158,0.12), transparent 42%),
+          radial-gradient(circle at 20% 90%, rgba(46,125,107,0.10), transparent 40%)
+        `,
+      }}
+    >
+      <svg width="100%" height="100%" style={{ position: "absolute", inset: 0, opacity: 0.35 }}>
+        <defs>
+          <pattern id="autopir-nodos" width="72" height="72" patternUnits="userSpaceOnUse">
+            <circle cx="8" cy="8" r="1.4" fill="#2E7D6B" fillOpacity="0.35" />
+            <line x1="8" y1="8" x2="44" y2="30" stroke="#2E7D6B" strokeOpacity="0.12" strokeWidth="1" />
+            <circle cx="44" cy="30" r="1.4" fill="#C89B3C" fillOpacity="0.3" />
+            <line x1="44" y1="30" x2="20" y2="60" stroke="#8A5A9E" strokeOpacity="0.12" strokeWidth="1" />
+            <circle cx="20" cy="60" r="1.4" fill="#8A5A9E" fillOpacity="0.3" />
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#autopir-nodos)" />
+      </svg>
     </div>
   );
 }
@@ -614,13 +647,23 @@ function AjustesPanel({ ajustes, setAjustes, onClose }) {
 
 function Header({ user, onLogout, miRacha, onAjustes }) {
   const rachaDias = (miRacha && miRacha.racha_dias_actual) || 0;
+  const totalCorrectas = (miRacha && miRacha.total_correctas) || 0;
+  const insignia = insigniaActual(totalCorrectas);
+  const IconoInsignia = insignia ? insignia.icon : Medal;
   return (
     <header style={styles.header}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <Compass size={20} color="#2E7D6B" strokeWidth={1.8} />
-        <span style={{ fontFamily: "Georgia, serif", fontSize: 18, color: "#14213D" }}>Ruta PIR</span>
+        <span style={{ fontFamily: "Georgia, serif", fontSize: 18, color: "#14213D", letterSpacing: 0.3 }}>AUTOPIR</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span
+          title={insignia ? `${insignia.titulo} · ${totalCorrectas} acertadas` : `${totalCorrectas} acertadas`}
+          style={{ ...styles.rachaDiasChip, color: insignia ? insignia.color : "#B7BEC8" }}
+        >
+          <IconoInsignia size={14} color={insignia ? insignia.color : "#B7BEC8"} />
+          {totalCorrectas}
+        </span>
         <span
           title={rachaDias > 0 ? `${rachaDias} día${rachaDias === 1 ? "" : "s"} seguidos entrando y acertando ${META_DIARIA_RACHA}+ preguntas` : `Acierta ${META_DIARIA_RACHA} preguntas hoy para empezar tu racha`}
           style={{ ...styles.rachaDiasChip, ...(rachaDias > 0 ? styles.rachaDiasChipActiva : {}) }}
@@ -1686,17 +1729,26 @@ function BarraNivel({ actual, siguiente, totalCorrectas }) {
   const rango = Math.max(1, hasta - desde);
   const puntosEnNivel = Math.min(rango, Math.max(0, totalCorrectas - desde));
   const pct = siguiente ? Math.round((puntosEnNivel / rango) * 100) : 100;
-  const Icono = actual ? actual.icon : Medal;
   return (
     <Card style={{ padding: "18px 20px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <Icono size={26} color={actual ? actual.color : "#C7C2B4"} strokeWidth={1.6} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: "#14213D" }}>{actual ? actual.titulo : "Todavía sin insignia"}</div>
-          <div style={{ fontSize: 12, color: "#8A93A3" }}>
-            {totalCorrectas} acertadas{siguiente ? ` · ${siguiente.umbral - totalCorrectas} para ${siguiente.nombre}` : " · nivel máximo"}
-          </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14, flexWrap: "wrap", gap: 6 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: "#14213D" }}>{actual ? actual.titulo : "Todavía sin insignia"}</div>
+        <div style={{ fontSize: 12, color: "#8A93A3" }}>
+          {totalCorrectas} acertadas{siguiente ? ` · ${siguiente.umbral - totalCorrectas} para ${siguiente.nombre}` : " · nivel máximo"}
         </div>
+      </div>
+      <div style={styles.insigniasGrid}>
+        {INSIGNIAS.map((ins) => {
+          const desbloqueada = totalCorrectas >= ins.umbral;
+          const Icono = ins.icon;
+          return (
+            <div key={ins.id} style={{ ...styles.insigniaCard, borderColor: desbloqueada ? ins.color : "#E4E1D8" }}>
+              <Icono size={22} color={desbloqueada ? ins.color : "#C7C2B4"} strokeWidth={1.6} />
+              <div style={{ fontSize: 11.5, fontWeight: 600, color: desbloqueada ? "#14213D" : "#B7BEC8", marginTop: 6 }}>{ins.nombre}</div>
+              <div style={{ fontSize: 10, color: "#B7BEC8", marginTop: 1 }}>{ins.umbral}</div>
+            </div>
+          );
+        })}
       </div>
       <div style={{ ...styles.progressTrack, marginTop: 14 }}>
         <div style={{ ...styles.progressFill, width: `${pct}%`, background: "#2E7D6B" }} />
@@ -1754,12 +1806,14 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
       <Card style={{ marginTop: 14, padding: "16px 0", display: "flex" }}>
         <EstadisticaItem
           icono={Flame}
+          color="#B0533E"
           valor={rachaDias}
           etiqueta={`días de racha${rachaDiasRecord > 0 ? ` (récord ${rachaDiasRecord})` : ""}`}
           detalle={`${correctasHoy}/${META_DIARIA_RACHA} aciertos hoy`}
         />
         <EstadisticaItem
           icono={Target}
+          color="#2E7D6B"
           valor={`${pctAcierto}%`}
           etiqueta="de acierto"
           detalle={`${totalRespondidas} respondidas`}
@@ -1767,6 +1821,7 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
         />
         <EstadisticaItem
           icono={Zap}
+          color="#C89B3C"
           valor={rachaPreguntas}
           etiqueta="aciertos seguidos"
           detalle={rachaPreguntasRecord > 0 ? `récord ${rachaPreguntasRecord}` : null}
@@ -1774,23 +1829,25 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
         />
       </Card>
 
-      <PreguntasPlegables
-        titulo="Historial de fallos"
-        subtitulo={fallosConPregunta.length === 0 ? "Todavía no has fallado ninguna pregunta." : "Las que más se te atascan, primero."}
-        items={fallosVisibles}
-        etiquetaItem={(f) => `fallada ${f.veces} ${f.veces === 1 ? "vez" : "veces"}`}
-        abiertaId={abiertaId}
-        setAbiertaId={setAbiertaId}
-        favoritos={favoritos}
-        onToggleFavorito={onToggleFavorito}
-      />
-      {fallosConPregunta.length > 5 && (
-        <button type="button" onClick={() => setVerTodosFallos((v) => !v)} style={styles.linkBtn}>
-          {verTodosFallos ? "Ver menos" : `Ver las ${fallosConPregunta.length} preguntas falladas`}
-        </button>
-      )}
+      <div style={{ marginTop: 36 }}>
+        <PreguntasPlegables
+          titulo="Historial de fallos"
+          subtitulo={fallosConPregunta.length === 0 ? "Todavía no has fallado ninguna pregunta." : "Las que más se te atascan, primero."}
+          items={fallosVisibles}
+          etiquetaItem={(f) => `fallada ${f.veces} ${f.veces === 1 ? "vez" : "veces"}`}
+          abiertaId={abiertaId}
+          setAbiertaId={setAbiertaId}
+          favoritos={favoritos}
+          onToggleFavorito={onToggleFavorito}
+        />
+        {fallosConPregunta.length > 5 && (
+          <button type="button" onClick={() => setVerTodosFallos((v) => !v)} style={styles.linkBtn}>
+            {verTodosFallos ? "Ver menos" : `Ver las ${fallosConPregunta.length} preguntas falladas`}
+          </button>
+        )}
+      </div>
 
-      <div style={{ marginTop: 28 }}>
+      <div style={{ marginTop: 32 }}>
         <PreguntasPlegables
           titulo="Favoritas"
           subtitulo={favoritasConPregunta.length === 0 ? "Toca la estrella en cualquier pregunta para guardarla aquí." : null}
@@ -1805,10 +1862,10 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
   );
 }
 
-function EstadisticaItem({ icono: Icono, valor, etiqueta, detalle, borde }) {
+function EstadisticaItem({ icono: Icono, color, valor, etiqueta, detalle, borde }) {
   return (
     <div style={{ flex: 1, textAlign: "center", padding: "0 10px", borderLeft: borde ? "1px solid #E4E1D8" : "none" }}>
-      <Icono size={18} color="#2E7D6B" strokeWidth={1.7} style={{ marginBottom: 6 }} />
+      <Icono size={18} color={color} strokeWidth={1.7} style={{ marginBottom: 6 }} />
       <div style={styles.perfilStatNum}>{valor}</div>
       <div style={styles.perfilStatLabel}>{etiqueta}</div>
       {detalle && <div style={{ fontSize: 10.5, color: "#B7BEC8", marginTop: 3 }}>{detalle}</div>}
@@ -1820,37 +1877,33 @@ function PreguntasPlegables({ titulo, subtitulo, items, etiquetaItem, abiertaId,
   return (
     <div>
       <SectionTitle title={titulo} subtitle={subtitulo} />
-      {items.length > 0 && (
-        <Card style={{ padding: 0 }}>
-          {items.map((f, i) => (
-            <div key={f.pregunta_id} style={{ borderTop: i === 0 ? "none" : "1px solid #EFECE3", padding: "14px 18px" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                <button type="button" onClick={() => setAbiertaId(abiertaId === f.pregunta_id ? null : f.pregunta_id)} style={{ ...styles.expandBtn, flex: 1 }}>
-                  <div style={{ textAlign: "left", flex: 1 }}>
-                    <div style={{ fontSize: 11, color: "#8A93A3", marginBottom: 4 }}>
-                      {f.pregunta.curso} · {f.pregunta.tema}{etiquetaItem ? ` · ${etiquetaItem(f)}` : ""}
-                    </div>
-                    <div style={{ fontSize: 14, color: "#14213D", lineHeight: 1.4 }}>{f.pregunta.pregunta}</div>
-                  </div>
-                  {abiertaId === f.pregunta_id ? <ChevronDown size={16} color="#8A93A3" /> : <ChevronRight size={16} color="#8A93A3" />}
-                </button>
-                <FavoritoBtn pregunta={f.pregunta} favoritos={favoritos} onToggle={onToggleFavorito} />
-              </div>
-              {abiertaId === f.pregunta_id && (
-                <div style={{ marginTop: 12 }}>
-                  {f.pregunta.opciones.map((op, oi) => (
-                    <div key={oi} style={{ ...styles.opcion, cursor: "default", ...(oi === f.pregunta.correcta ? styles.opcionCorrectaLegacy : {}) }}>
-                      {oi === f.pregunta.correcta && <Check size={13} color="#2E7D6B" />}
-                      {op}
-                    </div>
-                  ))}
-                  {f.pregunta.explicacion && <p style={{ fontSize: 13, color: "#5B6472", marginTop: 10, lineHeight: 1.5 }}>{f.pregunta.explicacion}</p>}
+      {items.map((f) => (
+        <Card key={f.pregunta_id} style={{ marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+            <button type="button" onClick={() => setAbiertaId(abiertaId === f.pregunta_id ? null : f.pregunta_id)} style={{ ...styles.expandBtn, flex: 1 }}>
+              <div style={{ textAlign: "left", flex: 1 }}>
+                <div style={{ fontSize: 11, color: "#8A93A3", marginBottom: 4 }}>
+                  {f.pregunta.curso} · {f.pregunta.tema}{etiquetaItem ? ` · ${etiquetaItem(f)}` : ""}
                 </div>
-              )}
+                <div style={{ fontSize: 14, color: "#14213D", lineHeight: 1.4 }}>{f.pregunta.pregunta}</div>
+              </div>
+              {abiertaId === f.pregunta_id ? <ChevronDown size={16} color="#8A93A3" /> : <ChevronRight size={16} color="#8A93A3" />}
+            </button>
+            <FavoritoBtn pregunta={f.pregunta} favoritos={favoritos} onToggle={onToggleFavorito} />
+          </div>
+          {abiertaId === f.pregunta_id && (
+            <div style={{ marginTop: 12 }}>
+              {f.pregunta.opciones.map((op, oi) => (
+                <div key={oi} style={{ ...styles.opcion, cursor: "default", ...(oi === f.pregunta.correcta ? styles.opcionCorrectaLegacy : {}) }}>
+                  {oi === f.pregunta.correcta && <Check size={13} color="#2E7D6B" />}
+                  {op}
+                </div>
+              ))}
+              {f.pregunta.explicacion && <p style={{ fontSize: 13, color: "#5B6472", marginTop: 10, lineHeight: 1.5 }}>{f.pregunta.explicacion}</p>}
             </div>
-          ))}
+          )}
         </Card>
-      )}
+      ))}
     </div>
   );
 }
@@ -1998,6 +2051,8 @@ const styles = {
   perfilStatNum: { fontSize: 22, fontFamily: "Georgia, serif", color: "#14213D" },
   perfilStatLabel: { fontSize: 11.5, color: "#8A93A3", marginTop: 2, lineHeight: 1.4 },
   linkBtn: { background: "none", border: "none", color: "#2E7D6B", fontSize: 13, cursor: "pointer", padding: "10px 0", fontWeight: 600 },
+  insigniasGrid: { display: "flex", gap: 8, flexWrap: "wrap" },
+  insigniaCard: { flex: "1 1 84px", minWidth: 78, textAlign: "center", background: "#fff", border: "1.5px solid", borderRadius: 10, padding: "12px 6px" },
   puntoVivo: { width: 8, height: 8, borderRadius: "50%", background: "#2E7D6B", animation: "dueloPulso 1.4s ease-in-out infinite" },
   h3Ranking: { fontFamily: "Georgia, serif", fontSize: 20, color: "#14213D", margin: 0 },
   rankingColumnas: { display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 4, alignItems: "stretch" },

@@ -12,7 +12,7 @@ There is no lint or test setup in this repo (no test framework, no ESLint config
 
 ## Architecture
 
-This is a small single-page React app ("Ruta PIR" / academia-pir), built with Vite, backed by Supabase.
+This is a small single-page React app ("AUTOPIR", formerly "Ruta PIR"; repo/package name academia-pir), built with Vite, backed by Supabase.
 
 - Entry chain: `index.html` → `src/main.jsx` → `src/App.jsx`. `src/App.jsx` is the entire application (~2000 lines): all components, view logic, and Supabase calls live in this one file, organized as several feature components rendered by a top-level `AcademiaPIR` component based on a `section` state variable (tab navigation).
 - Sections/tabs (`section` state, set via the nav in `AcademiaPIR`): `perfil` (stats, level/badges bar, fail history, favorites), `simulacros` (self-test quizzes), `banco` (question bank — "Reales" curated + "Inventadas por IA" AI-generated, open to all users with a daily quota, save-to-bank admin-only), `duelo` (1v1 duel/battle mode), `ranking` (leaderboard + streaks). There is no `temario` tab anymore — `TEMARIO` (static data in `src/temario.js`) is still imported and used internally to ground AI question generation (`GenerarPreguntasIA`), just not shown as a readable tab.
