@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Compass, BookOpen, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
-  Plus, Check, X, Loader2, User, LogOut, RotateCcw, Flag, Pencil, Trash2,
+  Plus, Check, X, Loader2, User, LogOut, Flag, Pencil, Trash2,
    Zap, Heart, Swords, Flame
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
@@ -55,6 +55,8 @@ export default function AcademiaPIR() {
   const [rachas, setRachas] = useState([]);
   const [dueloEsperando, setDueloEsperando] = useState(null);
   const [autoUnirseDuelo, setAutoUnirseDuelo] = useState(false);
+  const rachaActualRef = useRef(0);
+  const rachaDueloRef = useRef(0);
 
   useEffect(() => {
     (async () => {
@@ -186,19 +188,41 @@ export default function AcademiaPIR() {
   };
 
   const registrarAcierto = async (correcto) => {
+    rachaActualRef.current = correcto ? rachaActualRef.current + 1 : 0;
+    if (!correcto) return;
+    const actual = rachas.find((r) => r.name === user.name);
+    if (actual && rachaActualRef.current <= (actual.racha_record || 0)) return;
     try {
-      await supabase.rpc("incrementar_racha", { p_name: user.name, p_acierto: correcto });
-      const { data } = await supabase.from("rachas").select("*");
-      if (data) setRachas(data);
-    } catch {}
+      const { data, error } = await supabase
+        .from("rachas")
+        .upsert({ name: user.name, racha_record: rachaActualRef.current }, { onConflict: "name" })
+        .select();
+      if (error) { console.error("No se pudo guardar la racha:", error.message); return; }
+      if (data && data[0]) {
+        setRachas((prev) => [...prev.filter((r) => r.name !== user.name), data[0]]);
+      }
+    } catch (err) {
+      console.error("No se pudo guardar la racha:", err);
+    }
   };
 
   const registrarResultadoDuelo = async (gano) => {
+    rachaDueloRef.current = gano ? rachaDueloRef.current + 1 : 0;
+    if (!gano) return;
+    const actual = rachas.find((r) => r.name === user.name);
+    if (actual && rachaDueloRef.current <= (actual.racha_duelos_record || 0)) return;
     try {
-      await supabase.rpc("incrementar_racha_duelo", { p_name: user.name, p_gano: gano });
-      const { data } = await supabase.from("rachas").select("*");
-      if (data) setRachas(data);
-    } catch {}
+      const { data, error } = await supabase
+        .from("rachas")
+        .upsert({ name: user.name, racha_duelos_record: rachaDueloRef.current }, { onConflict: "name" })
+        .select();
+      if (error) { console.error("No se pudo guardar la racha de duelos:", error.message); return; }
+      if (data && data[0]) {
+        setRachas((prev) => [...prev.filter((r) => r.name !== user.name), data[0]]);
+      }
+    } catch (err) {
+      console.error("No se pudo guardar la racha de duelos:", err);
+    }
   };
 
   if (!ready) {
@@ -350,13 +374,17 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
   const [numPreguntas, setNumPreguntas] = useState(10);
   const [state, setState] = useState("config");
   const [pool, setPool] = useState([]);
+  const [poolOriginal, setPoolOriginal] = useState([]);
   const [idx, setIdx] = useState(0);
   const [answers, setAnswers] = useState([]);
+  const [resultados, setResultados] = useState({});
+  const [primerIntento, setPrimerIntento] = useState(null);
+  const [preguntaAbierta, setPreguntaAbierta] = useState(null);
+  const [ronda, setRonda] = useState(1);
   const [selected, setSelected] = useState(null);
   const [revealed, setRevealed] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const [modo, setModo] = useState("normal");
 
   useEffect(() => {
     let timer;
@@ -368,7 +396,10 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
     const filtered = curso === "Todos" ? questions : questions.filter((q) => q.curso === curso);
     const cantidad = Math.max(1, Math.min(numPreguntas || 1, filtered.length));
     const shuffled = [...filtered].sort(() => Math.random() - 0.5).slice(0, cantidad);
-    setPool(shuffled); setIdx(0); setAnswers([]); setSelected(null); setRevealed(false); setSeconds(0); setModo("normal"); setState("running");
+    setPool(shuffled); setPoolOriginal(shuffled);
+    setIdx(0); setAnswers([]); setSelected(null); setRevealed(false); setSeconds(0);
+    setRonda(1); setResultados({}); setPrimerIntento(null); setPreguntaAbierta(null);
+    setState("running");
   };
 
   const elegir = (i, e) => {
@@ -376,7 +407,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
     if (e && e.currentTarget) e.currentTarget.blur();
     setSelected(i);
     setRevealed(true);
-    if (modo === "normal") {
+    if (ronda === 1) {
       const q = pool[idx];
       onStreakAnswer(i === q.correcta);
     }
@@ -387,24 +418,36 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
     const current = pool[idx];
     const nextAnswers = [...answers, { qId: current.id, pregunta: current, selected, correct: selected === current.correcta }];
     setAnswers(nextAnswers); setSelected(null); setRevealed(false);
-    if (idx + 1 < pool.length) { setIdx(idx + 1); }
-    else {
-      if (modo === "normal") {
-        setSubmitting(true);
-        const correctCount = nextAnswers.filter((a) => a.correct).length;
-        const pct = Math.round((correctCount / pool.length) * 100);
-        try {
-          await onFinish({ name: user.name, score: correctCount, total: pool.length, pct, seconds, date: new Date().toISOString() });
-        } catch {}
-        setSubmitting(false);
-      }
-      setState("done");
+    if (idx + 1 < pool.length) {
+      setIdx(idx + 1);
+      return;
     }
-  };
 
-  const repasarFalladas = () => {
-    const falladas = answers.filter((a) => !a.correct).map((a) => a.pregunta);
-    setPool(falladas); setIdx(0); setAnswers([]); setSelected(null); setRevealed(false); setSeconds(0); setModo("repaso"); setState("running");
+    const nuevosResultados = { ...resultados };
+    nextAnswers.forEach((a) => { nuevosResultados[a.qId] = a; });
+    setResultados(nuevosResultados);
+
+    if (ronda === 1) {
+      setPrimerIntento({ correctCount: nextAnswers.filter((a) => a.correct).length, total: nextAnswers.length });
+    }
+
+    const falladas = nextAnswers.filter((a) => !a.correct).map((a) => a.pregunta);
+    if (falladas.length > 0) {
+      setPool(falladas);
+      setIdx(0);
+      setAnswers([]);
+      setRonda((r) => r + 1);
+      return;
+    }
+
+    setSubmitting(true);
+    const base = primerIntento || { correctCount: nextAnswers.filter((a) => a.correct).length, total: nextAnswers.length };
+    const pct = Math.round((base.correctCount / base.total) * 100);
+    try {
+      await onFinish({ name: user.name, score: base.correctCount, total: base.total, pct, seconds, date: new Date().toISOString() });
+    } catch {}
+    setSubmitting(false);
+    setState("done");
   };
 
   if (questions.length === 0) {
@@ -463,7 +506,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
         `}</style>
         <div style={styles.runHeader}>
           <span style={{ fontSize: 13, color: "#5B6472" }}>
-            {modo === "repaso" ? "Repaso de falladas · " : ""}Pregunta {idx + 1} de {pool.length}
+            {ronda > 1 ? `Repaso de falladas (ronda ${ronda}) · ` : ""}Pregunta {idx + 1} de {pool.length}
           </span>
           <span style={{ fontSize: 13, color: "#5B6472", display: "flex", alignItems: "center", gap: 4 }}><Clock size={13} /> {mm}:{ss}</span>
         </div>
@@ -502,34 +545,56 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer }) {
     );
   }
 
-  const correctCount = answers.filter((a) => a.correct).length;
-  const pct = Math.round((correctCount / pool.length) * 100);
-  const falladas = answers.filter((a) => !a.correct);
+  const total = poolOriginal.length;
+  const aciertosPrimeraVuelta = primerIntento ? primerIntento.correctCount : total;
+  const pctPrimeraVuelta = total > 0 ? Math.round((aciertosPrimeraVuelta / total) * 100) : 0;
+  const abierta = preguntaAbierta != null ? resultados[preguntaAbierta] : null;
   return (
     <div>
-      <SectionTitle title={modo === "repaso" ? "Resultado del repaso" : "Resultado"} />
-      <Card style={{ textAlign: "center", padding: "32px 20px" }}>
+      <SectionTitle title="Autoevaluación completada" />
+      <Card style={{ textAlign: "center", padding: "28px 20px" }}>
         <Flag size={26} color="#2E7D6B" style={{ marginBottom: 10 }} />
-        <div style={{ fontSize: 40, fontFamily: "Georgia, serif", color: "#14213D" }}>{pct}%</div>
-        <div style={{ color: "#5B6472", fontSize: 14, marginTop: 4 }}>{correctCount} de {pool.length} correctas · {Math.floor(seconds / 60)} min {seconds % 60}s</div>
-        <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 22, flexWrap: "wrap" }}>
-          {falladas.length > 0 && (
-            <button type="button" onClick={repasarFalladas} style={styles.btnPrimary}>
-              Repasar {falladas.length} fallada{falladas.length > 1 ? "s" : ""}
-            </button>
-          )}
-          <button type="button" onClick={() => setState("config")} style={styles.btnSecondary}><RotateCcw size={14} style={{ marginRight: 6 }} /> Nueva autoevaluación</button>
+        <div style={{ color: "#14213D", fontSize: 16 }}>Has respondido correctamente las {total} preguntas.</div>
+        <div style={{ color: "#8A93A3", fontSize: 13, marginTop: 6 }}>
+          {aciertosPrimeraVuelta} de {total} a la primera ({pctPrimeraVuelta}%) · {Math.floor(seconds / 60)} min {seconds % 60}s
         </div>
       </Card>
       <div style={{ marginTop: 20 }}>
-        <FieldLabel>Repaso</FieldLabel>
-        {answers.map((a, i) => (
-          <div key={i} style={styles.reviewRow}>
-            {a.correct ? <Check size={15} color="#2E7D6B" /> : <X size={15} color="#B0533E" />}
-            <span style={{ fontSize: 13, color: "#14213D", flex: 1 }}>{a.pregunta.pregunta}</span>
-          </div>
-        ))}
+        <FieldLabel>Toca una pregunta para repasarla</FieldLabel>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {poolOriginal.map((q, i) => (
+            <button
+              type="button"
+              key={q.id}
+              onClick={() => setPreguntaAbierta(preguntaAbierta === q.id ? null : q.id)}
+              style={{
+                ...styles.cuadroPregunta,
+                borderColor: preguntaAbierta === q.id ? "#14213D" : "#2E7D6B",
+                background: preguntaAbierta === q.id ? "#14213D" : "#EEF3F1",
+                color: preguntaAbierta === q.id ? "#fff" : "#2E7D6B",
+              }}
+            >
+              {i + 1}
+            </button>
+          ))}
+        </div>
+        {abierta && (
+          <Card style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 11, color: "#2E7D6B", marginBottom: 8 }}>{abierta.pregunta.curso} · {abierta.pregunta.tema}</div>
+            <p style={{ fontSize: 15, color: "#14213D", lineHeight: 1.5, marginBottom: 14 }}>{abierta.pregunta.pregunta}</p>
+            {abierta.pregunta.opciones.map((op, i) => (
+              <div key={i} style={{ ...styles.opcion, cursor: "default", ...(i === abierta.pregunta.correcta ? styles.opcionCorrectaLegacy : {}) }}>
+                {i === abierta.pregunta.correcta && <Check size={13} color="#2E7D6B" />}
+                {op}
+              </div>
+            ))}
+            {abierta.pregunta.explicacion && <p style={{ fontSize: 13, color: "#5B6472", marginTop: 10, lineHeight: 1.5 }}>{abierta.pregunta.explicacion}</p>}
+          </Card>
+        )}
       </div>
+      <button type="button" onClick={() => setState("config")} style={{ ...styles.btnPrimary, width: "100%", marginTop: 20 }}>
+        Finalizar
+      </button>
     </div>
   );
 }
@@ -780,6 +845,15 @@ function Duelo({ user, questions, onDueloEnd, autoUnirse, onAutoUnirseConsumido 
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [duelo && duelo.indice, duelo && duelo.estado]);
+
+  useEffect(() => {
+    if (fase !== "esperando" || !duelo) return;
+    const intervalo = setInterval(async () => {
+      const { data } = await supabase.from("duelos").select("*").eq("id", duelo.id).maybeSingle();
+      if (data && data.estado !== "esperando") setDuelo(data);
+    }, 2000);
+    return () => clearInterval(intervalo);
+  }, [fase, duelo && duelo.id]);
 
   useEffect(() => {
     if (fase !== "jugando" || !duelo || !duelo.pregunta_inicio || duelo.revelado_en) return;
@@ -1184,7 +1258,7 @@ const styles = {
   runHeader: { display: "flex", justifyContent: "space-between", alignItems: "center" },
   progressTrack: { height: 4, background: "#E4E1D8", borderRadius: 2, marginTop: 10 },
   progressFill: { height: 4, background: "#2E7D6B", borderRadius: 2, transition: "width .3s" },
-  reviewRow: { display: "flex", alignItems: "center", gap: 10, padding: "10px 0", borderBottom: "1px solid #F0EEE6" },
+  cuadroPregunta: { width: 40, height: 40, borderRadius: 8, border: "2px solid", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
   expandBtn: { display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left" },
   rankRow: { display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", border: "1px solid #E4E1D8", borderRadius: 8, marginBottom: 8, fontSize: 16 },
   vsHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "14px 6px", borderBottom: "1px solid #E4E1D8" },
