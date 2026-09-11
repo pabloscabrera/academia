@@ -35,6 +35,23 @@ function insigniaActual(totalCorrectas) {
 function siguienteInsignia(totalCorrectas) {
   return INSIGNIAS.find((ins) => totalCorrectas < ins.umbral) || null;
 }
+async function fetchTodasPreguntas() {
+  const TAM_PAGINA = 1000;
+  let desde = 0;
+  let todas = [];
+  while (true) {
+    const { data, error } = await supabase
+      .from("preguntas")
+      .select("*")
+      .order("created_at", { ascending: true })
+      .range(desde, desde + TAM_PAGINA - 1);
+    if (error) throw error;
+    todas = todas.concat(data || []);
+    if (!data || data.length < TAM_PAGINA) break;
+    desde += TAM_PAGINA;
+  }
+  return todas;
+}
 function lunesDeLaSemana(fecha) {
   const d = new Date(fecha);
   const dia = d.getDay();
@@ -128,11 +145,7 @@ export default function AcademiaPIR() {
     (async () => {
       try {
         const { data: sessionData } = await supabase.auth.getSession();
-        const { data: qData, error: qErr } = await supabase
-          .from("preguntas")
-          .select("*")
-          .order("created_at", { ascending: true });
-        if (qErr) throw qErr;
+        const qData = await fetchTodasPreguntas();
         const { data: rData, error: rErr } = await supabase
           .from("ranking")
           .select("*")
