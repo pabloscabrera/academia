@@ -3,7 +3,7 @@ import {
   Compass, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
   Plus, Check, X, Loader2, User, LogOut, Flag, Pencil, Trash2,
    Zap, Heart, Swords, Flame, Sparkles, Star, Award, Target, Settings,
-   Medal, Gem, Crown, Search, RefreshCw
+   Medal, Gem, Crown, Search, Layers
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { TEMARIO } from "./temario";
@@ -44,6 +44,35 @@ function lunesDeLaSemana(fecha) {
 }
 const CURSOS_RULETA_COLORES = ["#2E7D6B", "#C89B3C", "#B0533E", "#5EC9C0", "#8A5A9E", "#3B6FA0"];
 
+// Repetición espaciada estilo Anki (algoritmo SM-2). calidad: 0 = Muy difícil
+// (fallo, se reinicia), 3 = Difícil, 4 = Fácil, 5 = Muy fácil.
+function calcularSM2(progresoPrevio, calidad) {
+  let ease = (progresoPrevio && progresoPrevio.ease_factor) || 2.5;
+  let repeticiones = (progresoPrevio && progresoPrevio.repeticiones) || 0;
+  let intervalo = (progresoPrevio && progresoPrevio.intervalo_dias) || 0;
+
+  if (calidad < 3) {
+    repeticiones = 0;
+    intervalo = 1;
+  } else {
+    repeticiones += 1;
+    if (repeticiones === 1) intervalo = 1;
+    else if (repeticiones === 2) intervalo = 6;
+    else intervalo = Math.round(intervalo * ease);
+  }
+  ease = Math.max(1.3, ease + (0.1 - (5 - calidad) * (0.08 + (5 - calidad) * 0.02)));
+
+  const hoy = new Date();
+  const proxima = new Date(hoy.getTime() + intervalo * 86400000);
+  return {
+    ease_factor: Math.round(ease * 100) / 100,
+    intervalo_dias: intervalo,
+    repeticiones,
+    proxima_revision: proxima.toISOString().slice(0, 10),
+    ultima_revision: hoy.toISOString(),
+  };
+}
+
 async function loadPersonal(key, fallback) {
   try {
     const raw = localStorage.getItem(key);
@@ -78,8 +107,8 @@ export default function AcademiaPIR() {
   const [rachas, setRachas] = useState([]);
   const [fallos, setFallos] = useState([]);
   const [favoritos, setFavoritos] = useState([]);
-  const [curiosidades, setCuriosidades] = useState([]);
-  const [curiosidadesVistas, setCuriosidadesVistas] = useState([]);
+  const [flashcards, setFlashcards] = useState([]);
+  const [flashcardsProgreso, setFlashcardsProgreso] = useState([]);
   const [dueloEsperando, setDueloEsperando] = useState(null);
   const [autoUnirseDuelo, setAutoUnirseDuelo] = useState(false);
   const [ajustes, setAjustes] = useState(() => {
@@ -111,12 +140,12 @@ export default function AcademiaPIR() {
           .limit(100);
         if (rErr) throw rErr;
         const { data: rachasData } = await supabase.from("rachas").select("*");
-        const { data: curiosidadesData } = await supabase.from("curiosidades").select("*");
+        const { data: flashcardsData } = await supabase.from("flashcards").select("*");
         setUser(usuarioFromSession(sessionData && sessionData.session));
         setQuestions(qData || []);
         setRanking(rData || []);
         setRachas(rachasData || []);
-        setCuriosidades(curiosidadesData || []);
+        setFlashcards(flashcardsData || []);
         setReady(true);
       } catch (err) {
         setLoadError(err && err.message ? err.message : String(err));
@@ -173,11 +202,11 @@ export default function AcademiaPIR() {
     (async () => {
       const { data: fData } = await supabase.from("fallos").select("*").eq("name", user.name);
       const { data: favData } = await supabase.from("favoritos").select("*").eq("name", user.name);
-      const { data: vistasData } = await supabase.from("curiosidades_vistas").select("*").eq("name", user.name);
+      const { data: progresoData } = await supabase.from("flashcards_progreso").select("*").eq("name", user.name);
       if (activo) {
         setFallos(fData || []);
         setFavoritos(favData || []);
-        setCuriosidadesVistas(vistasData || []);
+        setFlashcardsProgreso(progresoData || []);
       }
     })();
     return () => { activo = false; };
@@ -429,29 +458,20 @@ export default function AcademiaPIR() {
     }
   };
 
-  const marcarVistaCuriosidad = async (curiosidadId) => {
-    if (!curiosidadId || !user) return;
-    if (curiosidadesVistas.some((v) => v.curiosidad_id === curiosidadId)) return;
+  const registrarRepasoFlashcard = async (flashcardId, calidad) => {
+    if (!flashcardId || !user) return;
+    const previo = flashcardsProgreso.find((p) => p.flashcard_id === flashcardId);
+    const nuevo = calcularSM2(previo, calidad);
     try {
       const { data, error } = await supabase
-        .from("curiosidades_vistas")
-        .insert([{ name: user.name, curiosidad_id: curiosidadId }])
+        .from("flashcards_progreso")
+        .upsert({ name: user.name, flashcard_id: flashcardId, ...nuevo }, { onConflict: "name,flashcard_id" })
         .select();
-      if (!error && data && data[0]) setCuriosidadesVistas((prev) => [...prev, data[0]]);
-    } catch (err) {
-      console.error("No se pudo registrar la curiosidad vista:", err);
-    }
-  };
-
-  const generarMasCuriosidades = async () => {
-    try {
-      const resp = await fetch("/api/generar-curiosidades", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
-      const datos = await resp.json();
-      if (resp.ok && Array.isArray(datos.curiosidades) && datos.curiosidades.length > 0) {
-        setCuriosidades((prev) => [...prev, ...datos.curiosidades]);
+      if (!error && data && data[0]) {
+        setFlashcardsProgreso((prev) => [...prev.filter((p) => p.flashcard_id !== flashcardId), data[0]]);
       }
     } catch (err) {
-      console.error("No se pudieron generar más curiosidades:", err);
+      console.error("No se pudo guardar el repaso de la flashcard:", err);
     }
   };
 
@@ -504,12 +524,11 @@ export default function AcademiaPIR() {
           return null;
         })()}
         <main style={styles.main}>
-          {section === "curiosidades" && (
-            <Curiosidades
-              curiosidades={curiosidades}
-              vistas={curiosidadesVistas}
-              onVista={marcarVistaCuriosidad}
-              onGenerarMas={generarMasCuriosidades}
+          {section === "flashcards" && (
+            <Flashcards
+              flashcards={flashcards}
+              progreso={flashcardsProgreso}
+              onRepaso={registrarRepasoFlashcard}
             />
           )}
           {section === "perfil" && (
@@ -841,7 +860,7 @@ function Nav({ section, setSection, alerta }) {
     { id: "banco", label: "Banco de preguntas", icon: ListChecks },
     { id: "duelo", label: "Duelo 1v1", icon: Zap },
     { id: "ranking", label: "Ranking", icon: Trophy },
-    { id: "curiosidades", label: "Curiosidades", icon: Sparkles },
+    { id: "flashcards", label: "Flashcards", icon: Layers },
     { id: "perfil", label: "Mi perfil", icon: User },
   ];
   return (
@@ -2179,118 +2198,131 @@ function Logros({ user, miRacha, compact }) {
   );
 }
 
-const LOTE_CURIOSIDADES = 5;
+const TAM_SESION_FLASHCARDS = 20;
+const CALIFICACIONES_FLASHCARD = [
+  { calidad: 0, label: "Muy difícil", bg: "#FBEDEA", color: "#8A3F2B", borde: "#F0C4B4" },
+  { calidad: 3, label: "Difícil", bg: "#FCF3E3", color: "#8A5A1F", borde: "#EBD3A0" },
+  { calidad: 4, label: "Fácil", bg: "#EAF2EF", color: "#1F5346", borde: "#B9DBD0" },
+  { calidad: 5, label: "Muy fácil", bg: "#E7F3EE", color: "#1B5E3F", borde: "#A8D9C0" },
+];
 
-function Curiosidades({ curiosidades, vistas, onVista, onGenerarMas }) {
-  const vistosIds = useMemo(() => new Set(vistas.map((v) => v.curiosidad_id)), [vistas]);
-  const sinVerCount = useMemo(() => curiosidades.filter((c) => !vistosIds.has(c.id)).length, [curiosidades, vistosIds]);
+function Flashcards({ flashcards, progreso, onRepaso }) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const progresoPorId = useMemo(() => {
+    const m = {};
+    progreso.forEach((p) => { m[p.flashcard_id] = p; });
+    return m;
+  }, [progreso]);
 
-  const [mostrando, setMostrando] = useState([]);
-  const [actualizando, setActualizando] = useState(false);
-  const [verHistorial, setVerHistorial] = useState(false);
-  const inicializado = useRef(false);
+  const pendientes = useMemo(
+    () => flashcards.filter((f) => {
+      const p = progresoPorId[f.id];
+      return !p || !p.proxima_revision || p.proxima_revision <= hoy;
+    }),
+    [flashcards, progresoPorId, hoy]
+  );
 
-  const elegirLote = (excluirIds) => {
-    const mezclar = (arr) => [...arr].sort(() => Math.random() - 0.5);
-    const sinVer = curiosidades.filter((c) => !vistosIds.has(c.id) && !excluirIds.has(c.id));
-    const disponibles = sinVer.length > 0 ? sinVer : curiosidades.filter((c) => !excluirIds.has(c.id));
-    return mezclar(disponibles).slice(0, LOTE_CURIOSIDADES);
+  const [sesion, setSesion] = useState(null);
+  const [idx, setIdx] = useState(0);
+  const [revelada, setRevelada] = useState(false);
+  const [resumen, setResumen] = useState(null);
+  const [enviando, setEnviando] = useState(false);
+
+  const empezar = () => {
+    const barajada = [...pendientes].sort(() => Math.random() - 0.5).slice(0, TAM_SESION_FLASHCARDS);
+    setSesion(barajada);
+    setIdx(0);
+    setRevelada(false);
+    setResumen(null);
   };
 
-  useEffect(() => {
-    if (!inicializado.current && curiosidades.length > 0) {
-      inicializado.current = true;
-      setMostrando(elegirLote(new Set()));
+  const calificar = async (calidad) => {
+    if (enviando) return;
+    setEnviando(true);
+    const carta = sesion[idx];
+    await onRepaso(carta.id, calidad);
+    setEnviando(false);
+    if (idx + 1 < sesion.length) {
+      setIdx(idx + 1);
+      setRevelada(false);
+    } else {
+      setResumen({ total: sesion.length });
+      setSesion(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curiosidades.length]);
-
-  const generandoRef = useRef(false);
-  useEffect(() => {
-    if (sinVerCount < LOTE_CURIOSIDADES && !generandoRef.current) {
-      generandoRef.current = true;
-      onGenerarMas().finally(() => { generandoRef.current = false; });
-    }
-    // onGenerarMas is re-created on every parent render; omit it so this only
-    // re-fires when the actual unseen count changes, not on unrelated re-renders.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sinVerCount]);
-
-  const actualizar = async () => {
-    if (actualizando || mostrando.length === 0) return;
-    setActualizando(true);
-    const actuales = mostrando;
-    const siguientes = elegirLote(new Set(actuales.map((c) => c.id)));
-    await Promise.all(actuales.map((c) => onVista(c.id)));
-    setMostrando(siguientes);
-    setActualizando(false);
   };
 
-  const historial = useMemo(() => {
-    const mostrandoIds = new Set(mostrando.map((c) => c.id));
-    const vistaEnPorId = {};
-    vistas.forEach((v) => { vistaEnPorId[v.curiosidad_id] = v.created_at; });
-    return curiosidades
-      .filter((c) => vistosIds.has(c.id) && !mostrandoIds.has(c.id))
-      .sort((a, b) => (vistaEnPorId[b.id] || "").localeCompare(vistaEnPorId[a.id] || ""));
-  }, [curiosidades, vistosIds, vistas, mostrando]);
+  if (flashcards.length === 0) {
+    return (
+      <div>
+        <SectionTitle title="Flashcards" subtitle="Todavía no hay tarjetas en el mazo." />
+      </div>
+    );
+  }
+
+  if (sesion) {
+    const carta = sesion[idx];
+    return (
+      <div>
+        <SectionTitle title="Flashcards" subtitle={`Tarjeta ${idx + 1} de ${sesion.length}`} />
+        <div style={styles.progressTrack}>
+          <div style={{ ...styles.progressFill, width: `${(idx / sesion.length) * 100}%`, background: "#8A5A9E" }} />
+        </div>
+        <Card style={{ marginTop: 16, minHeight: 200, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 14 }}>{carta.mazo}</div>
+          <p style={{ fontSize: 17, color: "#14213D", lineHeight: 1.55, margin: 0 }}>{carta.frontal}</p>
+          {revelada && (
+            <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1px dashed #E4E1D8" }}>
+              <p style={{ fontSize: 16, color: "#2E7D6B", lineHeight: 1.55, margin: 0, fontWeight: 600 }}>{carta.posterior}</p>
+            </div>
+          )}
+        </Card>
+        {!revelada ? (
+          <button type="button" onClick={() => setRevelada(true)} style={{ ...styles.btnPrimary, width: "100%", marginTop: 16, justifyContent: "center" }}>
+            Ver respuesta
+          </button>
+        ) : (
+          <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+            {CALIFICACIONES_FLASHCARD.map((c) => (
+              <button
+                key={c.calidad}
+                type="button"
+                disabled={enviando}
+                onClick={() => calificar(c.calidad)}
+                style={{ ...styles.btnDificultad, background: c.bg, color: c.color, borderColor: c.borde, opacity: enviando ? 0.6 : 1 }}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
-      <SectionTitle title="Curiosidades" subtitle="Prevalencias, curso clínico, comorbilidades y más, generadas por IA a partir del temario." />
-      {mostrando.length === 0 ? (
-        <Card style={{ textAlign: "center", color: "#8A93A3", padding: "30px 20px" }}>
-          <Loader2 className="animate-spin" size={20} color="#8A5A9E" />
-          <p style={{ marginTop: 10, fontSize: 13 }}>Preparando las primeras curiosidades...</p>
+      <SectionTitle title="Flashcards" subtitle={`${flashcards.length} tarjetas en el mazo "${flashcards[0].mazo}"`} />
+      {resumen && (
+        <Card style={{ marginBottom: 16, textAlign: "center", borderColor: "#2E7D6B" }}>
+          <p style={{ fontSize: 15, color: "#14213D", margin: 0 }}>
+            ¡Sesión terminada! Has repasado {resumen.total} tarjeta{resumen.total === 1 ? "" : "s"}.
+          </p>
         </Card>
-      ) : (
-        <>
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {mostrando.map((c) => (<CuriosidadCard key={c.id} c={c} />))}
-          </div>
-          <button type="button" onClick={actualizar} disabled={actualizando} style={{ ...styles.btnPrimary, width: "100%", marginTop: 16, opacity: actualizando ? 0.6 : 1, justifyContent: "center" }}>
-            {actualizando ? <Loader2 className="animate-spin" size={16} /> : (<><RefreshCw size={15} style={{ marginRight: 6 }} /> Actualizar</>)}
-          </button>
-        </>
       )}
-
-      {historial.length > 0 && (
-        <div style={{ marginTop: 32 }}>
-          <button type="button" onClick={() => setVerHistorial((v) => !v)} style={{ ...styles.linkBtn, display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
-            {verHistorial ? <ChevronDown size={15} /> : <ChevronRight size={15} />} Historial de curiosidades ({historial.length})
-          </button>
-          {verHistorial && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
-              {historial.map((c) => (<CuriosidadCard key={c.id} c={c} compacta />))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CuriosidadCard({ c, compacta }) {
-  const [revelada, setRevelada] = useState(false);
-
-  return (
-    <div style={{ ...styles.card, borderLeft: "3px solid #8A5A9E", ...(compacta ? { padding: 16 } : {}) }}>
-      <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
-        <Sparkles size={13} /> {c.curso}{c.tema ? ` · ${c.tema}` : ""}
-      </div>
-      <p style={{ fontSize: 15, color: "#14213D", lineHeight: 1.55, margin: 0 }}>{c.texto}</p>
-      {c.pregunta_mini && (
-        <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px dashed #E4E1D8" }}>
-          <div style={{ fontSize: 13, color: "#5B6472", fontWeight: 600, marginBottom: revelada ? 8 : 0 }}>
-            ¿Sabrías responder? {c.pregunta_mini}
-          </div>
-          {revelada ? (
-            <p style={{ fontSize: 13, color: "#2E7D6B", margin: 0 }}>{c.respuesta_mini}</p>
-          ) : (
-            <button type="button" onClick={() => setRevelada(true)} style={{ ...styles.linkBtn, padding: "6px 0" }}>Ver respuesta</button>
-          )}
-        </div>
-      )}
+      <Card style={{ textAlign: "center", padding: "28px 20px" }}>
+        {pendientes.length === 0 ? (
+          <p style={{ fontSize: 15, color: "#14213D", margin: 0 }}>No te toca repasar ninguna tarjeta hoy. ¡Vuelve mañana!</p>
+        ) : (
+          <>
+            <p style={{ fontSize: 15, color: "#14213D", marginTop: 0, marginBottom: 16 }}>
+              Tienes {pendientes.length} tarjeta{pendientes.length === 1 ? "" : "s"} para repasar hoy.
+            </p>
+            <button type="button" onClick={empezar} style={{ ...styles.btnPrimary, justifyContent: "center" }}>
+              Empezar repaso{pendientes.length > TAM_SESION_FLASHCARDS ? ` (${TAM_SESION_FLASHCARDS} de ${pendientes.length})` : ""}
+            </button>
+          </>
+        )}
+      </Card>
     </div>
   );
 }
@@ -2500,6 +2532,7 @@ const styles = {
   perfilStatNum: { fontSize: 22, fontFamily: "Georgia, serif", color: "#14213D" },
   perfilStatLabel: { fontSize: 11.5, color: "#8A93A3", marginTop: 2, lineHeight: 1.4 },
   linkBtn: { background: "none", border: "none", color: "#2E7D6B", fontSize: 13, cursor: "pointer", padding: "10px 0", fontWeight: 600 },
+  btnDificultad: { flex: "1 1 auto", minWidth: 110, padding: "13px 10px", borderRadius: 8, border: "1px solid", fontSize: 13.5, fontWeight: 700, cursor: "pointer", textAlign: "center" },
   insigniasGrid: { display: "flex", gap: 8, flexWrap: "wrap" },
   insigniaCard: { flex: "1 1 84px", minWidth: 78, textAlign: "center", background: "#fff", border: "1.5px solid", borderRadius: 10, padding: "12px 6px" },
   puntoVivo: { width: 8, height: 8, borderRadius: "50%", background: "#2E7D6B", animation: "dueloPulso 1.4s ease-in-out infinite" },
