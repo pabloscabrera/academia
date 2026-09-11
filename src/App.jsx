@@ -523,7 +523,11 @@ export default function AcademiaPIR() {
             100% { transform: scale(1); }
           }
         `}</style>
-        <Header user={user} onLogout={handleLogout} miRacha={rachas.find((r) => r.name === user.name)} onAjustes={() => setMostrarAjustes(true)} />
+        <Header
+          user={user} onLogout={handleLogout} miRacha={rachas.find((r) => r.name === user.name)} onAjustes={() => setMostrarAjustes(true)}
+          questions={questions} onAddQuestion={addQuestion} onUpdateQuestion={updateQuestion} onDeleteQuestion={deleteQuestion}
+          favoritos={favoritos} onToggleFavorito={toggleFavorito} rachas={rachas}
+        />
         <Nav section={section} setSection={setSection} alerta={!!dueloEsperando} />
         {dueloEsperando && section !== "duelo" && (
           <button
@@ -582,17 +586,6 @@ export default function AcademiaPIR() {
               onToggleFavorito={toggleFavorito}
             />
           )}
-          {section === "banco" && (
-            <BancoPreguntas
-              questions={questions}
-              user={user}
-              onAdd={addQuestion}
-              onUpdate={updateQuestion}
-              onDelete={deleteQuestion}
-              favoritos={favoritos}
-              onToggleFavorito={toggleFavorito}
-            />
-          )}
           {section === "duelo" && (
             <Duelo
               user={user}
@@ -603,7 +596,6 @@ export default function AcademiaPIR() {
               onAutoUnirseConsumido={() => setAutoUnirseDuelo(false)}
             />
           )}
-          {section === "ranking" && <Ranking rachas={rachas} user={user} />}
         </main>
       </div>
     );
@@ -846,8 +838,14 @@ function InsigniaDesbloqueadaModal({ insignia, onClose }) {
   );
 }
 
-function Header({ user, onLogout, miRacha, onAjustes }) {
+function Header({
+  user, onLogout, miRacha, onAjustes,
+  questions, onAddQuestion, onUpdateQuestion, onDeleteQuestion, favoritos, onToggleFavorito,
+  rachas,
+}) {
   const [mostrarLogros, setMostrarLogros] = useState(false);
+  const [mostrarRanking, setMostrarRanking] = useState(false);
+  const [mostrarBanco, setMostrarBanco] = useState(false);
   return (
     <header style={styles.header}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -871,6 +869,12 @@ function Header({ user, onLogout, miRacha, onAjustes }) {
             </>
           )}
         </div>
+        <button type="button" onClick={() => setMostrarRanking(true)} style={styles.iconBtn} title="Ranking">
+          <Trophy size={15} color="#5B6472" />
+        </button>
+        <button type="button" onClick={() => setMostrarBanco(true)} style={styles.iconBtn} title="Banco de preguntas">
+          <ListChecks size={15} color="#5B6472" />
+        </button>
         <button type="button" onClick={onAjustes} style={styles.iconBtn} title="Ajustes">
           <Settings size={15} color="#5B6472" />
         </button>
@@ -878,6 +882,38 @@ function Header({ user, onLogout, miRacha, onAjustes }) {
           <LogOut size={15} color="#5B6472" />
         </button>
       </div>
+      {mostrarRanking && (
+        <div style={styles.pantallaCompleta}>
+          <div style={styles.pantallaCompletaCierre}>
+            <button type="button" onClick={() => setMostrarRanking(false)} style={styles.iconBtn} title="Cerrar">
+              <X size={20} color="#5B6472" />
+            </button>
+          </div>
+          <main style={styles.main}>
+            <Ranking rachas={rachas} user={user} />
+          </main>
+        </div>
+      )}
+      {mostrarBanco && (
+        <div style={styles.pantallaCompleta}>
+          <div style={styles.pantallaCompletaCierre}>
+            <button type="button" onClick={() => setMostrarBanco(false)} style={styles.iconBtn} title="Cerrar">
+              <X size={20} color="#5B6472" />
+            </button>
+          </div>
+          <main style={styles.main}>
+            <BancoPreguntas
+              questions={questions}
+              user={user}
+              onAdd={onAddQuestion}
+              onUpdate={onUpdateQuestion}
+              onDelete={onDeleteQuestion}
+              favoritos={favoritos}
+              onToggleFavorito={onToggleFavorito}
+            />
+          </main>
+        </div>
+      )}
     </header>
   );
 }
@@ -885,9 +921,7 @@ function Header({ user, onLogout, miRacha, onAjustes }) {
 function Nav({ section, setSection, alerta }) {
   const items = [
     { id: "simulacros", label: "Autoevaluaciones", icon: Clock },
-    { id: "banco", label: "Banco de preguntas", icon: ListChecks },
     { id: "duelo", label: "Duelo 1v1", icon: Zap },
-    { id: "ranking", label: "Ranking", icon: Trophy },
     { id: "flashcards", label: "Flashcards", icon: Layers },
     { id: "perfil", label: "Mi perfil", icon: User },
   ];
@@ -1479,6 +1513,8 @@ function PreguntaCard({ q, isAdmin, onUpdate, onDelete, favoritos, onToggleFavor
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [mostrarCorrecta, setMostrarCorrecta] = useState(false);
+  const toggleOpen = () => { setOpen((o) => !o); setMostrarCorrecta(false); };
 
   if (editing) {
     return (
@@ -1496,7 +1532,7 @@ function PreguntaCard({ q, isAdmin, onUpdate, onDelete, favoritos, onToggleFavor
   return (
     <Card style={{ marginBottom: 10, ...(q.inventada ? { borderLeft: "3px solid #8A5A9E" } : {}) }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
-        <button type="button" onClick={() => setOpen((o) => !o)} style={{ ...styles.expandBtn, flex: 1 }}>
+        <button type="button" onClick={toggleOpen} style={{ ...styles.expandBtn, flex: 1 }}>
           <div style={{ textAlign: "left", flex: 1 }}>
             <div style={{ fontSize: 11, color: q.inventada ? "#8A5A9E" : "#2E7D6B", marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>
               {q.inventada && <Sparkles size={11} />}
@@ -1511,12 +1547,18 @@ function PreguntaCard({ q, isAdmin, onUpdate, onDelete, favoritos, onToggleFavor
       {open && (
         <div style={{ marginTop: 12 }}>
           {q.opciones.map((op, i) => (
-            <div key={i} style={{ ...styles.opcion, cursor: "default", ...(i === q.correcta ? styles.opcionCorrectaLegacy : {}) }}>
-              {i === q.correcta && <Check size={13} color="#2E7D6B" />}
+            <div key={i} style={{ ...styles.opcion, cursor: "default", ...(mostrarCorrecta && i === q.correcta ? styles.opcionCorrectaLegacy : {}) }}>
+              {mostrarCorrecta && i === q.correcta && <Check size={13} color="#2E7D6B" />}
               {op}
             </div>
           ))}
-          {q.explicacion && <p style={{ fontSize: 13, color: "#5B6472", marginTop: 10, lineHeight: 1.5 }}>{q.explicacion}</p>}
+          {!mostrarCorrecta ? (
+            <button type="button" onClick={() => setMostrarCorrecta(true)} style={{ ...styles.btnSecondary, width: "100%", justifyContent: "center", marginTop: 10 }}>
+              Ver respuesta correcta
+            </button>
+          ) : (
+            q.explicacion && <p style={{ fontSize: 13, color: "#5B6472", marginTop: 10, lineHeight: 1.5 }}>{q.explicacion}</p>
+          )}
           {isAdmin && (
             <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
               <button type="button" onClick={() => setEditing(true)} style={styles.btnSecondary}>
@@ -2671,6 +2713,8 @@ const styles = {
   modalOverlay: { position: "fixed", inset: 0, background: "rgba(20,33,61,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 },
   dropdownCatcher: { position: "fixed", inset: 0, zIndex: 39 },
   logrosDropdown: { position: "absolute", top: "calc(100% + 10px)", right: 0, width: 320, maxWidth: "88vw", background: "#fff", border: "1px solid #E4E1D8", borderRadius: 14, boxShadow: "0 16px 40px rgba(20,33,61,0.18)", padding: 16, zIndex: 40 },
+  pantallaCompleta: { position: "fixed", inset: 0, background: "#FBF9F4", zIndex: 50, overflowY: "auto" },
+  pantallaCompletaCierre: { display: "flex", justifyContent: "flex-end", padding: "14px 18px 0" },
   modalCard: { background: "#fff", borderRadius: 14, padding: 24, maxWidth: 340, width: "100%", boxShadow: "0 12px 40px rgba(0,0,0,0.22)" },
   escalaBtn: { flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #E4E1D8", background: "#fff", color: "#14213D", fontWeight: 700, cursor: "pointer" },
   escalaBtnActivo: { borderColor: "#14213D", background: "#14213D", color: "#fff" },
