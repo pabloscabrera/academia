@@ -8,12 +8,19 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 const MAX_CURIOSIDADES = 400;
 const CANTIDAD_POR_LOTE = 4;
 
+function tieneDatosNumericos(contenido) {
+  return /%|prevalencia|por\s?cada\s?\d|\d\s?(veces|x)\s?m[aá]s/i.test(contenido || "");
+}
+
 function temaAlAzar() {
-  const cursos = TEMARIO.filter((c) => c.temas && c.temas.length > 0);
-  if (cursos.length === 0) return null;
-  const curso = cursos[Math.floor(Math.random() * cursos.length)];
-  const tema = curso.temas[Math.floor(Math.random() * curso.temas.length)];
-  return { curso: curso.curso, tema };
+  const todos = [];
+  TEMARIO.forEach((curso) => {
+    (curso.temas || []).forEach((tema) => todos.push({ curso: curso.curso, tema }));
+  });
+  if (todos.length === 0) return null;
+  const conDatos = todos.filter((t) => tieneDatosNumericos(t.tema.contenido));
+  const lista = conDatos.length > 0 ? conDatos : todos;
+  return lista[Math.floor(Math.random() * lista.length)];
 }
 
 export default async function handler(req, res) {
@@ -56,7 +63,7 @@ Cada dato debe ser del tipo que puede caer en un examen PIR, y ceñirse a UNA de
 - Comorbilidad: con qué otros trastornos suele coexistir y en qué proporción.
 - Paso o evolución de un trastorno a otro (por ejemplo, qué trastorno en la infancia predispone a cuál en la vida adulta).
 
-Evita curiosidades anecdóticas, históricas o triviales sin valor clínico o estadístico: cíñete a datos concretos y verificables del contenido de abajo, con la cifra o el dato exacto cuando el texto lo incluya.
+Prioriza SIEMPRE que el contenido lo permita los datos que incluyan un porcentaje o cifra concreta (prevalencias, proporciones por sexo o edad, tasas de comorbilidad, ratios...): si el contenido de abajo contiene cifras de este tipo, al menos la mitad de los ${CANTIDAD_POR_LOTE} datos deben usarlas. Evita curiosidades anecdóticas, históricas o triviales sin valor clínico o estadístico: cíñete a datos concretos y verificables del contenido de abajo.
 
 CONTENIDO DEL TEMA:
 ${elegido.tema.contenido}
