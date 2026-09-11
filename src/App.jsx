@@ -3,7 +3,7 @@ import {
   Compass, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
   Plus, Check, X, Loader2, User, LogOut, Flag, Pencil, Trash2,
    Zap, Heart, Swords, Flame, Sparkles, Star, Award, Target, Settings,
-   Medal, Gem, Crown
+   Medal, Gem, Crown, Search
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { TEMARIO } from "./temario";
@@ -523,9 +523,6 @@ export default function AcademiaPIR() {
               onGirarRuleta={girarRuleta}
             />
           )}
-          {section === "logros" && (
-            <Logros user={user} miRacha={rachas.find((r) => r.name === user.name)} />
-          )}
           {section === "simulacros" && (
             <Simulacros
               questions={questions}
@@ -603,31 +600,28 @@ function AuthScreen({ onLogin, onSignup }) {
   };
 
   return (
-    <div style={{ ...styles.center, minHeight: "100vh", position: "relative", overflow: "hidden" }}>
+    <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-start", minHeight: "100dvh", position: "relative", overflow: "hidden", paddingTop: "clamp(28px, 9vh, 90px)", paddingBottom: 40, boxSizing: "border-box" }}>
       <FondoPortada />
       <div style={{ maxWidth: 340, width: "100%", padding: "0 24px", textAlign: "center", position: "relative", zIndex: 1 }}>
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 18 }}>
-          <Compass size={34} color="#2E7D6B" strokeWidth={1.6} />
+        <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 60, height: 60, borderRadius: "50%", background: "rgba(46,125,107,0.10)", marginBottom: 16 }}>
+          <Compass size={30} color="#2E7D6B" strokeWidth={1.6} />
         </div>
-        <h1 style={styles.h1}>AUTOPIR</h1>
-        <p style={{ color: "#5B6472", fontSize: 15, lineHeight: 1.5, marginBottom: 24 }}>
-          Autoevaluaciones, banco de preguntas, duelos 1v1 y ranking en un mismo sitio.
-        </p>
+        <h1 style={{ ...styles.h1, marginBottom: 26 }}>AUTOPIR</h1>
         <div style={styles.tabsOrigen}>
           <button type="button" onClick={() => cambiarModo("login")} style={{ ...styles.tabOrigenBtn, ...(modo === "login" ? styles.tabOrigenActivo : {}) }}>Entrar</button>
           <button type="button" onClick={() => cambiarModo("signup")} style={{ ...styles.tabOrigenBtn, ...(modo === "signup" ? styles.tabOrigenActivo : {}) }}>Crear cuenta</button>
         </div>
         {cuentaCreada ? (
-          <Card style={{ textAlign: "left" }}>
+          <Card style={styles.authCard}>
             <p style={{ fontSize: 14, color: "#14213D", lineHeight: 1.5, margin: 0 }}>
               Cuenta creada. Ya puedes entrar con tu usuario y contraseña.
             </p>
-            <button type="button" onClick={() => { setPassword(""); setPassword2(""); cambiarModo("login"); }} style={{ ...styles.btnPrimary, width: "100%", marginTop: 14 }}>
+            <button type="button" onClick={() => { setPassword(""); setPassword2(""); cambiarModo("login"); }} style={{ ...styles.btnPrimary, width: "100%", marginTop: 14, justifyContent: "center" }}>
               Ir a entrar
             </button>
           </Card>
         ) : (
-          <Card style={{ textAlign: "left" }}>
+          <Card style={styles.authCard}>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
@@ -675,26 +669,36 @@ function FondoPortada() {
         position: "absolute",
         inset: 0,
         zIndex: 0,
-        background: `
-          radial-gradient(circle at 15% 20%, rgba(46,125,107,0.14), transparent 40%),
-          radial-gradient(circle at 85% 15%, rgba(200,155,60,0.12), transparent 38%),
-          radial-gradient(circle at 75% 85%, rgba(138,90,158,0.12), transparent 42%),
-          radial-gradient(circle at 20% 90%, rgba(46,125,107,0.10), transparent 40%)
-        `,
+        background: "linear-gradient(165deg, #FBF9F4 0%, #F3F1EA 55%, #ECE8DC 100%)",
       }}
     >
-      <svg width="100%" height="100%" style={{ position: "absolute", inset: 0, opacity: 0.35 }}>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: `
+            radial-gradient(circle at 12% 16%, rgba(46,125,107,0.18), transparent 42%),
+            radial-gradient(circle at 88% 10%, rgba(200,155,60,0.16), transparent 40%),
+            radial-gradient(circle at 82% 88%, rgba(138,90,158,0.16), transparent 46%),
+            radial-gradient(circle at 12% 92%, rgba(46,125,107,0.13), transparent 44%)
+          `,
+        }}
+      />
+      <svg width="100%" height="100%" style={{ position: "absolute", inset: 0, opacity: 0.32 }}>
         <defs>
-          <pattern id="autopir-nodos" width="72" height="72" patternUnits="userSpaceOnUse">
-            <circle cx="8" cy="8" r="1.4" fill="#2E7D6B" fillOpacity="0.35" />
-            <line x1="8" y1="8" x2="44" y2="30" stroke="#2E7D6B" strokeOpacity="0.12" strokeWidth="1" />
-            <circle cx="44" cy="30" r="1.4" fill="#C89B3C" fillOpacity="0.3" />
-            <line x1="44" y1="30" x2="20" y2="60" stroke="#8A5A9E" strokeOpacity="0.12" strokeWidth="1" />
-            <circle cx="20" cy="60" r="1.4" fill="#8A5A9E" fillOpacity="0.3" />
+          <pattern id="autopir-nodos" width="80" height="80" patternUnits="userSpaceOnUse">
+            <circle cx="10" cy="10" r="1.6" fill="#2E7D6B" fillOpacity="0.4" />
+            <line x1="10" y1="10" x2="48" y2="34" stroke="#2E7D6B" strokeOpacity="0.14" strokeWidth="1" />
+            <circle cx="48" cy="34" r="1.6" fill="#C89B3C" fillOpacity="0.35" />
+            <line x1="48" y1="34" x2="24" y2="66" stroke="#8A5A9E" strokeOpacity="0.14" strokeWidth="1" />
+            <circle cx="24" cy="66" r="1.6" fill="#8A5A9E" fillOpacity="0.35" />
+            <line x1="24" y1="66" x2="68" y2="70" stroke="#5EC9C0" strokeOpacity="0.12" strokeWidth="1" />
+            <circle cx="68" cy="70" r="1.4" fill="#5EC9C0" fillOpacity="0.3" />
           </pattern>
         </defs>
         <rect width="100%" height="100%" fill="url(#autopir-nodos)" />
       </svg>
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(251,249,244,0) 35%, rgba(251,249,244,0.85) 100%)" }} />
     </div>
   );
 }
@@ -796,6 +800,7 @@ function InsigniaDesbloqueadaModal({ insignia, onClose }) {
 }
 
 function Header({ user, onLogout, miRacha, onAjustes }) {
+  const [mostrarLogros, setMostrarLogros] = useState(false);
   return (
     <header style={styles.header}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -806,6 +811,19 @@ function Header({ user, onLogout, miRacha, onAjustes }) {
         <span style={{ fontSize: 13, color: "#5B6472", display: "flex", alignItems: "center", gap: 4 }}>
           <User size={14} /> {user.name}{user.isAdmin ? " · admin" : ""}
         </span>
+        <div style={{ position: "relative" }}>
+          <button type="button" onClick={() => setMostrarLogros((v) => !v)} style={styles.iconBtn} title="Logros">
+            <Award size={15} color={mostrarLogros ? "#C89B3C" : "#5B6472"} />
+          </button>
+          {mostrarLogros && (
+            <>
+              <div style={styles.dropdownCatcher} onClick={() => setMostrarLogros(false)} />
+              <div style={styles.logrosDropdown} onClick={(e) => e.stopPropagation()}>
+                <Logros user={user} miRacha={miRacha} compact />
+              </div>
+            </>
+          )}
+        </div>
         <button type="button" onClick={onAjustes} style={styles.iconBtn} title="Ajustes">
           <Settings size={15} color="#5B6472" />
         </button>
@@ -819,13 +837,12 @@ function Header({ user, onLogout, miRacha, onAjustes }) {
 
 function Nav({ section, setSection, alerta }) {
   const items = [
-    { id: "curiosidades", label: "Curiosidades", icon: Sparkles },
-    { id: "perfil", label: "Mi perfil", icon: User },
-    { id: "logros", label: "Logros", icon: Award },
     { id: "simulacros", label: "Autoevaluaciones", icon: Clock },
     { id: "banco", label: "Banco de preguntas", icon: ListChecks },
     { id: "duelo", label: "Duelo 1v1", icon: Zap },
     { id: "ranking", label: "Ranking", icon: Trophy },
+    { id: "curiosidades", label: "Curiosidades", icon: Sparkles },
+    { id: "perfil", label: "Mi perfil", icon: User },
   ];
   return (
     <nav style={styles.nav}>
@@ -1159,6 +1176,7 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos,
   const [origen, setOrigen] = useState("reales");
   const [filtro, setFiltro] = useState("Todos");
   const [showForm, setShowForm] = useState(false);
+  const [busqueda, setBusqueda] = useState("");
   const totalReales = useMemo(() => questions.filter((q) => !q.inventada).length, [questions]);
   const totalInventadas = useMemo(() => questions.filter((q) => q.inventada).length, [questions]);
   const porOrigen = useMemo(
@@ -1166,9 +1184,18 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos,
     [questions, origen]
   );
   const cursos = useMemo(() => ["Todos", ...new Set(porOrigen.map((q) => q.curso))], [porOrigen]);
-  const filtered = filtro === "Todos" ? porOrigen : porOrigen.filter((q) => q.curso === filtro);
+  const porCurso = filtro === "Todos" ? porOrigen : porOrigen.filter((q) => q.curso === filtro);
+  const termino = busqueda.trim().toLowerCase();
+  const filtered = termino
+    ? porCurso.filter((q) =>
+        q.pregunta.toLowerCase().includes(termino) ||
+        (q.opciones || []).some((o) => o.toLowerCase().includes(termino)) ||
+        (q.explicacion || "").toLowerCase().includes(termino) ||
+        (q.tema || "").toLowerCase().includes(termino)
+      )
+    : porCurso;
 
-  const cambiarOrigen = (o) => { setOrigen(o); setFiltro("Todos"); };
+  const cambiarOrigen = (o) => { setOrigen(o); setFiltro("Todos"); setBusqueda(""); };
 
   return (
     <div>
@@ -1210,6 +1237,23 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos,
       {origen === "inventadas" && porOrigen.length > 0 && (
         <FieldLabel style={{ marginTop: 4 }}>Preguntas ya guardadas en el banco</FieldLabel>
       )}
+
+      {porOrigen.length > 0 && (
+        <div style={{ position: "relative", marginTop: 14 }}>
+          <Search size={16} color="#8A93A3" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
+          <input
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Busca una palabra o frase dentro de las preguntas..."
+            style={{ ...styles.input, paddingLeft: 38 }}
+          />
+          {busqueda && (
+            <button type="button" onClick={() => setBusqueda("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", padding: 4 }}>
+              <X size={15} color="#8A93A3" />
+            </button>
+          )}
+        </div>
+      )}
       {porOrigen.length > 0 && (
         <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "14px 0 14px" }}>
           {cursos.map((c) => (
@@ -1223,6 +1267,9 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos,
             </button>
           ))}
         </div>
+      )}
+      {termino && filtered.length === 0 && (
+        <p style={{ fontSize: 13.5, color: "#8A93A3", padding: "8px 0" }}>Ninguna pregunta contiene "{busqueda.trim()}".</p>
       )}
       {filtered.map((q) => (
         <PreguntaCard key={q.id} q={q} isAdmin={user.isAdmin} onUpdate={onUpdate} onDelete={onDelete} favoritos={favoritos} onToggleFavorito={onToggleFavorito} />
@@ -1912,17 +1959,17 @@ function Corazones({ vidas, align }) {
   );
 }
 
-function BarraNivel({ actual, siguiente, totalCorrectas }) {
+function BarraNivel({ actual, siguiente, totalCorrectas, compact }) {
   const desde = actual ? actual.umbral : 0;
   const hasta = siguiente ? siguiente.umbral : desde;
   const rango = Math.max(1, hasta - desde);
   const puntosEnNivel = Math.min(rango, Math.max(0, totalCorrectas - desde));
   const pct = siguiente ? Math.round((puntosEnNivel / rango) * 100) : 100;
   return (
-    <Card style={{ padding: "18px 20px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14, flexWrap: "wrap", gap: 6 }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: "#14213D" }}>{actual ? actual.titulo : "Todavía sin insignia"}</div>
-        <div style={{ fontSize: 12, color: "#8A93A3" }}>
+    <Card style={{ padding: compact ? "14px 16px" : "18px 20px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: compact ? 10 : 14, flexWrap: "wrap", gap: 6 }}>
+        <div style={{ fontSize: compact ? 13 : 15, fontWeight: 600, color: "#14213D" }}>{actual ? actual.titulo : "Todavía sin insignia"}</div>
+        <div style={{ fontSize: compact ? 11 : 12, color: "#8A93A3" }}>
           {totalCorrectas} acertadas{siguiente ? ` · ${siguiente.umbral - totalCorrectas} para ${siguiente.nombre}` : " · nivel máximo"}
         </div>
       </div>
@@ -1931,15 +1978,15 @@ function BarraNivel({ actual, siguiente, totalCorrectas }) {
           const desbloqueada = totalCorrectas >= ins.umbral;
           const Icono = ins.icon;
           return (
-            <div key={ins.id} style={{ ...styles.insigniaCard, borderColor: desbloqueada ? ins.color : "#E4E1D8" }}>
-              <Icono size={22} color={desbloqueada ? ins.color : "#C7C2B4"} strokeWidth={1.6} />
-              <div style={{ fontSize: 11.5, fontWeight: 600, color: desbloqueada ? "#14213D" : "#B7BEC8", marginTop: 6 }}>{ins.nombre}</div>
-              <div style={{ fontSize: 10, color: "#B7BEC8", marginTop: 1 }}>{ins.umbral}</div>
+            <div key={ins.id} style={{ ...styles.insigniaCard, ...(compact ? { flex: "1 1 62px", minWidth: 56, padding: "8px 4px" } : {}), borderColor: desbloqueada ? ins.color : "#E4E1D8" }}>
+              <Icono size={compact ? 18 : 22} color={desbloqueada ? ins.color : "#C7C2B4"} strokeWidth={1.6} />
+              <div style={{ fontSize: compact ? 10 : 11.5, fontWeight: 600, color: desbloqueada ? "#14213D" : "#B7BEC8", marginTop: 5 }}>{ins.nombre}</div>
+              <div style={{ fontSize: compact ? 9 : 10, color: "#B7BEC8", marginTop: 1 }}>{ins.umbral}</div>
             </div>
           );
         })}
       </div>
-      <div style={{ ...styles.progressTrack, marginTop: 14 }}>
+      <div style={{ ...styles.progressTrack, marginTop: compact ? 10 : 14 }}>
         <div style={{ ...styles.progressFill, width: `${pct}%`, background: "#2E7D6B" }} />
       </div>
     </Card>
@@ -2090,7 +2137,7 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
   );
 }
 
-function Logros({ user, miRacha }) {
+function Logros({ user, miRacha, compact }) {
   const totalCorrectas = (miRacha && miRacha.total_correctas) || 0;
   const totalRespondidas = (miRacha && miRacha.total_respondidas) || 0;
   const pctAcierto = totalRespondidas > 0 ? Math.round((totalCorrectas / totalRespondidas) * 100) : 0;
@@ -2105,11 +2152,17 @@ function Logros({ user, miRacha }) {
 
   return (
     <div>
-      <SectionTitle title="Logros" subtitle={user.name} />
+      {compact ? (
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#14213D", marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+          <Award size={15} color="#C89B3C" /> Logros
+        </div>
+      ) : (
+        <SectionTitle title="Logros" subtitle={user.name} />
+      )}
 
-      <BarraNivel actual={actual} siguiente={siguiente} totalCorrectas={totalCorrectas} />
+      <BarraNivel actual={actual} siguiente={siguiente} totalCorrectas={totalCorrectas} compact={compact} />
 
-      <Card style={{ marginTop: 14, padding: "16px 0", display: "flex" }}>
+      <Card style={{ marginTop: 14, padding: compact ? "14px 0" : "16px 0", display: "flex" }}>
         <EstadisticaItem
           icono={Flame}
           color="#B0533E"
@@ -2163,7 +2216,7 @@ function Curiosidades({ curiosidades, vistas, onVista, onGenerarMas }) {
 
   return (
     <div>
-      <SectionTitle title="Curiosidades" subtitle="Datos curiosos de psicología generados por IA a partir del temario. Desliza para ver más." />
+      <SectionTitle title="Curiosidades" subtitle="Prevalencias, curso clínico, comorbilidades y más, generados por IA a partir del temario. Desliza para ver más." />
       {orden.length === 0 ? (
         <Card style={{ textAlign: "center", color: "#8A93A3", padding: "30px 20px" }}>
           <Loader2 className="animate-spin" size={20} color="#8A5A9E" />
@@ -2414,6 +2467,8 @@ const styles = {
   rachaDiasChip: { display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: "#B7BEC8", background: "#F3F1EA", borderRadius: 20, padding: "5px 10px" },
   rachaDiasChipActiva: { color: "#B0533E", background: "#FBEDEA" },
   modalOverlay: { position: "fixed", inset: 0, background: "rgba(20,33,61,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 },
+  dropdownCatcher: { position: "fixed", inset: 0, zIndex: 39 },
+  logrosDropdown: { position: "absolute", top: "calc(100% + 10px)", right: 0, width: 320, maxWidth: "88vw", background: "#fff", border: "1px solid #E4E1D8", borderRadius: 14, boxShadow: "0 16px 40px rgba(20,33,61,0.18)", padding: 16, zIndex: 40 },
   modalCard: { background: "#fff", borderRadius: 14, padding: 24, maxWidth: 340, width: "100%", boxShadow: "0 12px 40px rgba(0,0,0,0.22)" },
   escalaBtn: { flex: 1, padding: "10px 0", borderRadius: 8, border: "1px solid #E4E1D8", background: "#fff", color: "#14213D", fontWeight: 700, cursor: "pointer" },
   escalaBtnActivo: { borderColor: "#14213D", background: "#14213D", color: "#fff" },
@@ -2433,6 +2488,7 @@ const styles = {
   rachaAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "11px 16px", borderRadius: 10, border: "1px solid #F0C4B4", background: "#FBEDEA", color: "#8A3F2B", fontSize: 13.5, fontWeight: 600, cursor: "pointer" },
   main: { padding: "24px 22px 50px", maxWidth: 820, margin: "0 auto" },
   card: { background: "#fff", border: "1px solid #E4E1D8", borderRadius: 10, padding: 26 },
+  authCard: { textAlign: "left", borderRadius: 16, border: "1px solid #EDEAE0", boxShadow: "0 18px 48px rgba(20,33,61,0.10)" },
   input: { width: "100%", padding: "13px 15px", borderRadius: 8, border: "1px solid #D9D5C9", fontSize: 17, fontFamily: "inherit", color: "#14213D", boxSizing: "border-box" },
   select: { width: "100%", padding: "13px 15px", borderRadius: 8, border: "1px solid #D9D5C9", fontSize: 17, fontFamily: "inherit", color: "#14213D", background: "#fff" },
   btnPrimary: { background: "#14213D", color: "#fff", border: "none", borderRadius: 8, padding: "15px 22px", fontSize: 17, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" },

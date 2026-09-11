@@ -47,13 +47,22 @@ export default async function handler(req, res) {
   }
 
   const modelo = process.env.GEMINI_MODEL || "gemini-3.6-flash";
-  const prompt = `Eres un divulgador de psicología que prepara datos curiosos para gente que estudia para el examen PIR. Genera exactamente ${CANTIDAD_POR_LOTE} curiosidades distintas, breves y sorprendentes, basadas ÚNICAMENTE en el siguiente contenido del tema "${elegido.tema.nombre}" (curso "${elegido.curso}"). No inventes datos que no estén aquí.
+  const prompt = `Eres un experto en psicopatología que prepara datos clínicos y epidemiológicos concretos para gente que estudia para el examen PIR. Genera exactamente ${CANTIDAD_POR_LOTE} datos distintos, basados ÚNICAMENTE en el siguiente contenido del tema "${elegido.tema.nombre}" (curso "${elegido.curso}"). No inventes cifras ni datos que no estén aquí.
+
+Cada dato debe ser del tipo que puede caer en un examen PIR, y ceñirse a UNA de estas categorías:
+- Porcentajes o cifras de prevalencia (población general, por sexo, por edad...).
+- Curso clínico: cómo evoluciona el trastorno con el tiempo, edad de inicio típica, remisión, cronicidad...
+- Desarrollo: cómo se manifiesta o cambia a lo largo de las distintas etapas evolutivas.
+- Comorbilidad: con qué otros trastornos suele coexistir y en qué proporción.
+- Paso o evolución de un trastorno a otro (por ejemplo, qué trastorno en la infancia predispone a cuál en la vida adulta).
+
+Evita curiosidades anecdóticas, históricas o triviales sin valor clínico o estadístico: cíñete a datos concretos y verificables del contenido de abajo, con la cifra o el dato exacto cuando el texto lo incluya.
 
 CONTENIDO DEL TEMA:
 ${elegido.tema.contenido}
 
-Cada curiosidad debe tener:
-- "texto": el dato curioso en sí, de 1 a 3 frases, en tono ameno y cercano (nada acartonado), que enganche a quien lo lea.
+Cada dato debe tener:
+- "texto": el dato en sí (prevalencia, curso clínico, desarrollo, comorbilidad o transición entre trastornos), de 1 a 2 frases, preciso y con la cifra concreta cuando proceda.
 - "pregunta_mini": una pregunta corta relacionada con ese dato, para que el lector se la plantee a sí mismo.
 - "respuesta_mini": la respuesta breve a esa pregunta.
 
