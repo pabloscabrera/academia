@@ -1091,7 +1091,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
               else if (i === selected) estilo = { ...estilo, ...styles.daypoOpcionIncorrecta };
             }
             return (
-              <button type="button" key={`${idx}-${i}`} className={claseExtra} onClick={(e) => elegir(i, e)} disabled={revealed} style={estilo}>
+              <button type="button" key={`${ronda}-${q.id}-${i}`} className={claseExtra} onClick={(e) => elegir(i, e)} disabled={revealed} style={estilo}>
                 <span style={styles.daypoLetra}>{letra}</span>
                 <span style={{ flex: 1 }}>{op}</span>
                 {revealed && i === q.correcta && <Check size={18} color="#2E7D6B" />}
