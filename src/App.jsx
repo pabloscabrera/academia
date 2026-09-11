@@ -3,7 +3,7 @@ import {
   Compass, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
   Plus, Check, X, Loader2, User, LogOut, Flag, Pencil, Trash2,
    Zap, Heart, Swords, Flame, Sparkles, Star, Award, Target, Settings,
-   Medal, Gem, Crown, Search
+   Medal, Gem, Crown, Search, RefreshCw
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { TEMARIO } from "./temario";
@@ -1174,7 +1174,6 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
 
 function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos, onToggleFavorito }) {
   const [origen, setOrigen] = useState("reales");
-  const [filtro, setFiltro] = useState("Todos");
   const [showForm, setShowForm] = useState(false);
   const [busqueda, setBusqueda] = useState("");
   const totalReales = useMemo(() => questions.filter((q) => !q.inventada).length, [questions]);
@@ -1183,19 +1182,18 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos,
     () => questions.filter((q) => !!q.inventada === (origen === "inventadas")),
     [questions, origen]
   );
-  const cursos = useMemo(() => ["Todos", ...new Set(porOrigen.map((q) => q.curso))], [porOrigen]);
-  const porCurso = filtro === "Todos" ? porOrigen : porOrigen.filter((q) => q.curso === filtro);
+  const cursos = useMemo(() => [...new Set(porOrigen.map((q) => q.curso))], [porOrigen]);
   const termino = busqueda.trim().toLowerCase();
   const filtered = termino
-    ? porCurso.filter((q) =>
+    ? porOrigen.filter((q) =>
         q.pregunta.toLowerCase().includes(termino) ||
         (q.opciones || []).some((o) => o.toLowerCase().includes(termino)) ||
         (q.explicacion || "").toLowerCase().includes(termino) ||
         (q.tema || "").toLowerCase().includes(termino)
       )
-    : porCurso;
+    : porOrigen;
 
-  const cambiarOrigen = (o) => { setOrigen(o); setFiltro("Todos"); setBusqueda(""); };
+  const cambiarOrigen = (o) => { setOrigen(o); setBusqueda(""); };
 
   return (
     <div>
@@ -1227,7 +1225,7 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos,
       </div>
 
       {origen === "reales" && showForm && (
-        <NuevaPregunta onAdd={(q) => { onAdd(q); setShowForm(false); }} cursos={cursos.filter((c) => c !== "Todos")} />
+        <NuevaPregunta onAdd={(q) => { onAdd(q); setShowForm(false); }} cursos={cursos} />
       )}
 
       {origen === "inventadas" && (
@@ -1239,7 +1237,7 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos,
       )}
 
       {porOrigen.length > 0 && (
-        <div style={{ position: "relative", marginTop: 14 }}>
+        <div style={{ position: "relative", marginTop: 14, marginBottom: 16 }}>
           <Search size={16} color="#8A93A3" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
           <input
             value={busqueda}
@@ -1252,20 +1250,6 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos,
               <X size={15} color="#8A93A3" />
             </button>
           )}
-        </div>
-      )}
-      {porOrigen.length > 0 && (
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "14px 0 14px" }}>
-          {cursos.map((c) => (
-            <button
-              type="button"
-              key={c}
-              onClick={() => setFiltro(c)}
-              style={{ ...styles.chip, whiteSpace: "nowrap", background: filtro === c ? "#14213D" : "transparent", color: filtro === c ? "#fff" : "#14213D", borderColor: "#14213D" }}
-            >
-              {c}
-            </button>
-          ))}
         </div>
       )}
       {termino && filtered.length === 0 && (
@@ -2191,21 +2175,35 @@ function Logros({ user, miRacha, compact }) {
   );
 }
 
+const LOTE_CURIOSIDADES = 5;
+
 function Curiosidades({ curiosidades, vistas, onVista, onGenerarMas }) {
   const vistosIds = useMemo(() => new Set(vistas.map((v) => v.curiosidad_id)), [vistas]);
   const sinVerCount = useMemo(() => curiosidades.filter((c) => !vistosIds.has(c.id)).length, [curiosidades, vistosIds]);
 
-  const orden = useMemo(() => {
+  const [mostrando, setMostrando] = useState([]);
+  const [actualizando, setActualizando] = useState(false);
+  const [verHistorial, setVerHistorial] = useState(false);
+  const inicializado = useRef(false);
+
+  const elegirLote = (excluirIds) => {
     const mezclar = (arr) => [...arr].sort(() => Math.random() - 0.5);
-    const sinVer = curiosidades.filter((c) => !vistosIds.has(c.id));
-    const yaVistas = curiosidades.filter((c) => vistosIds.has(c.id));
-    return [...mezclar(sinVer), ...mezclar(yaVistas)];
+    const sinVer = curiosidades.filter((c) => !vistosIds.has(c.id) && !excluirIds.has(c.id));
+    const disponibles = sinVer.length > 0 ? sinVer : curiosidades.filter((c) => !excluirIds.has(c.id));
+    return mezclar(disponibles).slice(0, LOTE_CURIOSIDADES);
+  };
+
+  useEffect(() => {
+    if (!inicializado.current && curiosidades.length > 0) {
+      inicializado.current = true;
+      setMostrando(elegirLote(new Set()));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curiosidades]);
+  }, [curiosidades.length]);
 
   const generandoRef = useRef(false);
   useEffect(() => {
-    if (sinVerCount < 4 && !generandoRef.current) {
+    if (sinVerCount < LOTE_CURIOSIDADES && !generandoRef.current) {
       generandoRef.current = true;
       onGenerarMas().finally(() => { generandoRef.current = false; });
     }
@@ -2214,43 +2212,65 @@ function Curiosidades({ curiosidades, vistas, onVista, onGenerarMas }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sinVerCount]);
 
+  const actualizar = async () => {
+    if (actualizando || mostrando.length === 0) return;
+    setActualizando(true);
+    const actuales = mostrando;
+    const siguientes = elegirLote(new Set(actuales.map((c) => c.id)));
+    await Promise.all(actuales.map((c) => onVista(c.id)));
+    setMostrando(siguientes);
+    setActualizando(false);
+  };
+
+  const historial = useMemo(() => {
+    const mostrandoIds = new Set(mostrando.map((c) => c.id));
+    const vistaEnPorId = {};
+    vistas.forEach((v) => { vistaEnPorId[v.curiosidad_id] = v.created_at; });
+    return curiosidades
+      .filter((c) => vistosIds.has(c.id) && !mostrandoIds.has(c.id))
+      .sort((a, b) => (vistaEnPorId[b.id] || "").localeCompare(vistaEnPorId[a.id] || ""));
+  }, [curiosidades, vistosIds, vistas, mostrando]);
+
   return (
     <div>
-      <SectionTitle title="Curiosidades" subtitle="Prevalencias, curso clínico, comorbilidades y más, generados por IA a partir del temario. Desliza para ver más." />
-      {orden.length === 0 ? (
+      <SectionTitle title="Curiosidades" subtitle="Prevalencias, curso clínico, comorbilidades y más, generadas por IA a partir del temario." />
+      {mostrando.length === 0 ? (
         <Card style={{ textAlign: "center", color: "#8A93A3", padding: "30px 20px" }}>
           <Loader2 className="animate-spin" size={20} color="#8A5A9E" />
           <p style={{ marginTop: 10, fontSize: 13 }}>Preparando las primeras curiosidades...</p>
         </Card>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {orden.map((c) => (<CuriosidadCard key={c.id} c={c} onVista={onVista} />))}
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {mostrando.map((c) => (<CuriosidadCard key={c.id} c={c} />))}
+          </div>
+          <button type="button" onClick={actualizar} disabled={actualizando} style={{ ...styles.btnPrimary, width: "100%", marginTop: 16, opacity: actualizando ? 0.6 : 1, justifyContent: "center" }}>
+            {actualizando ? <Loader2 className="animate-spin" size={16} /> : (<><RefreshCw size={15} style={{ marginRight: 6 }} /> Actualizar</>)}
+          </button>
+        </>
+      )}
+
+      {historial.length > 0 && (
+        <div style={{ marginTop: 32 }}>
+          <button type="button" onClick={() => setVerHistorial((v) => !v)} style={{ ...styles.linkBtn, display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
+            {verHistorial ? <ChevronDown size={15} /> : <ChevronRight size={15} />} Historial de curiosidades ({historial.length})
+          </button>
+          {verHistorial && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+              {historial.map((c) => (<CuriosidadCard key={c.id} c={c} compacta />))}
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function CuriosidadCard({ c, onVista }) {
-  const ref = useRef(null);
+function CuriosidadCard({ c, compacta }) {
   const [revelada, setRevelada] = useState(false);
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) onVista(c.id); },
-      { threshold: 0.55 }
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-    // onVista is re-created on every parent render; omit it so the observer
-    // isn't torn down and rebuilt on unrelated re-renders.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [c.id]);
-
   return (
-    <div ref={ref} style={{ ...styles.card, borderLeft: "3px solid #8A5A9E" }}>
+    <div style={{ ...styles.card, borderLeft: "3px solid #8A5A9E", ...(compacta ? { padding: 16 } : {}) }}>
       <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
         <Sparkles size={13} /> {c.curso}{c.tema ? ` · ${c.tema}` : ""}
       </div>
