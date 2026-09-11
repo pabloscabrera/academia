@@ -1347,7 +1347,11 @@ function GenerarPreguntasIA({ user, onGuardar }) {
         min={1}
         max={10}
         value={cantidad}
-        onChange={(e) => setCantidad(Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)))}
+        onChange={(e) => {
+          const v = parseInt(e.target.value, 10);
+          setCantidad(Number.isNaN(v) ? "" : v);
+        }}
+        onBlur={() => setCantidad((v) => Math.max(1, Math.min(10, v || 1)))}
         style={{ ...styles.input, maxWidth: 100 }}
       />
       <button type="button" onClick={generar} disabled={cargando} style={{ ...styles.btnPrimary, width: "100%", marginTop: 14, opacity: cargando ? 0.6 : 1 }}>
