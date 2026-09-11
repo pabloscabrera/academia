@@ -475,6 +475,18 @@ export default function AcademiaPIR() {
     }
   };
 
+  const updateFlashcard = async (id, f) => {
+    const { data, error } = await supabase
+      .from("flashcards")
+      .update({ frontal: f.frontal, posterior: f.posterior })
+      .eq("id", id)
+      .select();
+    if (!error && data && data[0]) {
+      setFlashcards((prev) => prev.map((p) => (p.id === id ? data[0] : p)));
+    }
+    return !error;
+  };
+
   let contenido;
   if (!ready) {
     contenido = <div style={{ ...styles.center, height: "100%", minHeight: 400 }}><Loader2 className="animate-spin" size={28} color="#2E7D6B" /></div>;
@@ -526,9 +538,11 @@ export default function AcademiaPIR() {
         <main style={styles.main}>
           {section === "flashcards" && (
             <Flashcards
+              user={user}
               flashcards={flashcards}
               progreso={flashcardsProgreso}
               onRepaso={registrarRepasoFlashcard}
+              onUpdate={updateFlashcard}
             />
           )}
           {section === "perfil" && (
@@ -2206,7 +2220,7 @@ const CALIFICACIONES_FLASHCARD = [
   { calidad: 5, label: "Muy fácil", bg: "#E7F3EE", color: "#1B5E3F", borde: "#A8D9C0" },
 ];
 
-function Flashcards({ flashcards, progreso, onRepaso }) {
+function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate }) {
   const hoy = new Date().toISOString().slice(0, 10);
   const progresoPorId = useMemo(() => {
     const m = {};
@@ -2227,10 +2241,32 @@ function Flashcards({ flashcards, progreso, onRepaso }) {
   const [revelada, setRevelada] = useState(false);
   const [resumen, setResumen] = useState(null);
   const [enviando, setEnviando] = useState(false);
+  const [numTarjetas, setNumTarjetas] = useState(TAM_SESION_FLASHCARDS);
+  const [verTarjetas, setVerTarjetas] = useState(false);
+  const [busquedaTarjetas, setBusquedaTarjetas] = useState("");
+
+  // Orden "inteligente" según el feedback de dificultad dado hasta ahora:
+  // primero las que se marcaron Muy difícil (se reinician, repeticiones=0),
+  // luego el resto de pendientes por antigüedad de vencimiento, y al final
+  // las que nunca se han visto.
+  const ordenarPorPrioridad = (lista) => {
+    const conPrioridad = lista.map((f) => {
+      const p = progresoPorId[f.id];
+      if (!p) return { f, prioridad: 2, orden: Math.random() };
+      if (p.repeticiones === 0) return { f, prioridad: 0, orden: p.ultima_revision || "" };
+      return { f, prioridad: 1, orden: p.proxima_revision || "" };
+    });
+    conPrioridad.sort((a, b) => {
+      if (a.prioridad !== b.prioridad) return a.prioridad - b.prioridad;
+      if (a.prioridad === 2) return a.orden - b.orden;
+      return String(a.orden).localeCompare(String(b.orden));
+    });
+    return conPrioridad.map((x) => x.f);
+  };
 
   const empezar = () => {
-    const barajada = [...pendientes].sort(() => Math.random() - 0.5).slice(0, TAM_SESION_FLASHCARDS);
-    setSesion(barajada);
+    const cantidad = Math.max(1, Math.min(numTarjetas || 1, pendientes.length));
+    setSesion(ordenarPorPrioridad(pendientes).slice(0, cantidad));
     setIdx(0);
     setRevelada(false);
     setResumen(null);
@@ -2299,6 +2335,11 @@ function Flashcards({ flashcards, progreso, onRepaso }) {
     );
   }
 
+  const terminoTarjetas = busquedaTarjetas.trim().toLowerCase();
+  const tarjetasFiltradas = terminoTarjetas
+    ? flashcards.filter((f) => f.frontal.toLowerCase().includes(terminoTarjetas) || f.posterior.toLowerCase().includes(terminoTarjetas))
+    : flashcards;
+
   return (
     <div>
       <SectionTitle title="Flashcards" subtitle={`${flashcards.length} tarjetas en el mazo "${flashcards[0].mazo}"`} />
@@ -2317,13 +2358,105 @@ function Flashcards({ flashcards, progreso, onRepaso }) {
             <p style={{ fontSize: 15, color: "#14213D", marginTop: 0, marginBottom: 16 }}>
               Tienes {pendientes.length} tarjeta{pendientes.length === 1 ? "" : "s"} para repasar hoy.
             </p>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 18 }}>
+              <FieldLabel style={{ margin: 0 }}>¿Cuántas quieres hacer?</FieldLabel>
+              <input
+                type="number"
+                min={1}
+                max={pendientes.length}
+                value={numTarjetas}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  setNumTarjetas(Number.isNaN(v) ? "" : v);
+                }}
+                onBlur={() => setNumTarjetas((v) => Math.max(1, Math.min(v || 1, pendientes.length)))}
+                style={{ ...styles.input, width: 70, textAlign: "center" }}
+              />
+            </div>
             <button type="button" onClick={empezar} style={{ ...styles.btnPrimary, justifyContent: "center" }}>
-              Empezar repaso{pendientes.length > TAM_SESION_FLASHCARDS ? ` (${TAM_SESION_FLASHCARDS} de ${pendientes.length})` : ""}
+              Empezar repaso
             </button>
           </>
         )}
       </Card>
+
+      <div style={{ marginTop: 32 }}>
+        <button type="button" onClick={() => setVerTarjetas((v) => !v)} style={{ ...styles.linkBtn, display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
+          {verTarjetas ? <ChevronDown size={15} /> : <ChevronRight size={15} />} Ver y editar tarjetas ({flashcards.length})
+        </button>
+        {verTarjetas && (
+          <div style={{ marginTop: 12 }}>
+            <div style={{ position: "relative", marginBottom: 14 }}>
+              <Search size={16} color="#8A93A3" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
+              <input
+                value={busquedaTarjetas}
+                onChange={(e) => setBusquedaTarjetas(e.target.value)}
+                placeholder="Busca una palabra o frase dentro de las tarjetas..."
+                style={{ ...styles.input, paddingLeft: 38 }}
+              />
+            </div>
+            {tarjetasFiltradas.map((f) => (
+              <FlashcardEditableCard key={f.id} f={f} isAdmin={user && user.isAdmin} onUpdate={onUpdate} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
+  );
+}
+
+function FlashcardEditableCard({ f, isAdmin, onUpdate }) {
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [frontal, setFrontal] = useState(f.frontal);
+  const [posterior, setPosterior] = useState(f.posterior);
+  const [saving, setSaving] = useState(false);
+
+  const guardar = async () => {
+    if (!frontal.trim() || !posterior.trim()) return;
+    setSaving(true);
+    const ok = await onUpdate(f.id, { frontal: frontal.trim(), posterior: posterior.trim() });
+    setSaving(false);
+    if (ok) setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <Card style={{ marginBottom: 10, borderLeft: "3px solid #C89B3C" }}>
+        <FieldLabel>Frontal</FieldLabel>
+        <textarea value={frontal} onChange={(e) => setFrontal(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
+        <FieldLabel style={{ marginTop: 12 }}>Posterior</FieldLabel>
+        <textarea value={posterior} onChange={(e) => setPosterior(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <button type="button" onClick={guardar} disabled={saving} style={{ ...styles.btnPrimary, flex: 1 }}>{saving ? "Guardando..." : "Guardar cambios"}</button>
+          <button type="button" onClick={() => { setFrontal(f.frontal); setPosterior(f.posterior); setEditing(false); }} style={styles.btnSecondary}>Cancelar</button>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <Card style={{ marginBottom: 10 }}>
+      <button type="button" onClick={() => setOpen((o) => !o)} style={{ ...styles.expandBtn, width: "100%" }}>
+        <div style={{ textAlign: "left", flex: 1 }}>
+          <div style={{ fontSize: 11, color: "#8A5A9E", marginBottom: 4 }}>{f.mazo}</div>
+          <div style={{ fontSize: 14, color: "#14213D", lineHeight: 1.4 }}>{f.frontal}</div>
+        </div>
+        {open ? <ChevronDown size={16} color="#8A93A3" /> : <ChevronRight size={16} color="#8A93A3" />}
+      </button>
+      {open && (
+        <div style={{ marginTop: 12 }}>
+          <p style={{ fontSize: 14, color: "#2E7D6B", lineHeight: 1.5, fontWeight: 600, margin: 0 }}>{f.posterior}</p>
+          {isAdmin && (
+            <div style={{ marginTop: 14 }}>
+              <button type="button" onClick={() => setEditing(true)} style={styles.btnSecondary}>
+                <Pencil size={13} style={{ marginRight: 4 }} /> Editar
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
   );
 }
 
