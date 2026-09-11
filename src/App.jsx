@@ -10,8 +10,6 @@ import { TEMARIO } from "./temario";
 
 const ADMIN_NAME = "pabloadmin";
 const META_DIARIA_RACHA = 10;
-const DURACION_RELAMPAGO = 60;
-const PREGUNTAS_RELAMPAGO = 5;
 const AJUSTES_DEFECTO = { escala: 1, fondo: "#FBF9F4" };
 const ESCALAS = [
   { id: "pequena", label: "A", escala: 0.9, tamPreview: 13 },
@@ -34,6 +32,9 @@ function insigniaActual(totalCorrectas) {
 }
 function siguienteInsignia(totalCorrectas) {
   return INSIGNIAS.find((ins) => totalCorrectas < ins.umbral) || null;
+}
+function esExamen(curso) {
+  return typeof curso === "string" && /^pir\b/i.test(curso.trim());
 }
 async function fetchTodasPreguntas() {
   const TAM_PAGINA = 1000;
@@ -917,7 +918,7 @@ function Nav({ section, setSection, alerta }) {
 function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiario, onFallo, favoritos, onToggleFavorito }) {
   const [incluirInventadas, setIncluirInventadas] = useState(false);
   const base = useMemo(() => (incluirInventadas ? questions : questions.filter((q) => !q.inventada)), [questions, incluirInventadas]);
-  const cursos = useMemo(() => ["Todos", ...new Set(base.map((q) => q.curso))], [base]);
+  const cursos = useMemo(() => ["Todos", ...new Set(base.filter((q) => esExamen(q.curso)).map((q) => q.curso))], [base]);
   const [curso, setCurso] = useState("Todos");
   const disponibles = useMemo(() => (curso === "Todos" ? base.length : base.filter((q) => q.curso === curso).length), [curso, base]);
   const [numPreguntas, setNumPreguntas] = useState(10);
@@ -935,24 +936,14 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
   const [seconds, setSeconds] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [relampago, setRelampago] = useState(false);
-  const [segundosRestantes, setSegundosRestantes] = useState(DURACION_RELAMPAGO);
 
   useEffect(() => {
     let timer;
     if (state === "running") {
-      if (relampago) {
-        timer = setInterval(() => setSegundosRestantes((s) => Math.max(0, s - 1)), 1000);
-      } else {
-        timer = setInterval(() => setSeconds((s) => s + 1), 1000);
-      }
+      timer = setInterval(() => setSeconds((s) => s + 1), 1000);
     }
     return () => clearInterval(timer);
-  }, [state, relampago]);
-
-  useEffect(() => {
-    if (relampago && state === "running" && segundosRestantes === 0) finalizarRelampago();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [segundosRestantes]);
+  }, [state]);
 
   const start = () => {
     const filtered = curso === "Todos" ? base : base.filter((q) => q.curso === curso);
@@ -966,33 +957,14 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
   };
 
   const startRelampago = () => {
-    const reales = questions.filter((q) => !q.inventada);
-    const cantidad = Math.min(PREGUNTAS_RELAMPAGO, reales.length);
-    if (cantidad === 0) return;
-    const shuffled = [...reales].sort(() => Math.random() - 0.5).slice(0, cantidad);
+    const examenes = questions.filter((q) => !q.inventada && esExamen(q.curso));
+    if (examenes.length === 0) return;
+    const shuffled = [...examenes].sort(() => Math.random() - 0.5);
     setPool(shuffled); setPoolOriginal(shuffled);
     setIdx(0); setAnswers([]); setSelected(null); setRevealed(false); setSeconds(0);
     setRonda(1); setResultados({}); setPrimerIntento(null); setPreguntaAbierta(null);
-    setRelampago(true); setSegundosRestantes(DURACION_RELAMPAGO);
+    setRelampago(true);
     setState("running");
-  };
-
-  const finalizarRelampago = async () => {
-    setSubmitting((prev) => {
-      if (prev) return prev;
-      (async () => {
-        const correctCount = answers.filter((a) => a.correct).length;
-        const total = poolOriginal.length;
-        const pct = total > 0 ? Math.round((correctCount / total) * 100) : 0;
-        try {
-          await onFinish({ name: user.name, score: correctCount, total, pct, seconds: DURACION_RELAMPAGO, date: new Date().toISOString() });
-        } catch {}
-        setPrimerIntento({ correctCount, total });
-        setState("done");
-        setSubmitting(false);
-      })();
-      return true;
-    });
   };
 
   const elegir = (i, e) => {
@@ -1003,7 +975,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
     const q = pool[idx];
     const correcto = i === q.correcta;
     if (ronda === 1) {
-      onStreakAnswer(correcto);
+      if (relampago) onStreakAnswer(correcto);
       if (onProgresoDiario) onProgresoDiario(correcto);
       if (!correcto && onFallo) onFallo(q);
     }
@@ -1012,8 +984,33 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
   const next = async () => {
     if (submitting) return;
     const current = pool[idx];
-    const nextAnswers = [...answers, { qId: current.id, pregunta: current, selected, correct: selected === current.correcta }];
+    const correct = selected === current.correcta;
+    const nextAnswers = [...answers, { qId: current.id, pregunta: current, selected, correct }];
     setAnswers(nextAnswers); setSelected(null); setRevealed(false);
+
+    if (relampago) {
+      const completo = correct && idx + 1 === pool.length;
+      if (!correct || completo) {
+        const nuevosResultados = {};
+        nextAnswers.forEach((a) => { nuevosResultados[a.qId] = a; });
+        setResultados(nuevosResultados);
+        setPoolOriginal(nextAnswers.map((a) => a.pregunta));
+        const correctCount = nextAnswers.filter((a) => a.correct).length;
+        const total = nextAnswers.length;
+        const pct = total > 0 ? Math.round((correctCount / total) * 100) : 0;
+        setPrimerIntento({ correctCount, total, completo });
+        setSubmitting(true);
+        try {
+          await onFinish({ name: user.name, score: correctCount, total, pct, seconds, date: new Date().toISOString() });
+        } catch {}
+        setSubmitting(false);
+        setState("done");
+        return;
+      }
+      setIdx(idx + 1);
+      return;
+    }
+
     if (idx + 1 < pool.length) {
       setIdx(idx + 1);
       return;
@@ -1027,7 +1024,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
       setPrimerIntento({ correctCount: nextAnswers.filter((a) => a.correct).length, total: nextAnswers.length });
     }
 
-    const falladas = relampago ? [] : nextAnswers.filter((a) => !a.correct).map((a) => a.pregunta);
+    const falladas = nextAnswers.filter((a) => !a.correct).map((a) => a.pregunta);
     if (falladas.length > 0) {
       setPool(falladas);
       setIdx(0);
@@ -1036,13 +1033,6 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
       return;
     }
 
-    setSubmitting(true);
-    const resumenPrimerIntento = primerIntento || { correctCount: nextAnswers.filter((a) => a.correct).length, total: nextAnswers.length };
-    const pct = Math.round((resumenPrimerIntento.correctCount / resumenPrimerIntento.total) * 100);
-    try {
-      await onFinish({ name: user.name, score: resumenPrimerIntento.correctCount, total: resumenPrimerIntento.total, pct, seconds: relampago ? DURACION_RELAMPAGO - segundosRestantes : seconds, date: new Date().toISOString() });
-    } catch {}
-    setSubmitting(false);
     setState("done");
   };
 
@@ -1060,9 +1050,9 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
   if (state === "config") {
     return (
       <div>
-        <SectionTitle title="Autoevaluaciones" subtitle="Elige curso y cuántas preguntas quieres." />
+        <SectionTitle title="Autoevaluaciones" subtitle="Elige examen y cuántas preguntas quieres." />
         <Card>
-          <FieldLabel>Curso</FieldLabel>
+          <FieldLabel>Exámenes</FieldLabel>
           <select value={curso} onChange={(e) => setCurso(e.target.value)} style={styles.select}>
             {cursos.map((c) => (<option key={c} value={c}>{c}</option>))}
           </select>
@@ -1087,10 +1077,10 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
           <button
             type="button"
             onClick={startRelampago}
-            disabled={questions.filter((q) => !q.inventada).length === 0}
+            disabled={questions.filter((q) => !q.inventada && esExamen(q.curso)).length === 0}
             style={{ ...styles.btnSecondary, width: "100%", marginTop: 10, justifyContent: "center", borderColor: "#C89B3C", color: "#9C7A2C" }}
           >
-            <Zap size={14} style={{ marginRight: 6 }} /> Modo relámpago ({PREGUNTAS_RELAMPAGO} preguntas · {DURACION_RELAMPAGO}s)
+            <Zap size={14} style={{ marginRight: 6 }} /> Modo relámpago (preguntas de todos los exámenes, hasta que falles)
           </button>
         </Card>
       </div>
@@ -1117,8 +1107,8 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
             {relampago && <Zap size={13} color="#C89B3C" />}
             {relampago ? "Modo relámpago · " : (ronda > 1 ? `Repaso de falladas (ronda ${ronda}) · ` : "")}Pregunta {idx + 1} de {pool.length}
           </span>
-          <span style={{ fontSize: 13, color: relampago && segundosRestantes <= 10 ? "#B0533E" : "#5B6472", fontWeight: relampago ? 700 : 400, display: "flex", alignItems: "center", gap: 4 }}>
-            <Clock size={13} /> {relampago ? `${segundosRestantes}s` : `${mm}:${ss}`}
+          <span style={{ fontSize: 13, color: "#5B6472", fontWeight: relampago ? 700 : 400, display: "flex", alignItems: "center", gap: 4 }}>
+            <Clock size={13} /> {mm}:{ss}
           </span>
         </div>
         <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${(idx / pool.length) * 100}%` }} /></div>
@@ -1148,11 +1138,12 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
           {revealed && (
             <div style={{ ...styles.daypoFeedback, ...(esCorrecta ? styles.daypoFeedbackOk : styles.daypoFeedbackMal) }}>
               {esCorrecta ? "¡Correcto!" : `Incorrecto. La respuesta correcta es la ${String.fromCharCode(65 + q.correcta)}.`}
+              {relampago && !esCorrecta && <div style={{ marginTop: 6, fontWeight: 700 }}>La racha del modo relámpago termina aquí.</div>}
               {q.explicacion && <div style={{ marginTop: 6, fontWeight: 400 }}>{q.explicacion}</div>}
             </div>
           )}
           <button type="button" onClick={next} disabled={!revealed} style={{ ...styles.btnPrimary, width: "100%", marginTop: 18, opacity: !revealed ? 0.4 : 1 }}>
-            {idx + 1 === pool.length ? "Terminar" : "Siguiente"}
+            {(idx + 1 === pool.length || (relampago && revealed && !esCorrecta)) ? "Terminar" : "Siguiente"}
           </button>
         </Card>
       </div>
@@ -1163,14 +1154,23 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
   const aciertosPrimeraVuelta = primerIntento ? primerIntento.correctCount : total;
   const pctPrimeraVuelta = total > 0 ? Math.round((aciertosPrimeraVuelta / total) * 100) : 0;
   const abierta = preguntaAbierta != null ? resultados[preguntaAbierta] : null;
+  const relampagoCompleto = relampago && primerIntento && primerIntento.completo;
   return (
     <div>
-      <SectionTitle title="Autoevaluación completada" />
+      <SectionTitle title={relampago ? (relampagoCompleto ? "¡Racha perfecta!" : "Racha terminada") : "Autoevaluación completada"} />
       <Card style={{ textAlign: "center", padding: "28px 20px" }}>
-        <Flag size={26} color="#2E7D6B" style={{ marginBottom: 10 }} />
-        <div style={{ color: "#14213D", fontSize: 16 }}>Has respondido correctamente las {total} preguntas.</div>
+        {relampago
+          ? <Zap size={26} color="#C89B3C" style={{ marginBottom: 10 }} />
+          : <Flag size={26} color="#2E7D6B" style={{ marginBottom: 10 }} />}
+        <div style={{ color: "#14213D", fontSize: 16 }}>
+          {relampago
+            ? (relampagoCompleto
+                ? `¡Has respondido bien las ${total} preguntas de todos los exámenes sin fallar ninguna!`
+                : `Acertaste ${aciertosPrimeraVuelta} de ${total} antes de fallar.`)
+            : `Has respondido correctamente las ${total} preguntas.`}
+        </div>
         <div style={{ color: "#8A93A3", fontSize: 13, marginTop: 6 }}>
-          {aciertosPrimeraVuelta} de {total} a la primera ({pctPrimeraVuelta}%) · {Math.floor(seconds / 60)} min {seconds % 60}s
+          {relampago ? "" : `${aciertosPrimeraVuelta} de ${total} a la primera (${pctPrimeraVuelta}%) · `}{Math.floor(seconds / 60)} min {seconds % 60}s
         </div>
       </Card>
       <div style={{ marginTop: 20 }}>
