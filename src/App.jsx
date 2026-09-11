@@ -78,6 +78,8 @@ export default function AcademiaPIR() {
   const [rachas, setRachas] = useState([]);
   const [fallos, setFallos] = useState([]);
   const [favoritos, setFavoritos] = useState([]);
+  const [curiosidades, setCuriosidades] = useState([]);
+  const [curiosidadesVistas, setCuriosidadesVistas] = useState([]);
   const [dueloEsperando, setDueloEsperando] = useState(null);
   const [autoUnirseDuelo, setAutoUnirseDuelo] = useState(false);
   const [ajustes, setAjustes] = useState(() => {
@@ -109,10 +111,12 @@ export default function AcademiaPIR() {
           .limit(100);
         if (rErr) throw rErr;
         const { data: rachasData } = await supabase.from("rachas").select("*");
+        const { data: curiosidadesData } = await supabase.from("curiosidades").select("*");
         setUser(usuarioFromSession(sessionData && sessionData.session));
         setQuestions(qData || []);
         setRanking(rData || []);
         setRachas(rachasData || []);
+        setCuriosidades(curiosidadesData || []);
         setReady(true);
       } catch (err) {
         setLoadError(err && err.message ? err.message : String(err));
@@ -169,9 +173,11 @@ export default function AcademiaPIR() {
     (async () => {
       const { data: fData } = await supabase.from("fallos").select("*").eq("name", user.name);
       const { data: favData } = await supabase.from("favoritos").select("*").eq("name", user.name);
+      const { data: vistasData } = await supabase.from("curiosidades_vistas").select("*").eq("name", user.name);
       if (activo) {
         setFallos(fData || []);
         setFavoritos(favData || []);
+        setCuriosidadesVistas(vistasData || []);
       }
     })();
     return () => { activo = false; };
@@ -423,6 +429,32 @@ export default function AcademiaPIR() {
     }
   };
 
+  const marcarVistaCuriosidad = async (curiosidadId) => {
+    if (!curiosidadId || !user) return;
+    if (curiosidadesVistas.some((v) => v.curiosidad_id === curiosidadId)) return;
+    try {
+      const { data, error } = await supabase
+        .from("curiosidades_vistas")
+        .insert([{ name: user.name, curiosidad_id: curiosidadId }])
+        .select();
+      if (!error && data && data[0]) setCuriosidadesVistas((prev) => [...prev, data[0]]);
+    } catch (err) {
+      console.error("No se pudo registrar la curiosidad vista:", err);
+    }
+  };
+
+  const generarMasCuriosidades = async () => {
+    try {
+      const resp = await fetch("/api/generar-curiosidades", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      const datos = await resp.json();
+      if (resp.ok && Array.isArray(datos.curiosidades) && datos.curiosidades.length > 0) {
+        setCuriosidades((prev) => [...prev, ...datos.curiosidades]);
+      }
+    } catch (err) {
+      console.error("No se pudieron generar más curiosidades:", err);
+    }
+  };
+
   let contenido;
   if (!ready) {
     contenido = <div style={{ ...styles.center, height: "100%", minHeight: 400 }}><Loader2 className="animate-spin" size={28} color="#2E7D6B" /></div>;
@@ -472,6 +504,14 @@ export default function AcademiaPIR() {
           return null;
         })()}
         <main style={styles.main}>
+          {section === "curiosidades" && (
+            <Curiosidades
+              curiosidades={curiosidades}
+              vistas={curiosidadesVistas}
+              onVista={marcarVistaCuriosidad}
+              onGenerarMas={generarMasCuriosidades}
+            />
+          )}
           {section === "perfil" && (
             <MiPerfil
               user={user}
@@ -482,6 +522,9 @@ export default function AcademiaPIR() {
               onToggleFavorito={toggleFavorito}
               onGirarRuleta={girarRuleta}
             />
+          )}
+          {section === "logros" && (
+            <Logros user={user} miRacha={rachas.find((r) => r.name === user.name)} />
           )}
           {section === "simulacros" && (
             <Simulacros
@@ -753,10 +796,6 @@ function InsigniaDesbloqueadaModal({ insignia, onClose }) {
 }
 
 function Header({ user, onLogout, miRacha, onAjustes }) {
-  const rachaDias = (miRacha && miRacha.racha_dias_actual) || 0;
-  const totalCorrectas = (miRacha && miRacha.total_correctas) || 0;
-  const insignia = insigniaActual(totalCorrectas);
-  const IconoInsignia = insignia ? insignia.icon : Medal;
   return (
     <header style={styles.header}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -764,20 +803,6 @@ function Header({ user, onLogout, miRacha, onAjustes }) {
         <span style={{ fontFamily: "Georgia, serif", fontSize: 18, color: "#14213D", letterSpacing: 0.3 }}>AUTOPIR</span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span
-          title={insignia ? `${insignia.titulo} · ${totalCorrectas} acertadas` : `${totalCorrectas} acertadas`}
-          style={{ ...styles.rachaDiasChip, color: insignia ? insignia.color : "#B7BEC8" }}
-        >
-          <IconoInsignia size={14} color={insignia ? insignia.color : "#B7BEC8"} />
-          {totalCorrectas}
-        </span>
-        <span
-          title={rachaDias > 0 ? `${rachaDias} día${rachaDias === 1 ? "" : "s"} seguidos entrando y acertando ${META_DIARIA_RACHA}+ preguntas` : `Acierta ${META_DIARIA_RACHA} preguntas hoy para empezar tu racha`}
-          style={{ ...styles.rachaDiasChip, ...(rachaDias > 0 ? styles.rachaDiasChipActiva : {}) }}
-        >
-          <Flame size={14} color={rachaDias > 0 ? "#B0533E" : "#B7BEC8"} fill={rachaDias > 0 ? "#B0533E" : "none"} />
-          {rachaDias}
-        </span>
         <span style={{ fontSize: 13, color: "#5B6472", display: "flex", alignItems: "center", gap: 4 }}>
           <User size={14} /> {user.name}{user.isAdmin ? " · admin" : ""}
         </span>
@@ -794,7 +819,9 @@ function Header({ user, onLogout, miRacha, onAjustes }) {
 
 function Nav({ section, setSection, alerta }) {
   const items = [
+    { id: "curiosidades", label: "Curiosidades", icon: Sparkles },
     { id: "perfil", label: "Mi perfil", icon: User },
+    { id: "logros", label: "Logros", icon: Award },
     { id: "simulacros", label: "Autoevaluaciones", icon: Clock },
     { id: "banco", label: "Banco de preguntas", icon: ListChecks },
     { id: "duelo", label: "Duelo 1v1", icon: Zap },
@@ -2001,19 +2028,6 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
   const [verTodosFallos, setVerTodosFallos] = useState(false);
   const [abiertaId, setAbiertaId] = useState(null);
 
-  const totalCorrectas = (miRacha && miRacha.total_correctas) || 0;
-  const totalRespondidas = (miRacha && miRacha.total_respondidas) || 0;
-  const pctAcierto = totalRespondidas > 0 ? Math.round((totalCorrectas / totalRespondidas) * 100) : 0;
-  const rachaDias = (miRacha && miRacha.racha_dias_actual) || 0;
-  const rachaDiasRecord = (miRacha && miRacha.racha_dias_record) || 0;
-  const rachaPreguntas = (miRacha && miRacha.racha_actual) || 0;
-  const rachaPreguntasRecord = (miRacha && miRacha.racha_record) || 0;
-  const correctasHoy = (miRacha && miRacha.fecha_correctas_hoy === new Date().toISOString().slice(0, 10)) ? (miRacha.correctas_hoy || 0) : 0;
-
-  const actual = insigniaActual(totalCorrectas);
-  const siguiente = siguienteInsignia(totalCorrectas);
-  const progresoSiguiente = siguiente ? Math.min(100, Math.round((totalCorrectas / siguiente.umbral) * 100)) : 100;
-
   const preguntasPorId = useMemo(() => {
     const m = {};
     questions.forEach((q) => { m[q.id] = q; });
@@ -2042,34 +2056,6 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
       <SectionTitle title="Mi perfil" subtitle={user.name} />
 
       <RuletaDiaria questions={questions} miRacha={miRacha} onGirarRuleta={onGirarRuleta} />
-
-      <BarraNivel actual={actual} siguiente={siguiente} totalCorrectas={totalCorrectas} />
-
-      <Card style={{ marginTop: 14, padding: "16px 0", display: "flex" }}>
-        <EstadisticaItem
-          icono={Flame}
-          color="#B0533E"
-          valor={rachaDias}
-          etiqueta={`días de racha${rachaDiasRecord > 0 ? ` (récord ${rachaDiasRecord})` : ""}`}
-          detalle={`${correctasHoy}/${META_DIARIA_RACHA} aciertos hoy`}
-        />
-        <EstadisticaItem
-          icono={Target}
-          color="#2E7D6B"
-          valor={`${pctAcierto}%`}
-          etiqueta="de acierto"
-          detalle={`${totalRespondidas} respondidas`}
-          borde
-        />
-        <EstadisticaItem
-          icono={Zap}
-          color="#C89B3C"
-          valor={rachaPreguntas}
-          etiqueta="aciertos seguidos"
-          detalle={rachaPreguntasRecord > 0 ? `récord ${rachaPreguntasRecord}` : null}
-          borde
-        />
-      </Card>
 
       <div style={{ marginTop: 36 }}>
         <PreguntasPlegables
@@ -2100,6 +2086,134 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
           onToggleFavorito={onToggleFavorito}
         />
       </div>
+    </div>
+  );
+}
+
+function Logros({ user, miRacha }) {
+  const totalCorrectas = (miRacha && miRacha.total_correctas) || 0;
+  const totalRespondidas = (miRacha && miRacha.total_respondidas) || 0;
+  const pctAcierto = totalRespondidas > 0 ? Math.round((totalCorrectas / totalRespondidas) * 100) : 0;
+  const rachaDias = (miRacha && miRacha.racha_dias_actual) || 0;
+  const rachaDiasRecord = (miRacha && miRacha.racha_dias_record) || 0;
+  const rachaPreguntas = (miRacha && miRacha.racha_actual) || 0;
+  const rachaPreguntasRecord = (miRacha && miRacha.racha_record) || 0;
+  const correctasHoy = (miRacha && miRacha.fecha_correctas_hoy === new Date().toISOString().slice(0, 10)) ? (miRacha.correctas_hoy || 0) : 0;
+
+  const actual = insigniaActual(totalCorrectas);
+  const siguiente = siguienteInsignia(totalCorrectas);
+
+  return (
+    <div>
+      <SectionTitle title="Logros" subtitle={user.name} />
+
+      <BarraNivel actual={actual} siguiente={siguiente} totalCorrectas={totalCorrectas} />
+
+      <Card style={{ marginTop: 14, padding: "16px 0", display: "flex" }}>
+        <EstadisticaItem
+          icono={Flame}
+          color="#B0533E"
+          valor={rachaDias}
+          etiqueta={`días de racha${rachaDiasRecord > 0 ? ` (récord ${rachaDiasRecord})` : ""}`}
+          detalle={`${correctasHoy}/${META_DIARIA_RACHA} aciertos hoy`}
+        />
+        <EstadisticaItem
+          icono={Target}
+          color="#2E7D6B"
+          valor={`${pctAcierto}%`}
+          etiqueta="de acierto"
+          detalle={`${totalRespondidas} respondidas`}
+          borde
+        />
+        <EstadisticaItem
+          icono={Zap}
+          color="#C89B3C"
+          valor={rachaPreguntas}
+          etiqueta="aciertos seguidos"
+          detalle={rachaPreguntasRecord > 0 ? `récord ${rachaPreguntasRecord}` : null}
+          borde
+        />
+      </Card>
+    </div>
+  );
+}
+
+function Curiosidades({ curiosidades, vistas, onVista, onGenerarMas }) {
+  const vistosIds = useMemo(() => new Set(vistas.map((v) => v.curiosidad_id)), [vistas]);
+  const sinVerCount = useMemo(() => curiosidades.filter((c) => !vistosIds.has(c.id)).length, [curiosidades, vistosIds]);
+
+  const orden = useMemo(() => {
+    const mezclar = (arr) => [...arr].sort(() => Math.random() - 0.5);
+    const sinVer = curiosidades.filter((c) => !vistosIds.has(c.id));
+    const yaVistas = curiosidades.filter((c) => vistosIds.has(c.id));
+    return [...mezclar(sinVer), ...mezclar(yaVistas)];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [curiosidades]);
+
+  const generandoRef = useRef(false);
+  useEffect(() => {
+    if (sinVerCount < 4 && !generandoRef.current) {
+      generandoRef.current = true;
+      onGenerarMas().finally(() => { generandoRef.current = false; });
+    }
+    // onGenerarMas is re-created on every parent render; omit it so this only
+    // re-fires when the actual unseen count changes, not on unrelated re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sinVerCount]);
+
+  return (
+    <div>
+      <SectionTitle title="Curiosidades" subtitle="Datos curiosos de psicología generados por IA a partir del temario. Desliza para ver más." />
+      {orden.length === 0 ? (
+        <Card style={{ textAlign: "center", color: "#8A93A3", padding: "30px 20px" }}>
+          <Loader2 className="animate-spin" size={20} color="#8A5A9E" />
+          <p style={{ marginTop: 10, fontSize: 13 }}>Preparando las primeras curiosidades...</p>
+        </Card>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {orden.map((c) => (<CuriosidadCard key={c.id} c={c} onVista={onVista} />))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CuriosidadCard({ c, onVista }) {
+  const ref = useRef(null);
+  const [revelada, setRevelada] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) onVista(c.id); },
+      { threshold: 0.55 }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+    // onVista is re-created on every parent render; omit it so the observer
+    // isn't torn down and rebuilt on unrelated re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [c.id]);
+
+  return (
+    <div ref={ref} style={{ ...styles.card, borderLeft: "3px solid #8A5A9E" }}>
+      <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 8, display: "flex", alignItems: "center", gap: 5 }}>
+        <Sparkles size={13} /> {c.curso}{c.tema ? ` · ${c.tema}` : ""}
+      </div>
+      <p style={{ fontSize: 15, color: "#14213D", lineHeight: 1.55, margin: 0 }}>{c.texto}</p>
+      {c.pregunta_mini && (
+        <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px dashed #E4E1D8" }}>
+          <div style={{ fontSize: 13, color: "#5B6472", fontWeight: 600, marginBottom: revelada ? 8 : 0 }}>
+            ¿Sabrías responder? {c.pregunta_mini}
+          </div>
+          {revelada ? (
+            <p style={{ fontSize: 13, color: "#2E7D6B", margin: 0 }}>{c.respuesta_mini}</p>
+          ) : (
+            <button type="button" onClick={() => setRevelada(true)} style={{ ...styles.linkBtn, padding: "6px 0" }}>Ver respuesta</button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
