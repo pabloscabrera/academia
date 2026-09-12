@@ -27,6 +27,15 @@ const AVISO_SUAVE = "#FBEEE0";
 const CAUTELA = "#8A6D1F";
 const CAUTELA_SUAVE = "#FBF3DE";
 
+// ---- portada de acceso: "sala de examen", fondo plano + tarjeta oscura ----
+const PORTADA_FONDO = "#EDE6D6";
+const PORTADA_TARJETA = "#1C170F";
+const PORTADA_DORADO = "#E9C878";
+const PORTADA_TEXTO = "#F0E9D8";
+const PORTADA_PLACEHOLDER = "#8A7F68";
+const PORTADA_BORDE = "rgba(217,169,77,.22)";
+const PORTADA_LETRA = "#2A1D0F";
+
 const AJUSTES_DEFECTO = { escala: 1, fondo: "#EEECE4", fuente: "fraunces" };
 const ESCALAS = [
   { id: "pequena", label: "A", escala: 0.9, tamPreview: 13 },
@@ -662,35 +671,55 @@ function AuthScreen({ onLogin, onSignup }) {
     }
   };
 
+  const tabPortada = { flex: 1, padding: "11px 14px", borderRadius: 12, border: `1.5px solid ${PORTADA_BORDE}`, background: "#241D13", color: "#B8AB8C", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
+  const tabPortadaActivo = { background: PORTADA_DORADO, border: `1.5px solid ${PORTADA_DORADO}`, color: PORTADA_TARJETA };
+  const inputPortada = { ...styles.input, background: "#241D13", border: `1.5px solid ${PORTADA_BORDE}`, color: PORTADA_TEXTO };
+
   return (
-    <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-start", minHeight: "100dvh", position: "relative", overflow: "hidden", paddingTop: "clamp(28px, 9vh, 90px)", paddingBottom: 40, boxSizing: "border-box" }}>
-      <FondoPortada />
-      <div style={{ maxWidth: 340, width: "100%", padding: "0 24px", textAlign: "center", position: "relative", zIndex: 1 }}>
-        <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 60, height: 60, borderRadius: "50%", background: "rgba(46,125,107,0.10)", marginBottom: 16 }}>
-          <Compass size={30} color={ACENTO} strokeWidth={1.6} />
+    <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-start", minHeight: "100dvh", background: PORTADA_FONDO, paddingTop: "clamp(28px, 9vh, 90px)", paddingBottom: 40, boxSizing: "border-box" }}>
+      <style>{`
+        .portada-input::placeholder { color: ${PORTADA_PLACEHOLDER}; }
+        @keyframes portadaGirarBorde { to { transform: rotate(360deg); } }
+        .portada-btn-glow {
+          position: absolute; inset: -60%; opacity: .6;
+          background: conic-gradient(from 0deg, transparent 0deg, transparent 285deg, #7a6530 305deg, #E9C878 322deg, #7a6530 338deg, transparent 360deg);
+          animation: portadaGirarBorde 7s linear infinite;
+        }
+        @media (prefers-reduced-motion: reduce) { .portada-btn-glow { animation: none; } }
+      `}</style>
+      <div style={{ maxWidth: 340, width: "100%", padding: "0 24px", textAlign: "center" }}>
+        <div style={{ marginBottom: 26 }}>
+          <WordmarkPortada texto="AUTOPIR" />
         </div>
-        <h1 style={{ ...styles.h1, marginBottom: 26 }}>AUTOPIR</h1>
         <div style={styles.tabsOrigen}>
-          <button type="button" onClick={() => cambiarModo("login")} style={{ ...styles.tabOrigenBtn, ...(modo === "login" ? styles.tabOrigenActivo : {}) }}>Entrar</button>
-          <button type="button" onClick={() => cambiarModo("signup")} style={{ ...styles.tabOrigenBtn, ...(modo === "signup" ? styles.tabOrigenActivo : {}) }}>Crear cuenta</button>
+          <button type="button" onClick={() => cambiarModo("login")} style={{ ...tabPortada, ...(modo === "login" ? tabPortadaActivo : {}) }}>Iniciar sesión</button>
+          <button type="button" onClick={() => cambiarModo("signup")} style={{ ...tabPortada, ...(modo === "signup" ? tabPortadaActivo : {}) }}>Crear cuenta</button>
         </div>
         {cuentaCreada ? (
-          <Card style={styles.authCard}>
-            <p style={{ fontSize: 14, color: "#1E1C18", lineHeight: 1.5, margin: 0 }}>
+          <Card style={{ ...styles.authCard, background: PORTADA_TARJETA, border: `1.5px solid ${PORTADA_BORDE}` }}>
+            <p style={{ fontSize: 14, color: PORTADA_TEXTO, lineHeight: 1.5, margin: 0 }}>
               Cuenta creada. Ya puedes entrar con tu usuario y contraseña.
             </p>
-            <button type="button" onClick={() => { setPassword(""); setPassword2(""); cambiarModo("login"); }} style={{ ...styles.btnPrimary, width: "100%", marginTop: 14, justifyContent: "center" }}>
-              Ir a entrar
-            </button>
+            <div style={{ position: "relative", borderRadius: 12, padding: 1.5, overflow: "hidden", marginTop: 14, background: "#4a3a1c" }}>
+              <div className="portada-btn-glow" />
+              <button
+                type="button"
+                onClick={() => { setPassword(""); setPassword2(""); cambiarModo("login"); }}
+                style={{ ...styles.btnPrimary, position: "relative", zIndex: 1, width: "100%", margin: 0, borderRadius: 10.5, background: PORTADA_DORADO, color: PORTADA_TARJETA, justifyContent: "center" }}
+              >
+                Ir a entrar
+              </button>
+            </div>
           </Card>
         ) : (
-          <Card style={styles.authCard}>
+          <Card style={{ ...styles.authCard, background: PORTADA_TARJETA, border: `1.5px solid ${PORTADA_BORDE}` }}>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submit()}
               placeholder="Nombre de usuario"
-              style={{ ...styles.input, marginBottom: 10 }}
+              className="portada-input"
+              style={{ ...inputPortada, marginBottom: 10 }}
               autoCapitalize="none"
               autoCorrect="off"
               autoFocus
@@ -701,7 +730,8 @@ function AuthScreen({ onLogin, onSignup }) {
               onKeyDown={(e) => e.key === "Enter" && submit()}
               placeholder="Contraseña"
               type="password"
-              style={{ ...styles.input, marginBottom: modo === "signup" ? 10 : 0 }}
+              className="portada-input"
+              style={{ ...inputPortada, marginBottom: modo === "signup" ? 10 : 0 }}
             />
             {modo === "signup" && (
               <input
@@ -710,13 +740,22 @@ function AuthScreen({ onLogin, onSignup }) {
                 onKeyDown={(e) => e.key === "Enter" && submit()}
                 placeholder="Repite la contraseña"
                 type="password"
-                style={styles.input}
+                className="portada-input"
+                style={inputPortada}
               />
             )}
-            {error && <p style={{ color: "#A6362B", fontSize: 13, marginTop: 10 }}>{error}</p>}
-            <button type="button" onClick={submit} disabled={cargando} style={{ ...styles.btnPrimary, width: "100%", marginTop: 14, opacity: cargando ? 0.6 : 1, justifyContent: "center" }}>
-              {cargando ? <Loader2 className="animate-spin" size={16} /> : modo === "login" ? "Entrar" : "Crear cuenta"}
-            </button>
+            {error && <p style={{ color: ACENTO, fontSize: 13, marginTop: 10 }}>{error}</p>}
+            <div style={{ position: "relative", borderRadius: 12, padding: 1.5, overflow: "hidden", marginTop: 14, background: "#4a3a1c" }}>
+              <div className="portada-btn-glow" />
+              <button
+                type="button"
+                onClick={submit}
+                disabled={cargando}
+                style={{ ...styles.btnPrimary, position: "relative", zIndex: 1, width: "100%", margin: 0, borderRadius: 10.5, background: PORTADA_DORADO, color: PORTADA_TARJETA, opacity: cargando ? 0.6 : 1, justifyContent: "center" }}
+              >
+                {cargando ? <Loader2 className="animate-spin" size={16} /> : modo === "login" ? "Entrar" : "Crear cuenta"}
+              </button>
+            </div>
           </Card>
         )}
       </div>
@@ -724,44 +763,46 @@ function AuthScreen({ onLogin, onSignup }) {
   );
 }
 
-function FondoPortada() {
+function WordmarkPortada({ texto }) {
+  const rotaciones = useMemo(() => texto.split("").map(() => (Math.random() * 16 - 8).toFixed(1)), [texto]);
   return (
-    <div
-      aria-hidden="true"
-      style={{
-        position: "absolute",
-        inset: 0,
-        zIndex: 0,
-        background: "linear-gradient(165deg, #FBF9F4 0%, #F3F1EA 55%, #ECE8DC 100%)",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: `
-            radial-gradient(circle at 12% 16%, rgba(46,125,107,0.18), transparent 42%),
-            radial-gradient(circle at 88% 10%, rgba(200,155,60,0.16), transparent 40%),
-            radial-gradient(circle at 82% 88%, rgba(138,90,158,0.16), transparent 46%),
-            radial-gradient(circle at 12% 92%, rgba(46,125,107,0.13), transparent 44%)
-          `,
-        }}
-      />
-      <svg width="100%" height="100%" style={{ position: "absolute", inset: 0, opacity: 0.32 }}>
-        <defs>
-          <pattern id="autopir-nodos" width="80" height="80" patternUnits="userSpaceOnUse">
-            <circle cx="10" cy="10" r="1.6" fill={ACENTO} fillOpacity="0.4" />
-            <line x1="10" y1="10" x2="48" y2="34" stroke={ACENTO} strokeOpacity="0.14" strokeWidth="1" />
-            <circle cx="48" cy="34" r="1.6" fill="#C89B3C" fillOpacity="0.35" />
-            <line x1="48" y1="34" x2="24" y2="66" stroke="#8A5A9E" strokeOpacity="0.14" strokeWidth="1" />
-            <circle cx="24" cy="66" r="1.6" fill="#8A5A9E" fillOpacity="0.35" />
-            <line x1="24" y1="66" x2="68" y2="70" stroke="#5EC9C0" strokeOpacity="0.12" strokeWidth="1" />
-            <circle cx="68" cy="70" r="1.4" fill="#5EC9C0" fillOpacity="0.3" />
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#autopir-nodos)" />
-      </svg>
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg, rgba(251,249,244,0) 35%, rgba(251,249,244,0.85) 100%)" }} />
+    <div style={{ position: "relative", display: "inline-flex", justifyContent: "center", whiteSpace: "nowrap" }}>
+      <style>{`
+        @keyframes portadaCaer {
+          0% { opacity: 0; transform: translateY(-140px) rotate(var(--rot, 0deg)); }
+          55% { opacity: 1; transform: translateY(0) rotate(0deg); }
+          68% { opacity: 1; transform: translateY(7px) scaleY(.82) scaleX(1.1); }
+          82% { opacity: 1; transform: translateY(-3px) scaleY(1.03); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes portadaGolpe {
+          0%, 52% { opacity: 0; transform: translateX(-50%) scaleX(.15); }
+          60% { opacity: .6; transform: translateX(-50%) scaleX(1.3); }
+          100% { opacity: .16; transform: translateX(-50%) scaleX(.55); }
+        }
+        .portada-letra { display: inline-block; animation: portadaCaer .85s cubic-bezier(.34,1.4,.64,1) both; }
+        .portada-impacto { position: absolute; left: 50%; bottom: -6px; width: 70%; height: 8px; transform: translateX(-50%) scaleX(.2); border-radius: 50%; opacity: 0; animation: portadaGolpe .85s ease-out both; background: radial-gradient(ellipse, rgba(196,146,54,.35), transparent 70%); }
+        @media (prefers-reduced-motion: reduce) { .portada-letra { animation-duration: .01s !important; animation-delay: 0s !important; } }
+      `}</style>
+      {texto.split("").map((ch, i) => (
+        <span key={i} style={{ position: "relative", display: "inline-block" }}>
+          <span
+            className="portada-letra"
+            style={{
+              animationDelay: `${(i * 0.055).toFixed(3)}s`,
+              "--rot": `${rotaciones[i]}deg`,
+              fontFamily: "'Fraunces', Georgia, serif",
+              fontWeight: 600,
+              fontSize: 44,
+              color: PORTADA_LETRA,
+              textShadow: "0 -1px 0 rgba(255,255,255,.6), 0 0 26px rgba(196,146,54,.35), 1px 1px 0 rgba(42,29,15,.28), 2px 2px 0 rgba(42,29,15,.28), 3px 3px 5px rgba(0,0,0,.35)",
+            }}
+          >
+            {ch}
+          </span>
+          <span className="portada-impacto" style={{ animationDelay: `${(i * 0.055).toFixed(3)}s` }} />
+        </span>
+      ))}
     </div>
   );
 }
@@ -2899,7 +2940,6 @@ const SOMBRA_SUAVE = "0 1px 2px rgba(30,28,24,0.07), 0 1px 6px rgba(30,28,24,0.0
 const styles = {
   app: { fontFamily: "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", background: "#EEECE4", minHeight: "100vh", color: TINTA, WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none", fontSize: 17 },
   center: { display: "flex", alignItems: "center", justifyContent: "center" },
-  h1: { fontFamily: "var(--font-display)", fontSize: 32, margin: "0 0 10px", color: TINTA },
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 24px", borderBottom: `1px solid ${RAYA}` },
   nav: { display: "flex", gap: 6, padding: "0 18px", borderBottom: `1px solid ${RAYA}`, overflowX: "auto" },
   navBtn: { display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: "16px 14px", fontSize: 16, cursor: "pointer", whiteSpace: "nowrap" },
