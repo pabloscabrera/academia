@@ -762,7 +762,6 @@ function WordmarkPortada({ texto }) {
   const rotaciones = useMemo(() => texto.split("").map(() => (Math.random() * 16 - 8).toFixed(1)), [texto]);
   return (
     <div style={{ position: "relative", display: "inline-flex", justifyContent: "center", whiteSpace: "nowrap" }}>
-      <div style={{ position: "absolute", left: "50%", bottom: -14, transform: "translateX(-50%)", width: "76%", height: 20, borderRadius: "50%", background: "rgba(28,23,15,.32)", filter: "blur(12px)" }} />
       <style>{`
         @keyframes portadaCaer {
           0% { opacity: 0; transform: translateY(-140px) rotate(var(--rot, 0deg)); }
@@ -777,11 +776,13 @@ function WordmarkPortada({ texto }) {
           100% { opacity: .16; transform: translateX(-50%) scaleX(.55); }
         }
         .portada-letra { display: inline-block; animation: portadaCaer .85s cubic-bezier(.34,1.4,.64,1) both; }
+        .portada-suelo { position: absolute; left: 50%; bottom: -3px; width: 58%; height: 7px; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(ellipse, rgba(20,16,10,.4), rgba(20,16,10,.14) 60%, transparent 80%); }
         .portada-impacto { position: absolute; left: 50%; bottom: -6px; width: 70%; height: 8px; transform: translateX(-50%) scaleX(.2); border-radius: 50%; opacity: 0; animation: portadaGolpe .85s ease-out both; background: radial-gradient(ellipse, rgba(233,200,120,.5), transparent 70%); }
         @media (prefers-reduced-motion: reduce) { .portada-letra { animation-duration: .01s !important; animation-delay: 0s !important; } }
       `}</style>
       {texto.split("").map((ch, i) => (
         <span key={i} style={{ position: "relative", display: "inline-block" }}>
+          <span className="portada-suelo" />
           <span
             className="portada-letra"
             style={{
