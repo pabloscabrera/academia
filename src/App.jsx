@@ -1025,6 +1025,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
   const [seconds, setSeconds] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [relampago, setRelampago] = useState(false);
+  const [hito, setHito] = useState(null);
 
   useEffect(() => {
     let timer;
@@ -1064,7 +1065,14 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
     const q = pool[idx];
     const correcto = i === q.correcta;
     if (ronda === 1) {
-      if (relampago) onStreakAnswer(correcto);
+      if (relampago) {
+        onStreakAnswer(correcto);
+        const rachaActual = idx + 1;
+        if (correcto && rachaActual % 5 === 0) {
+          setHito(rachaActual);
+          setTimeout(() => setHito(null), 1000);
+        }
+      }
       if (onProgresoDiario) onProgresoDiario(correcto);
       if (!correcto && onFallo) onFallo(q);
     }
@@ -1190,7 +1198,24 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
             100% { box-shadow: 0 0 0 0 rgba(76,175,80,0); }
           }
           .acierto-anim { animation: acertarPulso 0.6s ease-out; }
+          @keyframes hitoPop {
+            0% { transform: scale(0.4) translateY(10px); opacity: 0; }
+            15% { transform: scale(1.15) translateY(0); opacity: 1; }
+            30% { transform: scale(1) translateY(0); opacity: 1; }
+            80% { transform: scale(1) translateY(-6px); opacity: 1; }
+            100% { transform: scale(0.9) translateY(-24px); opacity: 0; }
+          }
         `}</style>
+        {hito != null && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", animation: "hitoPop 1s ease-out forwards" }}>
+              <span style={{ fontFamily: "var(--font-display)", fontSize: 52, fontWeight: 700, color: TINTA, textShadow: "0 2px 0 #fff, 0 4px 14px rgba(232,103,43,0.45)" }}>
+                {hito}
+              </span>
+              <Flame size={76} color="#E8672B" fill="#E8672B" style={{ marginTop: -6, filter: "drop-shadow(0 6px 18px rgba(232,103,43,0.5))" }} />
+            </div>
+          </div>
+        )}
         <div style={styles.runHeader}>
           <span style={{ fontSize: 13, color: relampago ? "#9C7A2C" : "#6E6A61", fontWeight: relampago ? 700 : 400, display: "flex", alignItems: "center", gap: 4 }}>
             {relampago && <Zap size={13} color="#C89B3C" />}
@@ -2428,28 +2453,21 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate }) {
           </div>
         </div>
         {!revelada ? (
-          <button type="button" onClick={() => setRevelada(true)} style={{ ...styles.btnPrimary, width: "100%", marginTop: 16, justifyContent: "center" }}>
-            Ver respuesta
-          </button>
+          <p style={{ fontSize: 12.5, color: "#9B9689", textAlign: "center", marginTop: 14 }}>Toca la tarjeta para ver la respuesta</p>
         ) : (
-          <>
-            <button type="button" onClick={() => setRevelada(false)} style={{ ...styles.linkBtn, marginTop: 16 }}>
-              Ver pregunta de nuevo
-            </button>
-            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
-              {CALIFICACIONES_FLASHCARD.map((c) => (
-                <button
-                  key={c.calidad}
-                  type="button"
-                  disabled={enviando}
-                  onClick={() => calificar(c.calidad)}
-                  style={{ ...styles.btnDificultad, background: c.bg, color: c.color, borderColor: c.borde, opacity: enviando ? 0.6 : 1 }}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-          </>
+          <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+            {CALIFICACIONES_FLASHCARD.map((c) => (
+              <button
+                key={c.calidad}
+                type="button"
+                disabled={enviando}
+                onClick={() => calificar(c.calidad)}
+                style={{ ...styles.btnDificultad, background: c.bg, color: c.color, borderColor: c.borde, opacity: enviando ? 0.6 : 1 }}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
         )}
       </div>
     );
