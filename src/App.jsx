@@ -776,13 +776,13 @@ function WordmarkPortada({ texto }) {
           100% { opacity: .16; transform: translateX(-50%) scaleX(.55); }
         }
         .portada-letra { display: inline-block; animation: portadaCaer .85s cubic-bezier(.34,1.4,.64,1) both; }
-        .portada-suelo { position: absolute; left: 50%; bottom: -3px; width: 58%; height: 7px; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(ellipse, rgba(20,16,10,.4), rgba(20,16,10,.14) 60%, transparent 80%); }
+        .portada-suelo { position: absolute; left: 50%; bottom: -5px; width: 86%; height: 9px; transform: translateX(-50%); border-radius: 50%; background: radial-gradient(ellipse, rgba(20,16,10,.38) 0%, rgba(20,16,10,.24) 45%, rgba(20,16,10,.08) 72%, transparent 88%); }
         .portada-impacto { position: absolute; left: 50%; bottom: -6px; width: 70%; height: 8px; transform: translateX(-50%) scaleX(.2); border-radius: 50%; opacity: 0; animation: portadaGolpe .85s ease-out both; background: radial-gradient(ellipse, rgba(233,200,120,.5), transparent 70%); }
         @media (prefers-reduced-motion: reduce) { .portada-letra { animation-duration: .01s !important; animation-delay: 0s !important; } }
       `}</style>
+      <span className="portada-suelo" />
       {texto.split("").map((ch, i) => (
         <span key={i} style={{ position: "relative", display: "inline-block" }}>
-          <span className="portada-suelo" />
           <span
             className="portada-letra"
             style={{
