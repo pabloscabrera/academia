@@ -2226,7 +2226,7 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
     [favoritos, preguntasPorId]
   );
 
-  const fallosVisibles = verTodosFallos ? fallosConPregunta : fallosConPregunta.slice(0, 5);
+  const fallosVisibles = verTodosFallos ? fallosConPregunta : fallosConPregunta.slice(0, 10);
   const abierta = abiertaId != null ? (preguntasPorId[abiertaId] || null) : null;
 
   return (
@@ -2238,10 +2238,10 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
           title="Historial de fallos"
           subtitle={fallosConPregunta.length === 0 ? "Todavía no has fallado ninguna pregunta." : "Las que más se te atascan, primero."}
         />
-        {fallosVisibles.map((f) => (
-          <FalloRepetible key={f.pregunta_id} f={f} favoritos={favoritos} onToggleFavorito={onToggleFavorito} />
+        {fallosVisibles.map((f, i) => (
+          <FalloRepetible key={f.pregunta_id} f={f} index={i + 1} favoritos={favoritos} onToggleFavorito={onToggleFavorito} />
         ))}
-        {fallosConPregunta.length > 5 && (
+        {fallosConPregunta.length > 10 && (
           <button type="button" onClick={() => setVerTodosFallos((v) => !v)} style={styles.linkBtn}>
             {verTodosFallos ? "Ver menos" : `Ver las ${fallosConPregunta.length} preguntas falladas`}
           </button>
@@ -2409,21 +2409,21 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate }) {
           <div style={{ ...styles.progressFill, width: `${(idx / sesion.length) * 100}%`, background: "#8A5A9E" }} />
         </div>
         <style>{`
-          .flip-container { perspective: 1600px; margin-top: 16px; min-height: 200px; }
-          .flip-inner { position: relative; width: 100%; height: 100%; min-height: 200px; transition: transform 0.5s; transform-style: preserve-3d; }
+          .flip-container { perspective: 1600px; margin-top: 16px; min-height: 280px; }
+          .flip-inner { position: relative; width: 100%; height: 100%; min-height: 280px; transition: transform 0.5s; transform-style: preserve-3d; }
           .flip-inner.flipped { transform: rotateY(180deg); }
-          .flip-face { position: absolute; inset: 0; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; margin: 0; }
+          .flip-face { position: absolute; inset: 0; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; }
           .flip-back { transform: rotateY(180deg); }
         `}</style>
         <div className="flip-container" onClick={() => !revelada && setRevelada(true)} style={{ cursor: revelada ? "default" : "pointer" }}>
           <div className={`flip-inner${revelada ? " flipped" : ""}`}>
             <Card className="flip-face">
-              <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 14 }}>{carta.mazo}</div>
-              <p style={{ fontSize: 17, color: TINTA, lineHeight: 1.55, margin: 0 }}>{carta.frontal}</p>
+              <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 18 }}>{carta.mazo}</div>
+              <p style={{ fontSize: "clamp(22px, 4vw, 30px)", color: TINTA, lineHeight: 1.4, margin: 0, fontWeight: 600 }}>{carta.frontal}</p>
             </Card>
             <Card className="flip-face flip-back">
-              <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 14 }}>{carta.mazo}</div>
-              <p style={{ fontSize: 16, color: CORRECTO, lineHeight: 1.55, margin: 0, fontWeight: 600 }}>{carta.posterior}</p>
+              <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 18 }}>{carta.mazo}</div>
+              <p style={{ fontSize: "clamp(22px, 4vw, 30px)", color: CORRECTO, lineHeight: 1.4, margin: 0, fontWeight: 700 }}>{carta.posterior}</p>
             </Card>
           </div>
         </div>
@@ -2621,50 +2621,67 @@ function PreguntasPlegables({ titulo, subtitulo, items, etiquetaItem, abiertaId,
   );
 }
 
-function FalloRepetible({ f, favoritos, onToggleFavorito }) {
+function FalloRepetible({ f, index, favoritos, onToggleFavorito }) {
+  const [abierta, setAbierta] = useState(false);
   const [repitiendo, setRepitiendo] = useState(false);
   const [selected, setSelected] = useState(null);
   const q = f.pregunta;
 
+  const toggleAbierta = () => {
+    setAbierta((v) => !v);
+    setRepitiendo(false);
+    setSelected(null);
+  };
+
   return (
     <Card style={{ marginBottom: 10 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 11, color: "#9B9689", marginBottom: 4 }}>
-            {q.curso} · {q.tema} · fallada {f.veces} {f.veces === 1 ? "vez" : "veces"}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <button type="button" onClick={toggleAbierta} style={{ ...styles.expandBtn, flex: 1 }}>
+          <div style={{ textAlign: "left", flex: 1 }}>
+            <div style={{ fontSize: 14, color: TINTA, fontWeight: 600 }}>
+              {q.curso} · Pregunta {index}
+            </div>
+            <div style={{ fontSize: 11, color: "#9B9689", marginTop: 2 }}>
+              fallada {f.veces} {f.veces === 1 ? "vez" : "veces"}
+            </div>
           </div>
-          <div style={{ fontSize: 14, color: TINTA, lineHeight: 1.4 }}>{q.pregunta}</div>
-        </div>
+          {abierta ? <ChevronDown size={16} color="#9B9689" /> : <ChevronRight size={16} color="#9B9689" />}
+        </button>
         <FavoritoBtn pregunta={q} favoritos={favoritos} onToggle={onToggleFavorito} />
       </div>
-      {!repitiendo ? (
-        <button type="button" onClick={() => setRepitiendo(true)} style={{ ...styles.linkBtn, marginTop: 10 }}>
-          Repetir
-        </button>
-      ) : (
+      {abierta && (
         <div style={{ marginTop: 12 }}>
-          {q.opciones.map((op, i) => {
-            let estilo = { ...styles.daypoOpcion, marginBottom: 8, padding: "12px 14px", fontSize: 14 };
-            if (selected != null) {
-              if (i === q.correcta) estilo = { ...estilo, ...styles.daypoOpcionCorrecta };
-              else if (i === selected) estilo = { ...estilo, ...styles.daypoOpcionIncorrecta };
-            }
-            return (
-              <button type="button" key={i} onClick={() => selected == null && setSelected(i)} disabled={selected != null} style={estilo}>
-                <span style={styles.daypoLetra}>{String.fromCharCode(65 + i)}</span>
-                <span style={{ flex: 1 }}>{op}</span>
-                {selected != null && i === q.correcta && <Check size={16} color={CORRECTO} />}
-                {selected != null && i === selected && i !== q.correcta && <X size={16} color={ACENTO} />}
-              </button>
-            );
-          })}
-          {selected != null && (
-            <>
-              {q.explicacion && <p style={{ fontSize: 13, color: TINTA_SUAVE, margin: "4px 0 8px", lineHeight: 1.5 }}>{q.explicacion}</p>}
-              <button type="button" onClick={() => setSelected(null)} style={styles.linkBtn}>
-                Repetir de nuevo
-              </button>
-            </>
+          <div style={{ fontSize: 14, color: TINTA, lineHeight: 1.4, marginBottom: 10 }}>{q.pregunta}</div>
+          {!repitiendo ? (
+            <button type="button" onClick={() => setRepitiendo(true)} style={styles.linkBtn}>
+              Repetir
+            </button>
+          ) : (
+            <div>
+              {q.opciones.map((op, i) => {
+                let estilo = { ...styles.daypoOpcion, marginBottom: 8, padding: "12px 14px", fontSize: 14 };
+                if (selected != null) {
+                  if (i === q.correcta) estilo = { ...estilo, ...styles.daypoOpcionCorrecta };
+                  else if (i === selected) estilo = { ...estilo, ...styles.daypoOpcionIncorrecta };
+                }
+                return (
+                  <button type="button" key={i} onClick={() => selected == null && setSelected(i)} disabled={selected != null} style={estilo}>
+                    <span style={styles.daypoLetra}>{String.fromCharCode(65 + i)}</span>
+                    <span style={{ flex: 1 }}>{op}</span>
+                    {selected != null && i === q.correcta && <Check size={16} color={CORRECTO} />}
+                    {selected != null && i === selected && i !== q.correcta && <X size={16} color={ACENTO} />}
+                  </button>
+                );
+              })}
+              {selected != null && (
+                <>
+                  {q.explicacion && <p style={{ fontSize: 13, color: TINTA_SUAVE, margin: "4px 0 8px", lineHeight: 1.5 }}>{q.explicacion}</p>}
+                  <button type="button" onClick={() => setSelected(null)} style={styles.linkBtn}>
+                    Repetir de nuevo
+                  </button>
+                </>
+              )}
+            </div>
           )}
         </div>
       )}
