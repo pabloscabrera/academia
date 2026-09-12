@@ -28,13 +28,11 @@ const CAUTELA = "#8A6D1F";
 const CAUTELA_SUAVE = "#FBF3DE";
 
 // ---- portada de acceso: "sala de examen", fondo plano + tarjeta oscura ----
-const PORTADA_FONDO = "#EDE6D6";
 const PORTADA_TARJETA = "#1C170F";
 const PORTADA_DORADO = "#E9C878";
 const PORTADA_TEXTO = "#F0E9D8";
 const PORTADA_PLACEHOLDER = "#8A7F68";
 const PORTADA_BORDE = "rgba(217,169,77,.22)";
-const PORTADA_LETRA = "#2A1D0F";
 
 const AJUSTES_DEFECTO = { escala: 1, fondo: "#EEECE4", fuente: "fraunces" };
 const ESCALAS = [
@@ -676,7 +674,8 @@ function AuthScreen({ onLogin, onSignup }) {
   const inputPortada = { ...styles.input, background: "#241D13", border: `1.5px solid ${PORTADA_BORDE}`, color: PORTADA_TEXTO };
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-start", minHeight: "100dvh", background: PORTADA_FONDO, paddingTop: "clamp(28px, 9vh, 90px)", paddingBottom: 40, boxSizing: "border-box" }}>
+    <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-start", minHeight: "100dvh", position: "relative", overflow: "hidden", paddingTop: "clamp(28px, 9vh, 90px)", paddingBottom: 40, boxSizing: "border-box" }}>
+      <FondoPortada />
       <style>{`
         .portada-input::placeholder { color: ${PORTADA_PLACEHOLDER}; }
         @keyframes portadaGirarBorde { to { transform: rotate(360deg); } }
@@ -687,7 +686,7 @@ function AuthScreen({ onLogin, onSignup }) {
         }
         @media (prefers-reduced-motion: reduce) { .portada-btn-glow { animation: none; } }
       `}</style>
-      <div style={{ maxWidth: 340, width: "100%", padding: "0 24px", textAlign: "center" }}>
+      <div style={{ maxWidth: 340, width: "100%", padding: "0 24px", textAlign: "center", position: "relative", zIndex: 1 }}>
         <div style={{ marginBottom: 26 }}>
           <WordmarkPortada texto="AUTOPIR" />
         </div>
@@ -766,7 +765,13 @@ function AuthScreen({ onLogin, onSignup }) {
 function WordmarkPortada({ texto }) {
   const rotaciones = useMemo(() => texto.split("").map(() => (Math.random() * 16 - 8).toFixed(1)), [texto]);
   return (
-    <div style={{ position: "relative", display: "inline-flex", justifyContent: "center", whiteSpace: "nowrap" }}>
+    <div
+      style={{
+        position: "relative", display: "inline-flex", justifyContent: "center", whiteSpace: "nowrap",
+        background: PORTADA_TARJETA, borderRadius: 14, padding: "16px 30px",
+        boxShadow: "0 16px 36px rgba(20,16,10,.35)", transform: "rotate(-1.1deg)",
+      }}
+    >
       <style>{`
         @keyframes portadaCaer {
           0% { opacity: 0; transform: translateY(-140px) rotate(var(--rot, 0deg)); }
@@ -781,7 +786,7 @@ function WordmarkPortada({ texto }) {
           100% { opacity: .16; transform: translateX(-50%) scaleX(.55); }
         }
         .portada-letra { display: inline-block; animation: portadaCaer .85s cubic-bezier(.34,1.4,.64,1) both; }
-        .portada-impacto { position: absolute; left: 50%; bottom: -6px; width: 70%; height: 8px; transform: translateX(-50%) scaleX(.2); border-radius: 50%; opacity: 0; animation: portadaGolpe .85s ease-out both; background: radial-gradient(ellipse, rgba(196,146,54,.35), transparent 70%); }
+        .portada-impacto { position: absolute; left: 50%; bottom: -6px; width: 70%; height: 8px; transform: translateX(-50%) scaleX(.2); border-radius: 50%; opacity: 0; animation: portadaGolpe .85s ease-out both; background: radial-gradient(ellipse, rgba(233,200,120,.5), transparent 70%); }
         @media (prefers-reduced-motion: reduce) { .portada-letra { animation-duration: .01s !important; animation-delay: 0s !important; } }
       `}</style>
       {texto.split("").map((ch, i) => (
@@ -793,9 +798,9 @@ function WordmarkPortada({ texto }) {
               "--rot": `${rotaciones[i]}deg`,
               fontFamily: "'Fraunces', Georgia, serif",
               fontWeight: 600,
-              fontSize: 44,
-              color: PORTADA_LETRA,
-              textShadow: "0 -1px 0 rgba(255,255,255,.6), 0 0 26px rgba(196,146,54,.35), 1px 1px 0 rgba(42,29,15,.28), 2px 2px 0 rgba(42,29,15,.28), 3px 3px 5px rgba(0,0,0,.35)",
+              fontSize: 40,
+              color: PORTADA_DORADO,
+              textShadow: "0 1px 0 rgba(0,0,0,.35)",
             }}
           >
             {ch}
@@ -803,6 +808,20 @@ function WordmarkPortada({ texto }) {
           <span className="portada-impacto" style={{ animationDelay: `${(i * 0.055).toFixed(3)}s` }} />
         </span>
       ))}
+    </div>
+  );
+}
+
+function FondoPortada() {
+  const mancha = (props) => ({
+    position: "absolute", borderRadius: "50%", filter: "blur(60px)", ...props,
+  });
+  return (
+    <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden", background: "#FBF9F4" }}>
+      <div style={mancha({ width: 560, height: 520, left: "-14%", top: "-16%", background: "radial-gradient(circle, rgba(233,200,120,.55), transparent 70%)", transform: "rotate(-8deg)" })} />
+      <div style={mancha({ width: 600, height: 360, right: "-12%", top: "2%", background: "radial-gradient(circle, rgba(166,54,43,.16), transparent 72%)", transform: "rotate(16deg)" })} />
+      <div style={mancha({ width: 640, height: 400, left: "-10%", bottom: "-14%", background: "radial-gradient(circle, rgba(46,125,70,.14), transparent 70%)", transform: "rotate(-12deg)" })} />
+      <div style={mancha({ width: 520, height: 500, right: "-16%", bottom: "-18%", background: "radial-gradient(circle, rgba(233,200,120,.4), transparent 72%)", transform: "rotate(7deg)" })} />
     </div>
   );
 }
