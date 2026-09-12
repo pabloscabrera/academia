@@ -974,9 +974,9 @@ function Header({
           {mostrarFrase && (
             <>
               <div style={styles.dropdownCatcher} onClick={() => setMostrarFrase(false)} />
-              <div style={{ ...styles.logrosDropdown, width: 260 }} onClick={(e) => e.stopPropagation()}>
-                <p style={{ fontFamily: "var(--font-display)", fontSize: 15, lineHeight: 1.5, color: TINTA, margin: 0 }}>{frase}</p>
-                <button type="button" onClick={nuevaFrase} style={{ ...styles.linkBtn, marginTop: 10 }}>
+              <div style={{ ...styles.logrosDropdown, width: 320 }} onClick={(e) => e.stopPropagation()}>
+                <p style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: "italic", fontWeight: 500, fontSize: 21, lineHeight: 1.5, color: TINTA, margin: 0 }}>{frase}</p>
+                <button type="button" onClick={nuevaFrase} style={{ ...styles.linkBtn, marginTop: 12 }}>
                   Otra frase
                 </button>
               </div>
@@ -1060,7 +1060,11 @@ function Nav({ section, setSection, alerta }) {
 function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiario, onFallo, favoritos, onToggleFavorito, miRacha }) {
   const [incluirInventadas, setIncluirInventadas] = useState(false);
   const base = useMemo(() => (incluirInventadas ? questions : questions.filter((q) => !q.inventada)), [questions, incluirInventadas]);
-  const cursos = useMemo(() => ["Todos", ...new Set(base.filter((q) => esExamen(q.curso)).map((q) => q.curso))], [base]);
+  const cursos = useMemo(() => {
+    const examenes = [...new Set(base.filter((q) => esExamen(q.curso)).map((q) => q.curso))];
+    examenes.sort((a, b) => (parseInt(b.match(/\d+/), 10) || 0) - (parseInt(a.match(/\d+/), 10) || 0));
+    return ["Todos", ...examenes];
+  }, [base]);
   const [curso, setCurso] = useState("Todos");
   const disponibles = useMemo(() => (curso === "Todos" ? base.length : base.filter((q) => q.curso === curso).length), [curso, base]);
   const [numPreguntas, setNumPreguntas] = useState(10);
