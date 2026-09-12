@@ -2415,7 +2415,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate }) {
           .flip-face { position: absolute; inset: 0; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; }
           .flip-back { transform: rotateY(180deg); }
         `}</style>
-        <div className="flip-container" onClick={() => !revelada && setRevelada(true)} style={{ cursor: revelada ? "default" : "pointer" }}>
+        <div className="flip-container" onClick={() => setRevelada((v) => !v)} style={{ cursor: "pointer" }}>
           <div className={`flip-inner${revelada ? " flipped" : ""}`}>
             <Card className="flip-face">
               <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 18 }}>{carta.mazo}</div>
@@ -2432,19 +2432,24 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate }) {
             Ver respuesta
           </button>
         ) : (
-          <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-            {CALIFICACIONES_FLASHCARD.map((c) => (
-              <button
-                key={c.calidad}
-                type="button"
-                disabled={enviando}
-                onClick={() => calificar(c.calidad)}
-                style={{ ...styles.btnDificultad, background: c.bg, color: c.color, borderColor: c.borde, opacity: enviando ? 0.6 : 1 }}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
+          <>
+            <button type="button" onClick={() => setRevelada(false)} style={{ ...styles.linkBtn, marginTop: 16 }}>
+              Ver pregunta de nuevo
+            </button>
+            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+              {CALIFICACIONES_FLASHCARD.map((c) => (
+                <button
+                  key={c.calidad}
+                  type="button"
+                  disabled={enviando}
+                  onClick={() => calificar(c.calidad)}
+                  style={{ ...styles.btnDificultad, background: c.bg, color: c.color, borderColor: c.borde, opacity: enviando ? 0.6 : 1 }}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </>
         )}
       </div>
     );
