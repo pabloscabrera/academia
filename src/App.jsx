@@ -762,6 +762,7 @@ function WordmarkPortada({ texto }) {
   const rotaciones = useMemo(() => texto.split("").map(() => (Math.random() * 16 - 8).toFixed(1)), [texto]);
   return (
     <div style={{ position: "relative", display: "inline-flex", justifyContent: "center", whiteSpace: "nowrap" }}>
+      <div style={{ position: "absolute", left: "50%", bottom: -14, transform: "translateX(-50%)", width: "76%", height: 20, borderRadius: "50%", background: "rgba(28,23,15,.32)", filter: "blur(12px)" }} />
       <style>{`
         @keyframes portadaCaer {
           0% { opacity: 0; transform: translateY(-140px) rotate(var(--rot, 0deg)); }
@@ -787,7 +788,7 @@ function WordmarkPortada({ texto }) {
               animationDelay: `${(i * 0.055).toFixed(3)}s`,
               "--rot": `${rotaciones[i]}deg`,
               fontFamily: "'Big Shoulders Display', sans-serif",
-              fontWeight: 800,
+              fontWeight: 900,
               fontSize: "clamp(48px, 10vw, 76px)",
               letterSpacing: 0.5,
               color: TINTA,
