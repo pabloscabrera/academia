@@ -3,7 +3,7 @@ import {
   Compass, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
   Plus, Check, X, Loader2, User, LogOut, Flag, Pencil, Trash2,
    Zap, Heart, Swords, Flame, Sparkles, Star, Award, Target, Settings,
-   Medal, Gem, Crown, Search, Layers
+   Medal, Gem, Crown, Search, Layers, Lightbulb
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { TEMARIO } from "./temario";
@@ -606,6 +606,7 @@ export default function AcademiaPIR() {
               onFallo={registrarFallo}
               favoritos={favoritos}
               onToggleFavorito={toggleFavorito}
+              miRacha={rachas.find((r) => r.name === user.name)}
             />
           )}
           {section === "duelo" && (
@@ -879,6 +880,33 @@ function InsigniaDesbloqueadaModal({ insignia, onClose }) {
   );
 }
 
+const FRASES_MOTIVADORAS = [
+  "Cada test que haces hoy es un punto menos de nervios el día del examen.",
+  "No necesitas sentirte con ganas para estudiar; solo necesitas empezar la primera pregunta.",
+  "El PIR no lo aprueba quien más sabe, sino quien no se rinde en enero.",
+  "Fallar una pregunta ahora es gratis. Fallarla en el examen, no.",
+  "Llevas más estudiado de lo que crees en los días malos.",
+  "Una racha se rompe una vez; el hábito de volver a intentarlo, nunca.",
+  "Hoy no hace falta un día perfecto. Hace falta un tema menos.",
+  "Tu yo de dentro de unos meses te va a agradecer esta tarde.",
+  "El cansancio de estudiar duele menos que el de repetir la convocatoria.",
+  "No compares tu ritmo con el de otros opositores: compáralo con el tuyo de la semana pasada.",
+  "Cada flashcard repasada es una pregunta que ya no te puede sorprender.",
+  "Descansar también es parte del plan de estudio, no una interrupción.",
+  "Nadie se examina de lo que sabe un día cualquiera; se examina de lo que ha repetido cien veces.",
+  "El objetivo de hoy no es dominar el temario, es no dejarlo para mañana.",
+  "Los que aprueban el PIR también tienen días en los que no les apetece nada.",
+  "Una autoevaluación floja también suma: te dice dónde mirar mañana.",
+  "No estás en cero. Estás en el punto exacto donde te tocaba estar hoy.",
+  "El duelo de esta noche no importa tanto como el examen de junio. Juega tranquilo.",
+  "Estudiar cansado veinte minutos vale más que no estudiar nada por esperar sentirte mejor.",
+  "La plaza no la gana quien memoriza más rápido, sino quien no deja de intentarlo.",
+  "Vuelve a la pregunta que fallaste. Ahí está el examen, no en la que ya dominas.",
+  "Un mal día de estudio no borra los cien buenos que ya llevas.",
+  "Levanta la cabeza del cuaderno un momento: llevas más camino recorrido del que ves de cerca.",
+  "El PIR se prepara con constancia aburrida, no con motivación bonita. Y hoy toca constancia.",
+];
+
 function Header({
   user, onLogout, miRacha, onAjustes,
   questions, onAddQuestion, onUpdateQuestion, onDeleteQuestion, favoritos, onToggleFavorito,
@@ -888,6 +916,15 @@ function Header({
   const [mostrarRanking, setMostrarRanking] = useState(false);
   const [mostrarBanco, setMostrarBanco] = useState(false);
   const [mostrarRuleta, setMostrarRuleta] = useState(false);
+  const [mostrarFrase, setMostrarFrase] = useState(false);
+  const [frase, setFrase] = useState(null);
+  const nuevaFrase = () => {
+    setFrase((actual) => {
+      const opciones = actual ? FRASES_MOTIVADORAS.filter((f) => f !== actual) : FRASES_MOTIVADORAS;
+      return opciones[Math.floor(Math.random() * opciones.length)];
+    });
+    setMostrarFrase(true);
+  };
   return (
     <header style={styles.header}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -926,6 +963,22 @@ function Header({
               <div style={styles.dropdownCatcher} onClick={() => setMostrarRuleta(false)} />
               <div style={{ ...styles.logrosDropdown, width: 300 }} onClick={(e) => e.stopPropagation()}>
                 <RuletaDiaria questions={questions} miRacha={miRacha} onGirarRuleta={onGirarRuleta} />
+              </div>
+            </>
+          )}
+        </div>
+        <div style={{ position: "relative" }}>
+          <button type="button" onClick={nuevaFrase} style={styles.iconBtn} title="Frase motivadora">
+            <Lightbulb size={15} color={mostrarFrase ? ORO : TINTA_SUAVE} />
+          </button>
+          {mostrarFrase && (
+            <>
+              <div style={styles.dropdownCatcher} onClick={() => setMostrarFrase(false)} />
+              <div style={{ ...styles.logrosDropdown, width: 260 }} onClick={(e) => e.stopPropagation()}>
+                <p style={{ fontFamily: "var(--font-display)", fontSize: 15, lineHeight: 1.5, color: TINTA, margin: 0 }}>{frase}</p>
+                <button type="button" onClick={nuevaFrase} style={{ ...styles.linkBtn, marginTop: 10 }}>
+                  Otra frase
+                </button>
               </div>
             </>
           )}
@@ -1004,7 +1057,7 @@ function Nav({ section, setSection, alerta }) {
   );
 }
 
-function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiario, onFallo, favoritos, onToggleFavorito }) {
+function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiario, onFallo, favoritos, onToggleFavorito, miRacha }) {
   const [incluirInventadas, setIncluirInventadas] = useState(false);
   const base = useMemo(() => (incluirInventadas ? questions : questions.filter((q) => !q.inventada)), [questions, incluirInventadas]);
   const cursos = useMemo(() => ["Todos", ...new Set(base.filter((q) => esExamen(q.curso)).map((q) => q.curso))], [base]);
@@ -1025,7 +1078,8 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
   const [seconds, setSeconds] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [relampago, setRelampago] = useState(false);
-  const [hito, setHito] = useState(null);
+  const [rachaViva, setRachaViva] = useState(0);
+  const recordPrevio = (miRacha && miRacha.racha_record) || 0;
 
   useEffect(() => {
     let timer;
@@ -1042,7 +1096,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
     setPool(shuffled); setPoolOriginal(shuffled);
     setIdx(0); setAnswers([]); setSelected(null); setRevealed(false); setSeconds(0);
     setRonda(1); setResultados({}); setPrimerIntento(null); setPreguntaAbierta(null);
-    setRelampago(false);
+    setRelampago(false); setRachaViva(0);
     setState("running");
   };
 
@@ -1053,7 +1107,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
     setPool(shuffled); setPoolOriginal(shuffled);
     setIdx(0); setAnswers([]); setSelected(null); setRevealed(false); setSeconds(0);
     setRonda(1); setResultados({}); setPrimerIntento(null); setPreguntaAbierta(null);
-    setRelampago(true);
+    setRelampago(true); setRachaViva(0);
     setState("running");
   };
 
@@ -1067,11 +1121,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
     if (ronda === 1) {
       if (relampago) {
         onStreakAnswer(correcto);
-        const rachaActual = idx + 1;
-        if (correcto && rachaActual % 5 === 0) {
-          setHito(rachaActual);
-          setTimeout(() => setHito(null), 1000);
-        }
+        if (correcto) setRachaViva((v) => v + 1);
       }
       if (onProgresoDiario) onProgresoDiario(correcto);
       if (!correcto && onFallo) onFallo(q);
@@ -1198,31 +1248,25 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
             100% { box-shadow: 0 0 0 0 rgba(76,175,80,0); }
           }
           .acierto-anim { animation: acertarPulso 0.6s ease-out; }
-          @keyframes hitoPop {
-            0% { transform: scale(0.4) translateY(10px); opacity: 0; }
-            15% { transform: scale(1.15) translateY(0); opacity: 1; }
-            30% { transform: scale(1) translateY(0); opacity: 1; }
-            80% { transform: scale(1) translateY(-6px); opacity: 1; }
-            100% { transform: scale(0.9) translateY(-24px); opacity: 0; }
-          }
         `}</style>
-        {hito != null && (
-          <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", animation: "hitoPop 1s ease-out forwards" }}>
-              <span style={{ fontFamily: "var(--font-display)", fontSize: 52, fontWeight: 700, color: TINTA, textShadow: "0 2px 0 #fff, 0 4px 14px rgba(232,103,43,0.45)" }}>
-                {hito}
-              </span>
-              <Flame size={76} color="#E8672B" fill="#E8672B" style={{ marginTop: -6, filter: "drop-shadow(0 6px 18px rgba(232,103,43,0.5))" }} />
-            </div>
-          </div>
-        )}
         <div style={styles.runHeader}>
           <span style={{ fontSize: 13, color: relampago ? "#9C7A2C" : "#6E6A61", fontWeight: relampago ? 700 : 400, display: "flex", alignItems: "center", gap: 4 }}>
             {relampago && <Zap size={13} color="#C89B3C" />}
             {relampago ? "Modo relámpago · " : (ronda > 1 ? `Repaso de falladas (ronda ${ronda}) · ` : "")}Pregunta {idx + 1} de {pool.length}
           </span>
-          <span style={{ fontSize: 13, color: "#6E6A61", fontWeight: relampago ? 700 : 400, display: "flex", alignItems: "center", gap: 4 }}>
-            <Clock size={13} /> {mm}:{ss}
+          <span style={{ fontSize: 13, color: "#6E6A61", fontWeight: relampago ? 700 : 400, display: "flex", alignItems: "center", gap: 8 }}>
+            {relampago && (
+              <span style={{ display: "flex", alignItems: "center", gap: 3 }} title={rachaViva > recordPrevio ? "¡Nuevo récord!" : `Récord: ${recordPrevio}`}>
+                <Flame
+                  size={13}
+                  color={rachaViva > recordPrevio ? "#E8672B" : "#C9C5B7"}
+                  fill={rachaViva > recordPrevio ? "#E8672B" : "none"}
+                  style={rachaViva > recordPrevio ? { filter: "drop-shadow(0 0 3px rgba(232,103,43,.7))" } : undefined}
+                />
+                <span style={{ color: rachaViva > recordPrevio ? "#E8672B" : "#9B9689", fontWeight: 700 }}>{rachaViva}</span>
+              </span>
+            )}
+            <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Clock size={13} /> {mm}:{ss}</span>
           </span>
         </div>
         <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${(idx / pool.length) * 100}%` }} /></div>
