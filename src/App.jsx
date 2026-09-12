@@ -669,12 +669,13 @@ function AuthScreen({ onLogin, onSignup }) {
     }
   };
 
-  const tabPortada = { flex: 1, padding: "11px 14px", borderRadius: 12, border: `1.5px solid ${PORTADA_BORDE}`, background: "#241D13", color: "#B8AB8C", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
+  const tabPortada = { flex: 1, padding: "15px 16px", borderRadius: 14, border: `1.5px solid ${PORTADA_BORDE}`, background: "#241D13", color: "#B8AB8C", fontSize: 16, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
   const tabPortadaActivo = { background: PORTADA_DORADO, border: `1.5px solid ${PORTADA_DORADO}`, color: PORTADA_TARJETA };
-  const inputPortada = { ...styles.input, background: "#241D13", border: `1.5px solid ${PORTADA_BORDE}`, color: PORTADA_TEXTO };
+  const inputPortada = { ...styles.input, background: "#241D13", border: `1.5px solid ${PORTADA_BORDE}`, color: PORTADA_TEXTO, padding: "18px 20px", fontSize: 19, borderRadius: 14 };
+  const btnPortada = { ...styles.btnPrimary, position: "relative", zIndex: 1, width: "100%", margin: 0, borderRadius: 12.5, padding: "18px 24px", fontSize: 18, background: PORTADA_DORADO, color: PORTADA_TARJETA, justifyContent: "center" };
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-start", minHeight: "100dvh", position: "relative", overflow: "hidden", paddingTop: "clamp(28px, 9vh, 90px)", paddingBottom: 40, boxSizing: "border-box" }}>
+    <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-start", minHeight: "100dvh", position: "relative", overflow: "hidden", paddingTop: "clamp(28px, 7vh, 70px)", paddingBottom: 40, boxSizing: "border-box" }}>
       <FondoPortada />
       <style>{`
         .portada-input::placeholder { color: ${PORTADA_PLACEHOLDER}; }
@@ -686,39 +687,39 @@ function AuthScreen({ onLogin, onSignup }) {
         }
         @media (prefers-reduced-motion: reduce) { .portada-btn-glow { animation: none; } }
       `}</style>
-      <div style={{ maxWidth: 340, width: "100%", padding: "0 24px", textAlign: "center", position: "relative", zIndex: 1 }}>
-        <div style={{ marginBottom: 26 }}>
+      <div style={{ maxWidth: 480, width: "100%", padding: "0 24px", textAlign: "center", position: "relative", zIndex: 1 }}>
+        <div style={{ marginBottom: 34 }}>
           <WordmarkPortada texto="AUTOPIR" />
         </div>
-        <div style={styles.tabsOrigen}>
+        <div style={{ ...styles.tabsOrigen, marginBottom: 18 }}>
           <button type="button" onClick={() => cambiarModo("login")} style={{ ...tabPortada, ...(modo === "login" ? tabPortadaActivo : {}) }}>Iniciar sesión</button>
           <button type="button" onClick={() => cambiarModo("signup")} style={{ ...tabPortada, ...(modo === "signup" ? tabPortadaActivo : {}) }}>Crear cuenta</button>
         </div>
         {cuentaCreada ? (
-          <Card style={{ ...styles.authCard, background: PORTADA_TARJETA, border: `1.5px solid ${PORTADA_BORDE}` }}>
-            <p style={{ fontSize: 14, color: PORTADA_TEXTO, lineHeight: 1.5, margin: 0 }}>
+          <Card style={{ ...styles.authCard, background: PORTADA_TARJETA, border: `1.5px solid ${PORTADA_BORDE}`, padding: 34 }}>
+            <p style={{ fontSize: 16, color: PORTADA_TEXTO, lineHeight: 1.5, margin: 0 }}>
               Cuenta creada. Ya puedes entrar con tu usuario y contraseña.
             </p>
-            <div style={{ position: "relative", borderRadius: 12, padding: 1.5, overflow: "hidden", marginTop: 14, background: "#4a3a1c" }}>
+            <div style={{ position: "relative", borderRadius: 14, padding: 1.5, overflow: "hidden", marginTop: 18, background: "#4a3a1c" }}>
               <div className="portada-btn-glow" />
               <button
                 type="button"
                 onClick={() => { setPassword(""); setPassword2(""); cambiarModo("login"); }}
-                style={{ ...styles.btnPrimary, position: "relative", zIndex: 1, width: "100%", margin: 0, borderRadius: 10.5, background: PORTADA_DORADO, color: PORTADA_TARJETA, justifyContent: "center" }}
+                style={btnPortada}
               >
                 Ir a entrar
               </button>
             </div>
           </Card>
         ) : (
-          <Card style={{ ...styles.authCard, background: PORTADA_TARJETA, border: `1.5px solid ${PORTADA_BORDE}` }}>
+          <Card style={{ ...styles.authCard, background: PORTADA_TARJETA, border: `1.5px solid ${PORTADA_BORDE}`, padding: 34 }}>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && submit()}
               placeholder="Nombre de usuario"
               className="portada-input"
-              style={{ ...inputPortada, marginBottom: 10 }}
+              style={{ ...inputPortada, marginBottom: 14 }}
               autoCapitalize="none"
               autoCorrect="off"
               autoFocus
@@ -730,7 +731,7 @@ function AuthScreen({ onLogin, onSignup }) {
               placeholder="Contraseña"
               type="password"
               className="portada-input"
-              style={{ ...inputPortada, marginBottom: modo === "signup" ? 10 : 0 }}
+              style={{ ...inputPortada, marginBottom: modo === "signup" ? 14 : 0 }}
             />
             {modo === "signup" && (
               <input
@@ -743,16 +744,11 @@ function AuthScreen({ onLogin, onSignup }) {
                 style={inputPortada}
               />
             )}
-            {error && <p style={{ color: ACENTO, fontSize: 13, marginTop: 10 }}>{error}</p>}
-            <div style={{ position: "relative", borderRadius: 12, padding: 1.5, overflow: "hidden", marginTop: 14, background: "#4a3a1c" }}>
+            {error && <p style={{ color: ACENTO, fontSize: 14, marginTop: 12 }}>{error}</p>}
+            <div style={{ position: "relative", borderRadius: 14, padding: 1.5, overflow: "hidden", marginTop: 18, background: "#4a3a1c" }}>
               <div className="portada-btn-glow" />
-              <button
-                type="button"
-                onClick={submit}
-                disabled={cargando}
-                style={{ ...styles.btnPrimary, position: "relative", zIndex: 1, width: "100%", margin: 0, borderRadius: 10.5, background: PORTADA_DORADO, color: PORTADA_TARJETA, opacity: cargando ? 0.6 : 1, justifyContent: "center" }}
-              >
-                {cargando ? <Loader2 className="animate-spin" size={16} /> : modo === "login" ? "Entrar" : "Crear cuenta"}
+              <button type="button" onClick={submit} disabled={cargando} style={{ ...btnPortada, opacity: cargando ? 0.6 : 1 }}>
+                {cargando ? <Loader2 className="animate-spin" size={18} /> : modo === "login" ? "Entrar" : "Crear cuenta"}
               </button>
             </div>
           </Card>
@@ -765,13 +761,7 @@ function AuthScreen({ onLogin, onSignup }) {
 function WordmarkPortada({ texto }) {
   const rotaciones = useMemo(() => texto.split("").map(() => (Math.random() * 16 - 8).toFixed(1)), [texto]);
   return (
-    <div
-      style={{
-        position: "relative", display: "inline-flex", justifyContent: "center", whiteSpace: "nowrap",
-        background: PORTADA_TARJETA, borderRadius: 14, padding: "16px 30px",
-        boxShadow: "0 16px 36px rgba(20,16,10,.35)", transform: "rotate(-1.1deg)",
-      }}
-    >
+    <div style={{ position: "relative", display: "inline-flex", justifyContent: "center", whiteSpace: "nowrap" }}>
       <style>{`
         @keyframes portadaCaer {
           0% { opacity: 0; transform: translateY(-140px) rotate(var(--rot, 0deg)); }
@@ -796,11 +786,11 @@ function WordmarkPortada({ texto }) {
             style={{
               animationDelay: `${(i * 0.055).toFixed(3)}s`,
               "--rot": `${rotaciones[i]}deg`,
-              fontFamily: "'Fraunces', Georgia, serif",
-              fontWeight: 600,
-              fontSize: 40,
-              color: PORTADA_DORADO,
-              textShadow: "0 1px 0 rgba(0,0,0,.35)",
+              fontFamily: "'Big Shoulders Display', sans-serif",
+              fontWeight: 800,
+              fontSize: "clamp(48px, 10vw, 76px)",
+              letterSpacing: 0.5,
+              color: TINTA,
             }}
           >
             {ch}
