@@ -22,6 +22,10 @@ const ACENTO_SUAVE = "#F7E9E6";
 const CORRECTO = "#2E7D46";
 const CORRECTO_SUAVE = "#E7F1E9";
 const ORO = "#93711F";
+const AVISO = "#9C5A1F";
+const AVISO_SUAVE = "#FBEEE0";
+const CAUTELA = "#8A6D1F";
+const CAUTELA_SUAVE = "#FBF3DE";
 
 const AJUSTES_DEFECTO = { escala: 1, fondo: "#EEECE4", fuente: "fraunces" };
 const ESCALAS = [
@@ -544,7 +548,7 @@ export default function AcademiaPIR() {
         <Header
           user={user} onLogout={handleLogout} miRacha={rachas.find((r) => r.name === user.name)} onAjustes={() => setMostrarAjustes(true)}
           questions={questions} onAddQuestion={addQuestion} onUpdateQuestion={updateQuestion} onDeleteQuestion={deleteQuestion}
-          favoritos={favoritos} onToggleFavorito={toggleFavorito} rachas={rachas}
+          favoritos={favoritos} onToggleFavorito={toggleFavorito} rachas={rachas} onGirarRuleta={girarRuleta}
         />
         <Nav section={section} setSection={setSection} alerta={!!dueloEsperando} />
         {dueloEsperando && section !== "duelo" && (
@@ -878,11 +882,12 @@ function InsigniaDesbloqueadaModal({ insignia, onClose }) {
 function Header({
   user, onLogout, miRacha, onAjustes,
   questions, onAddQuestion, onUpdateQuestion, onDeleteQuestion, favoritos, onToggleFavorito,
-  rachas,
+  rachas, onGirarRuleta,
 }) {
   const [mostrarLogros, setMostrarLogros] = useState(false);
   const [mostrarRanking, setMostrarRanking] = useState(false);
   const [mostrarBanco, setMostrarBanco] = useState(false);
+  const [mostrarRuleta, setMostrarRuleta] = useState(false);
   return (
     <header style={styles.header}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -912,6 +917,19 @@ function Header({
         <button type="button" onClick={() => setMostrarBanco(true)} style={styles.iconBtn} title="Banco de preguntas">
           <ListChecks size={15} color={TINTA_SUAVE} />
         </button>
+        <div style={{ position: "relative" }}>
+          <button type="button" onClick={() => setMostrarRuleta((v) => !v)} style={styles.iconBtn} title="Ruleta diaria">
+            <Sparkles size={15} color={mostrarRuleta ? ORO : TINTA_SUAVE} />
+          </button>
+          {mostrarRuleta && (
+            <>
+              <div style={styles.dropdownCatcher} onClick={() => setMostrarRuleta(false)} />
+              <div style={{ ...styles.logrosDropdown, width: 300 }} onClick={(e) => e.stopPropagation()}>
+                <RuletaDiaria questions={questions} miRacha={miRacha} onGirarRuleta={onGirarRuleta} />
+              </div>
+            </>
+          )}
+        </div>
         <button type="button" onClick={onAjustes} style={styles.iconBtn} title="Ajustes">
           <Settings size={15} color={TINTA_SUAVE} />
         </button>
@@ -2215,19 +2233,14 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
     <div>
       <SectionTitle title="Mi perfil" subtitle={user.name} />
 
-      <RuletaDiaria questions={questions} miRacha={miRacha} onGirarRuleta={onGirarRuleta} />
-
-      <div style={{ marginTop: 36 }}>
-        <PreguntasPlegables
-          titulo="Historial de fallos"
-          subtitulo={fallosConPregunta.length === 0 ? "Todavía no has fallado ninguna pregunta." : "Las que más se te atascan, primero."}
-          items={fallosVisibles}
-          etiquetaItem={(f) => `fallada ${f.veces} ${f.veces === 1 ? "vez" : "veces"}`}
-          abiertaId={abiertaId}
-          setAbiertaId={setAbiertaId}
-          favoritos={favoritos}
-          onToggleFavorito={onToggleFavorito}
+      <div style={{ marginTop: 8 }}>
+        <SectionTitle
+          title="Historial de fallos"
+          subtitle={fallosConPregunta.length === 0 ? "Todavía no has fallado ninguna pregunta." : "Las que más se te atascan, primero."}
         />
+        {fallosVisibles.map((f) => (
+          <FalloRepetible key={f.pregunta_id} f={f} favoritos={favoritos} onToggleFavorito={onToggleFavorito} />
+        ))}
         {fallosConPregunta.length > 5 && (
           <button type="button" onClick={() => setVerTodosFallos((v) => !v)} style={styles.linkBtn}>
             {verTodosFallos ? "Ver menos" : `Ver las ${fallosConPregunta.length} preguntas falladas`}
@@ -2306,10 +2319,10 @@ function Logros({ user, miRacha, compact }) {
 
 const TAM_SESION_FLASHCARDS = 20;
 const CALIFICACIONES_FLASHCARD = [
-  { calidad: 0, label: "Muy difícil", bg: "#FBEDEA", color: "#8A3F2B", borde: "#F0C4B4" },
-  { calidad: 3, label: "Difícil", bg: "#FCF3E3", color: "#8A5A1F", borde: "#EBD3A0" },
-  { calidad: 4, label: "Fácil", bg: "#EAF2EF", color: "#1F5346", borde: "#B9DBD0" },
-  { calidad: 5, label: "Muy fácil", bg: "#E7F3EE", color: "#1B5E3F", borde: "#A8D9C0" },
+  { calidad: 0, label: "Muy difícil", bg: ACENTO_SUAVE, color: ACENTO, borde: ACENTO },
+  { calidad: 3, label: "Difícil", bg: AVISO_SUAVE, color: AVISO, borde: AVISO },
+  { calidad: 4, label: "Fácil", bg: CAUTELA_SUAVE, color: CAUTELA, borde: CAUTELA },
+  { calidad: 5, label: "Muy fácil", bg: CORRECTO_SUAVE, color: CORRECTO, borde: CORRECTO },
 ];
 
 function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate }) {
@@ -2395,15 +2408,25 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate }) {
         <div style={styles.progressTrack}>
           <div style={{ ...styles.progressFill, width: `${(idx / sesion.length) * 100}%`, background: "#8A5A9E" }} />
         </div>
-        <Card style={{ marginTop: 16, minHeight: 200, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 14 }}>{carta.mazo}</div>
-          <p style={{ fontSize: 17, color: "#1E1C18", lineHeight: 1.55, margin: 0 }}>{carta.frontal}</p>
-          {revelada && (
-            <div style={{ marginTop: 20, paddingTop: 20, borderTop: "1px dashed #C9C5B7" }}>
+        <style>{`
+          .flip-container { perspective: 1600px; margin-top: 16px; min-height: 200px; }
+          .flip-inner { position: relative; width: 100%; height: 100%; min-height: 200px; transition: transform 0.5s; transform-style: preserve-3d; }
+          .flip-inner.flipped { transform: rotateY(180deg); }
+          .flip-face { position: absolute; inset: 0; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; box-sizing: border-box; margin: 0; }
+          .flip-back { transform: rotateY(180deg); }
+        `}</style>
+        <div className="flip-container" onClick={() => !revelada && setRevelada(true)} style={{ cursor: revelada ? "default" : "pointer" }}>
+          <div className={`flip-inner${revelada ? " flipped" : ""}`}>
+            <Card className="flip-face">
+              <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 14 }}>{carta.mazo}</div>
+              <p style={{ fontSize: 17, color: TINTA, lineHeight: 1.55, margin: 0 }}>{carta.frontal}</p>
+            </Card>
+            <Card className="flip-face flip-back">
+              <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 14 }}>{carta.mazo}</div>
               <p style={{ fontSize: 16, color: CORRECTO, lineHeight: 1.55, margin: 0, fontWeight: 600 }}>{carta.posterior}</p>
-            </div>
-          )}
-        </Card>
+            </Card>
+          </div>
+        </div>
         {!revelada ? (
           <button type="button" onClick={() => setRevelada(true)} style={{ ...styles.btnPrimary, width: "100%", marginTop: 16, justifyContent: "center" }}>
             Ver respuesta
@@ -2598,6 +2621,57 @@ function PreguntasPlegables({ titulo, subtitulo, items, etiquetaItem, abiertaId,
   );
 }
 
+function FalloRepetible({ f, favoritos, onToggleFavorito }) {
+  const [repitiendo, setRepitiendo] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const q = f.pregunta;
+
+  return (
+    <Card style={{ marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 11, color: "#9B9689", marginBottom: 4 }}>
+            {q.curso} · {q.tema} · fallada {f.veces} {f.veces === 1 ? "vez" : "veces"}
+          </div>
+          <div style={{ fontSize: 14, color: TINTA, lineHeight: 1.4 }}>{q.pregunta}</div>
+        </div>
+        <FavoritoBtn pregunta={q} favoritos={favoritos} onToggle={onToggleFavorito} />
+      </div>
+      {!repitiendo ? (
+        <button type="button" onClick={() => setRepitiendo(true)} style={{ ...styles.linkBtn, marginTop: 10 }}>
+          Repetir
+        </button>
+      ) : (
+        <div style={{ marginTop: 12 }}>
+          {q.opciones.map((op, i) => {
+            let estilo = { ...styles.daypoOpcion, marginBottom: 8, padding: "12px 14px", fontSize: 14 };
+            if (selected != null) {
+              if (i === q.correcta) estilo = { ...estilo, ...styles.daypoOpcionCorrecta };
+              else if (i === selected) estilo = { ...estilo, ...styles.daypoOpcionIncorrecta };
+            }
+            return (
+              <button type="button" key={i} onClick={() => selected == null && setSelected(i)} disabled={selected != null} style={estilo}>
+                <span style={styles.daypoLetra}>{String.fromCharCode(65 + i)}</span>
+                <span style={{ flex: 1 }}>{op}</span>
+                {selected != null && i === q.correcta && <Check size={16} color={CORRECTO} />}
+                {selected != null && i === selected && i !== q.correcta && <X size={16} color={ACENTO} />}
+              </button>
+            );
+          })}
+          {selected != null && (
+            <>
+              {q.explicacion && <p style={{ fontSize: 13, color: TINTA_SUAVE, margin: "4px 0 8px", lineHeight: 1.5 }}>{q.explicacion}</p>}
+              <button type="button" onClick={() => setSelected(null)} style={styles.linkBtn}>
+                Repetir de nuevo
+              </button>
+            </>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function Ranking({ rachas, user }) {
   const vivoQuiz = [...rachas]
     .filter((r) => (r.racha_actual || 0) > 0)
@@ -2725,8 +2799,8 @@ function SectionTitle({ title, subtitle, action }) {
   );
 }
 
-function Card({ children, style }) {
-  return <div style={{ ...styles.card, ...style }}>{children}</div>;
+function Card({ children, style, className }) {
+  return <div className={className} style={{ ...styles.card, ...style }}>{children}</div>;
 }
 
 function FieldLabel({ children, style }) {
