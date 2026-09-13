@@ -3,7 +3,7 @@ import {
   Compass, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
   Plus, Check, X, Loader2, User, LogOut, Flag, Pencil, Trash2,
    Zap, Heart, Swords, Flame, Sparkles, Star, Award, Target, Settings,
-   Medal, Gem, Crown, Search, Layers, Lightbulb
+   Medal, Gem, Crown, Search, Layers, Lightbulb, Users
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { TEMARIO } from "./temario";
@@ -168,6 +168,7 @@ export default function AcademiaPIR() {
   });
   const [mostrarAjustes, setMostrarAjustes] = useState(false);
   const [insigniaDesbloqueada, setInsigniaDesbloqueada] = useState(null);
+  const [enLinea, setEnLinea] = useState(0);
 
   useEffect(() => { savePersonal("pir-ajustes", ajustes); }, [ajustes]);
 
@@ -256,6 +257,21 @@ export default function AcademiaPIR() {
       .subscribe();
 
     return () => { activo = false; supabase.removeChannel(channel); };
+  }, [user && user.name]);
+
+  useEffect(() => {
+    if (!user) return;
+    const canal = supabase.channel("presencia-global", {
+      config: { presence: { key: user.name } },
+    });
+    canal
+      .on("presence", { event: "sync" }, () => {
+        setEnLinea(Object.keys(canal.presenceState()).length);
+      })
+      .subscribe(async (estado) => {
+        if (estado === "SUBSCRIBED") await canal.track({ desde: new Date().toISOString() });
+      });
+    return () => { supabase.removeChannel(canal); };
   }, [user && user.name]);
 
   useEffect(() => {
@@ -570,11 +586,17 @@ export default function AcademiaPIR() {
             50% { transform: scale(1.06); }
             100% { transform: scale(1); }
           }
+          @keyframes pulsoEnLinea {
+            0% { transform: scale(1); opacity: 0.7; }
+            70% { transform: scale(2.2); opacity: 0; }
+            100% { transform: scale(2.2); opacity: 0; }
+          }
         `}</style>
         <Header
           user={user} onLogout={handleLogout} miRacha={rachas.find((r) => r.name === user.name)} onAjustes={() => setMostrarAjustes(true)}
           questions={questions} onAddQuestion={addQuestion} onUpdateQuestion={updateQuestion} onDeleteQuestion={deleteQuestion}
           favoritos={favoritos} onToggleFavorito={toggleFavorito} rachas={rachas} onGirarRuleta={girarRuleta}
+          enLinea={enLinea}
         />
         <Nav section={section} setSection={setSection} alerta={!!dueloEsperando} />
         {dueloEsperando && section !== "duelo" && (
@@ -981,7 +1003,7 @@ const FRASES_MOTIVADORAS = [
 function Header({
   user, onLogout, miRacha, onAjustes,
   questions, onAddQuestion, onUpdateQuestion, onDeleteQuestion, favoritos, onToggleFavorito,
-  rachas, onGirarRuleta,
+  rachas, onGirarRuleta, enLinea,
 }) {
   const [mostrarLogros, setMostrarLogros] = useState(false);
   const [mostrarRanking, setMostrarRanking] = useState(false);
@@ -1001,6 +1023,23 @@ function Header({
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <Compass size={20} color={ACENTO} strokeWidth={1.8} />
         <span style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: 19, color: TINTA, letterSpacing: 0.3 }}>AUTOPIR</span>
+        {enLinea > 0 && (
+          <span
+            title={`${enLinea} ${enLinea === 1 ? "persona conectada" : "personas conectadas"} ahora mismo`}
+            style={{
+              display: "flex", alignItems: "center", gap: 5, marginLeft: 6,
+              padding: "3px 9px", borderRadius: 999, border: `1px solid ${RAYA}`,
+              fontSize: 12, color: TINTA_SUAVE,
+            }}
+          >
+            <span style={{ position: "relative", width: 7, height: 7, display: "inline-flex" }}>
+              <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: CORRECTO, animation: "pulsoEnLinea 1.8s ease-out infinite" }} />
+              <span style={{ position: "absolute", inset: 0, borderRadius: "50%", background: CORRECTO }} />
+            </span>
+            <Users size={12} />
+            {enLinea}
+          </span>
+        )}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <span style={{ fontSize: 13, color: TINTA_SUAVE, display: "flex", alignItems: "center", gap: 4 }}>
