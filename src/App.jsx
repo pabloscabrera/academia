@@ -172,23 +172,32 @@ export default function AcademiaPIR() {
   useEffect(() => { savePersonal("pir-ajustes", ajustes); }, [ajustes]);
 
   useEffect(() => {
+    const cargarDatosApp = async () => {
+      const qData = await fetchTodasPreguntas();
+      const { data: rData, error: rErr } = await supabase
+        .from("ranking")
+        .select("*")
+        .order("pct", { ascending: false })
+        .limit(100);
+      if (rErr) throw rErr;
+      const { data: rachasData } = await supabase.from("rachas").select("*");
+      const { data: flashcardsData } = await supabase.from("flashcards").select("*");
+      setQuestions(qData || []);
+      setRanking(rData || []);
+      setRachas(rachasData || []);
+      setFlashcards(flashcardsData || []);
+    };
+
+    let sesionAlCargar = false;
+    let cargado = false;
+
     (async () => {
       try {
         const { data: sessionData } = await supabase.auth.getSession();
-        const qData = await fetchTodasPreguntas();
-        const { data: rData, error: rErr } = await supabase
-          .from("ranking")
-          .select("*")
-          .order("pct", { ascending: false })
-          .limit(100);
-        if (rErr) throw rErr;
-        const { data: rachasData } = await supabase.from("rachas").select("*");
-        const { data: flashcardsData } = await supabase.from("flashcards").select("*");
+        sesionAlCargar = !!(sessionData && sessionData.session);
         setUser(usuarioFromSession(sessionData && sessionData.session));
-        setQuestions(qData || []);
-        setRanking(rData || []);
-        setRachas(rachasData || []);
-        setFlashcards(flashcardsData || []);
+        await cargarDatosApp();
+        cargado = true;
         setReady(true);
       } catch (err) {
         setLoadError(err && err.message ? err.message : String(err));
@@ -196,8 +205,18 @@ export default function AcademiaPIR() {
       }
     })();
 
+    // Si la carga inicial ocurrió sin sesión (primer acceso en un navegador
+    // nuevo), preguntas/ranking/rachas/flashcards se piden como "anon" y
+    // vuelven vacíos en cuanto RLS exige autenticación. En cuanto el login o
+    // el registro concede una sesión, se recargan ya autenticados.
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(usuarioFromSession(session));
+      const haySesion = !!session;
+      if (cargado && haySesion && !sesionAlCargar) {
+        sesionAlCargar = true;
+        cargarDatosApp().catch((err) => console.error("No se pudieron recargar los datos tras iniciar sesión:", err));
+      }
+      if (!haySesion) sesionAlCargar = false;
     });
     return () => { sub.subscription.unsubscribe(); };
   }, []);
