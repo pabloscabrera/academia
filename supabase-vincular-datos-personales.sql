@@ -118,10 +118,10 @@ create policy "flashcards_progreso_update_propio" on flashcards_progreso
 -- se pudo emparejar con ninguna cuenta real (typo, cuenta borrada, etc.) —
 -- esas filas quedan "huérfanas" y a partir de ahora nadie podrá leerlas ni
 -- tocarlas (fallan cerradas, no abiertas), pero es mejor revisarlas:
-select 'rachas' as tabla, name, racha_actual, racha_record from rachas where user_id is null
+select 'rachas' as tabla, name, racha_actual::text as col3, racha_record::text as col4 from rachas where user_id is null
 union all
-select 'fallos', name, veces::text, null from fallos where user_id is null
+select 'fallos', name, veces::text, null::text from fallos where user_id is null
 union all
-select 'favoritos', name, pregunta_id::text, null from favoritos where user_id is null
+select 'favoritos', name, pregunta_id::text, null::text from favoritos where user_id is null
 union all
-select 'flashcards_progreso', name, flashcard_id::text, null from flashcards_progreso where user_id is null;
+select 'flashcards_progreso', name, flashcard_id::text, null::text from flashcards_progreso where user_id is null;
