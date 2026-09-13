@@ -712,11 +712,11 @@ function AuthScreen({ onLogin, onSignup }) {
 
   const tabPortada = { flex: 1, padding: "15px 16px", borderRadius: 14, border: `1.5px solid ${PORTADA_BORDE}`, background: "#241D13", color: "#B8AB8C", fontSize: 16, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
   const tabPortadaActivo = { background: PORTADA_DORADO, border: `1.5px solid ${PORTADA_DORADO}`, color: PORTADA_TARJETA };
-  const inputPortada = { ...styles.input, background: "#241D13", border: `1.5px solid ${PORTADA_BORDE}`, color: PORTADA_TEXTO, padding: "18px 20px", fontSize: 19, borderRadius: 14 };
-  const btnPortada = { ...styles.btnPrimary, position: "relative", zIndex: 1, width: "100%", margin: 0, borderRadius: 12.5, padding: "18px 24px", fontSize: 18, background: PORTADA_DORADO, color: PORTADA_TARJETA, justifyContent: "center" };
+  const inputPortada = { ...styles.input, background: "#241D13", border: `1.5px solid ${PORTADA_BORDE}`, color: PORTADA_TEXTO, padding: "14px 20px", fontSize: 17, borderRadius: 14 };
+  const btnPortada = { ...styles.btnPrimary, position: "relative", zIndex: 1, width: "100%", margin: 0, borderRadius: 12.5, padding: "15px 24px", fontSize: 17, background: PORTADA_DORADO, color: PORTADA_TARJETA, justifyContent: "center" };
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-start", minHeight: "100dvh", position: "relative", overflow: "hidden", paddingTop: "clamp(28px, 7vh, 70px)", paddingBottom: 40, boxSizing: "border-box" }}>
+    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100dvh", position: "relative", overflow: "hidden", padding: "32px 0", boxSizing: "border-box" }}>
       <FondoPortada />
       <style>{`
         .portada-input::placeholder { color: ${PORTADA_PLACEHOLDER}; }
