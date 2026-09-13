@@ -565,6 +565,26 @@ export default function AcademiaPIR() {
     return !error;
   };
 
+  const addFlashcard = async (f) => {
+    const { data, error } = await supabase
+      .from("flashcards")
+      .insert([{ mazo: f.mazo || "General", frontal: f.frontal, posterior: f.posterior }])
+      .select();
+    if (!error && data && data[0]) {
+      setFlashcards((prev) => [...prev, data[0]]);
+    }
+    return !error;
+  };
+
+  const deleteFlashcard = async (id) => {
+    const { error } = await supabase.from("flashcards").delete().eq("id", id);
+    if (!error) {
+      setFlashcards((prev) => prev.filter((f) => f.id !== id));
+      setFlashcardsProgreso((prev) => prev.filter((p) => p.flashcard_id !== id));
+    }
+    return !error;
+  };
+
   let contenido;
   if (!ready) {
     contenido = <div style={{ ...styles.center, height: "100%", minHeight: 400 }}><Loader2 className="animate-spin" size={28} color={ACENTO} /></div>;
@@ -631,6 +651,8 @@ export default function AcademiaPIR() {
               progreso={flashcardsProgreso}
               onRepaso={registrarRepasoFlashcard}
               onUpdate={updateFlashcard}
+              onAdd={addFlashcard}
+              onDelete={deleteFlashcard}
             />
           )}
           {section === "perfil" && (
@@ -2508,7 +2530,7 @@ const CALIFICACIONES_FLASHCARD = [
   { calidad: 5, label: "Muy fácil", bg: CORRECTO_SUAVE, color: CORRECTO, borde: CORRECTO },
 ];
 
-function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate }) {
+function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onDelete }) {
   const hoy = new Date().toISOString().slice(0, 10);
   const progresoPorId = useMemo(() => {
     const m = {};
@@ -2578,7 +2600,8 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate }) {
   if (flashcards.length === 0) {
     return (
       <div>
-        <SectionTitle title="Flashcards" subtitle="Todavía no hay tarjetas en el mazo." />
+        <SectionTitle title="Flashcards" subtitle="Todavía no tienes tarjetas propias. Cada persona tiene su propio mazo privado — nadie más ve las tuyas." />
+        <NuevaFlashcard onAdd={onAdd} />
       </div>
     );
   }
@@ -2638,7 +2661,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate }) {
 
   return (
     <div>
-      <SectionTitle title="Flashcards" subtitle={`${flashcards.length} tarjetas en el mazo "${flashcards[0].mazo}"`} />
+      <SectionTitle title="Flashcards" subtitle={`Tu mazo privado — ${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"}`} />
       {resumen && (
         <Card style={{ marginBottom: 16, textAlign: "center", borderColor: CORRECTO }}>
           <p style={{ fontSize: 15, color: "#1E1C18", margin: 0 }}>
@@ -2678,11 +2701,12 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate }) {
 
       <div style={{ marginTop: 32 }}>
         <button type="button" onClick={() => setVerTarjetas((v) => !v)} style={{ ...styles.linkBtn, display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
-          {verTarjetas ? <ChevronDown size={15} /> : <ChevronRight size={15} />} Ver y editar tarjetas ({flashcards.length})
+          {verTarjetas ? <ChevronDown size={15} /> : <ChevronRight size={15} />} Ver, añadir y editar tarjetas ({flashcards.length})
         </button>
         {verTarjetas && (
           <div style={{ marginTop: 12 }}>
-            <div style={{ position: "relative", marginBottom: 14 }}>
+            <NuevaFlashcard onAdd={onAdd} />
+            <div style={{ position: "relative", marginBottom: 14, marginTop: 14 }}>
               <Search size={16} color="#9B9689" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
               <input
                 value={busquedaTarjetas}
@@ -2692,7 +2716,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate }) {
               />
             </div>
             {tarjetasFiltradas.map((f) => (
-              <FlashcardEditableCard key={f.id} f={f} isAdmin={user && user.isAdmin} onUpdate={onUpdate} />
+              <FlashcardEditableCard key={f.id} f={f} onUpdate={onUpdate} onDelete={onDelete} />
             ))}
           </div>
         )}
@@ -2701,12 +2725,55 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate }) {
   );
 }
 
-function FlashcardEditableCard({ f, isAdmin, onUpdate }) {
+function NuevaFlashcard({ onAdd }) {
+  const [abierto, setAbierto] = useState(false);
+  const [mazo, setMazo] = useState("");
+  const [frontal, setFrontal] = useState("");
+  const [posterior, setPosterior] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  const limpiar = () => { setMazo(""); setFrontal(""); setPosterior(""); };
+
+  const guardar = async () => {
+    if (!frontal.trim() || !posterior.trim()) return;
+    setGuardando(true);
+    const ok = await onAdd({ mazo: mazo.trim(), frontal: frontal.trim(), posterior: posterior.trim() });
+    setGuardando(false);
+    if (ok) { limpiar(); setAbierto(false); }
+  };
+
+  if (!abierto) {
+    return (
+      <button type="button" onClick={() => setAbierto(true)} style={{ ...styles.btnSecondary, marginBottom: 14 }}>
+        <Plus size={14} style={{ marginRight: 4 }} /> Añadir tarjeta
+      </button>
+    );
+  }
+
+  return (
+    <Card style={{ marginBottom: 14, borderLeft: "3px solid #8A5A9E" }}>
+      <FieldLabel>Mazo (opcional)</FieldLabel>
+      <input value={mazo} onChange={(e) => setMazo(e.target.value)} placeholder="General" style={styles.input} />
+      <FieldLabel style={{ marginTop: 12 }}>Frontal</FieldLabel>
+      <textarea value={frontal} onChange={(e) => setFrontal(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
+      <FieldLabel style={{ marginTop: 12 }}>Posterior</FieldLabel>
+      <textarea value={posterior} onChange={(e) => setPosterior(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
+      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+        <button type="button" onClick={guardar} disabled={guardando} style={{ ...styles.btnPrimary, flex: 1 }}>{guardando ? "Añadiendo..." : "Añadir tarjeta"}</button>
+        <button type="button" onClick={() => { limpiar(); setAbierto(false); }} style={styles.btnSecondary}>Cancelar</button>
+      </div>
+    </Card>
+  );
+}
+
+function FlashcardEditableCard({ f, onUpdate, onDelete }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [frontal, setFrontal] = useState(f.frontal);
   const [posterior, setPosterior] = useState(f.posterior);
   const [saving, setSaving] = useState(false);
+  const [borrando, setBorrando] = useState(false);
+  const [confirmarBorrar, setConfirmarBorrar] = useState(false);
 
   const guardar = async () => {
     if (!frontal.trim() || !posterior.trim()) return;
@@ -2714,6 +2781,12 @@ function FlashcardEditableCard({ f, isAdmin, onUpdate }) {
     const ok = await onUpdate(f.id, { frontal: frontal.trim(), posterior: posterior.trim() });
     setSaving(false);
     if (ok) setEditing(false);
+  };
+
+  const borrar = async () => {
+    setBorrando(true);
+    await onDelete(f.id);
+    setBorrando(false);
   };
 
   if (editing) {
@@ -2743,13 +2816,23 @@ function FlashcardEditableCard({ f, isAdmin, onUpdate }) {
       {open && (
         <div style={{ marginTop: 12 }}>
           <p style={{ fontSize: 14, color: CORRECTO, lineHeight: 1.5, fontWeight: 600, margin: 0 }}>{f.posterior}</p>
-          {isAdmin && (
-            <div style={{ marginTop: 14 }}>
-              <button type="button" onClick={() => setEditing(true)} style={styles.btnSecondary}>
-                <Pencil size={13} style={{ marginRight: 4 }} /> Editar
+          <div style={{ marginTop: 14, display: "flex", gap: 8 }}>
+            <button type="button" onClick={() => setEditing(true)} style={styles.btnSecondary}>
+              <Pencil size={13} style={{ marginRight: 4 }} /> Editar
+            </button>
+            {confirmarBorrar ? (
+              <>
+                <button type="button" onClick={borrar} disabled={borrando} style={{ ...styles.btnSecondary, color: ACENTO, borderColor: ACENTO }}>
+                  {borrando ? "Borrando..." : "¿Seguro? Borrar"}
+                </button>
+                <button type="button" onClick={() => setConfirmarBorrar(false)} style={styles.btnSecondary}>Cancelar</button>
+              </>
+            ) : (
+              <button type="button" onClick={() => setConfirmarBorrar(true)} style={styles.btnSecondary}>
+                <Trash2 size={13} style={{ marginRight: 4 }} /> Borrar
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
     </Card>
