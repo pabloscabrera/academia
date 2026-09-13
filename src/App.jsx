@@ -2871,18 +2871,16 @@ function FalloRepetible({ f, index, favoritos, onToggleFavorito }) {
 }
 
 function Ranking({ rachas, user }) {
-  const vivoQuiz = [...rachas]
-    .filter((r) => (r.racha_actual || 0) > 0)
-    .sort((a, b) => (b.racha_actual || 0) - (a.racha_actual || 0));
-  const vivoDuelo = [...rachas]
-    .filter((r) => (r.racha_duelo_actual || 0) > 0)
-    .sort((a, b) => (b.racha_duelo_actual || 0) - (a.racha_duelo_actual || 0));
-  const historicoQuiz = [...rachas]
-    .filter((r) => (r.racha_record || 0) > 0)
-    .sort((a, b) => (b.racha_record || 0) - (a.racha_record || 0));
-  const historicoDuelo = [...rachas]
-    .filter((r) => (r.racha_duelos_record || 0) > 0)
-    .sort((a, b) => (b.racha_duelos_record || 0) - (a.racha_duelos_record || 0));
+  const [modo, setModo] = useState("quiz");
+  const campoRecord = modo === "quiz" ? "racha_record" : "racha_duelos_record";
+  const campoVivo = modo === "quiz" ? "racha_actual" : "racha_duelo_actual";
+  const IconoModo = modo === "quiz" ? Flame : Swords;
+  const colorModo = modo === "quiz" ? "#C89B3C" : "#A6362B";
+
+  const filas = [...rachas]
+    .filter((r) => (r[campoRecord] || 0) > 0)
+    .sort((a, b) => (b[campoRecord] || 0) - (a[campoRecord] || 0));
+
   const lunesActual = lunesDeLaSemana(new Date());
   const ligaSemanal = [...rachas]
     .filter((r) => r.semana_actual === lunesActual && (r.correctas_semana || 0) > 0)
@@ -2895,23 +2893,39 @@ function Ranking({ rachas, user }) {
       `}</style>
       <SectionTitle title="Ranking" />
 
-      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 14 }}>
-        <span style={styles.puntoVivo} />
-        <h2 style={styles.h3Ranking}>Rachas en vivo</h2>
+      <div style={styles.tabsOrigen}>
+        <button type="button" onClick={() => setModo("quiz")} style={{ ...styles.tabOrigenBtn, ...(modo === "quiz" ? styles.tabOrigenActivo : {}) }}>
+          Autoevaluaciones
+        </button>
+        <button type="button" onClick={() => setModo("duelo")} style={{ ...styles.tabOrigenBtn, ...(modo === "duelo" ? styles.tabOrigenActivo : {}) }}>
+          Duelo
+        </button>
       </div>
-      <div style={styles.rankingColumnas}>
-        <ColumnaRanking titulo="Autoevaluaciones" icono={Flame} color="#C89B3C">
-          <ListaRachas
-            datos={vivoQuiz} campo="racha_actual" icono={Flame} colorIcono="#C89B3C"
-            user={user} vacioTexto="Sin racha activa." enVivo
-          />
-        </ColumnaRanking>
-        <ColumnaRanking titulo="Duelo 1v1" icono={Swords} color="#A6362B">
-          <ListaRachas
-            datos={vivoDuelo} campo="racha_duelo_actual" icono={Swords} colorIcono="#A6362B"
-            user={user} vacioTexto="Sin racha activa." enVivo
-          />
-        </ColumnaRanking>
+
+      <div style={styles.tablaRanking}>
+        {filas.length === 0 ? (
+          <p style={{ fontSize: 13, color: TINTA_TENUE, padding: "6px 2px 2px" }}>Todavía no hay récords en este modo.</p>
+        ) : (
+          filas.map((r, i) => {
+            const enVivo = (r[campoVivo] || 0) > 0;
+            const fila = (
+              <div style={{ ...styles.rankRow, background: r.name === user.name ? ACENTO_SUAVE : styles.rankRow.background, border: enVivo ? "none" : styles.rankRow.border, marginBottom: enVivo ? 0 : styles.rankRow.marginBottom }}>
+                <span style={{ width: 24, fontSize: 14, color: i < 3 ? "#C89B3C" : TINTA_TENUE, fontFamily: "var(--font-display)" }}>{i + 1}</span>
+                <span style={{ flex: 1, fontSize: 15, color: TINTA }}>{r.name}</span>
+                <span style={{ fontSize: 16, color: colorModo, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                  <IconoModo size={14} /> {r[campoRecord]}
+                </span>
+              </div>
+            );
+            if (!enVivo) return <div key={r.name}>{fila}</div>;
+            return (
+              <div key={r.name} style={styles.energiaWrap}>
+                <div style={{ ...styles.energiaAnillo, background: `conic-gradient(from 0deg, transparent 0%, transparent 62%, ${colorModo}66 74%, ${colorModo}ee 80%, ${colorModo}66 86%, transparent 100%)` }} />
+                {fila}
+              </div>
+            );
+          })
+        )}
       </div>
 
       <div style={{ marginTop: 30 }}>
@@ -2922,24 +2936,6 @@ function Ranking({ rachas, user }) {
             user={user} vacioTexto="Todavía nadie ha respondido esta semana."
           />
         </ColumnaRanking>
-      </div>
-
-      <div style={{ marginTop: 30 }}>
-        <SectionTitle title="Rachas históricas" />
-        <div style={styles.rankingColumnas}>
-          <ColumnaRanking titulo="Autoevaluaciones" icono={Flame} color="#C89B3C">
-            <ListaRachas
-              datos={historicoQuiz} campo="racha_record" icono={Flame} colorIcono="#C89B3C"
-              user={user} vacioTexto="Sin récords todavía."
-            />
-          </ColumnaRanking>
-          <ColumnaRanking titulo="Duelo 1v1" icono={Swords} color="#A6362B">
-            <ListaRachas
-              datos={historicoDuelo} campo="racha_duelos_record" icono={Swords} colorIcono="#A6362B"
-              user={user} vacioTexto="Sin récords todavía."
-            />
-          </ColumnaRanking>
-        </div>
       </div>
     </div>
   );
@@ -2965,7 +2961,7 @@ function ListaRachas({ datos, campo, icono: Icono, colorIcono, user, vacioTexto,
     <>
       {datos.map((r, i) => {
         const fila = (
-          <div style={{ ...styles.rankRow, position: "relative", border: enVivo ? "none" : styles.rankRow.border, marginBottom: enVivo ? 0 : styles.rankRow.marginBottom, background: r.name === user.name ? ACENTO_SUAVE : "#fff" }}>
+          <div style={{ ...styles.rankRow, position: "relative", border: enVivo ? "none" : styles.rankRow.border, marginBottom: enVivo ? 0 : styles.rankRow.marginBottom, background: r.name === user.name ? ACENTO_SUAVE : styles.rankRow.background }}>
             <span style={{ width: 24, fontSize: 14, color: i < 3 ? "#C89B3C" : "#9B9689", fontFamily: "var(--font-display)" }}>{i + 1}</span>
             <span style={{ flex: 1, fontSize: 15, color: "#1E1C18" }}>{r.name}</span>
             <span style={{ fontSize: 16, color: colorIcono, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
@@ -3037,7 +3033,8 @@ const styles = {
   puntoVivo: { width: 8, height: 8, borderRadius: "50%", background: CORRECTO, animation: "dueloPulso 1.4s ease-in-out infinite" },
   h3Ranking: { fontFamily: "var(--font-display)", fontSize: 21, color: TINTA, margin: 0 },
   rankingColumnas: { display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 4, alignItems: "stretch" },
-  columnaRanking: { flex: 1, minWidth: 240, background: "#fff", border: `1.5px solid ${RAYA}`, borderRadius: 16, padding: "14px 14px 16px", boxShadow: SOMBRA_SUAVE },
+  columnaRanking: { flex: 1, minWidth: 240, background: "#F1ECDD", border: `1.5px solid ${RAYA}`, borderRadius: 16, padding: "14px 14px 16px", boxShadow: SOMBRA_SUAVE },
+  tablaRanking: { background: "#F1ECDD", border: `1.5px solid ${RAYA_FUERTE}`, borderRadius: 16, padding: "14px 14px 16px", boxShadow: SOMBRA_SUAVE },
   energiaWrap: { position: "relative", borderRadius: 9, padding: 1.5, marginBottom: 8, overflow: "hidden" },
   energiaAnillo: { position: "absolute", inset: -20, animation: "energiaGiro 3.5s linear infinite" },
   dueloAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "12px 16px", borderRadius: 14, border: "none", background: ACENTO, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", animation: "dueloPulso 1.6s ease-in-out infinite" },
