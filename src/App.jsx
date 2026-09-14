@@ -576,6 +576,15 @@ export default function AcademiaPIR() {
     return !error;
   };
 
+  const addFlashcardsBulk = async (mazo, tarjetas) => {
+    const filas = tarjetas.map((t) => ({ mazo: mazo || "General", frontal: t.frontal, posterior: t.posterior }));
+    const { data, error } = await supabase.from("flashcards").insert(filas).select();
+    if (!error && data) {
+      setFlashcards((prev) => [...prev, ...data]);
+    }
+    return error ? 0 : data.length;
+  };
+
   const deleteFlashcard = async (id) => {
     const { error } = await supabase.from("flashcards").delete().eq("id", id);
     if (!error) {
@@ -652,6 +661,7 @@ export default function AcademiaPIR() {
               onRepaso={registrarRepasoFlashcard}
               onUpdate={updateFlashcard}
               onAdd={addFlashcard}
+              onAddBulk={addFlashcardsBulk}
               onDelete={deleteFlashcard}
             />
           )}
@@ -2530,7 +2540,7 @@ const CALIFICACIONES_FLASHCARD = [
   { calidad: 5, label: "Muy fácil", bg: CORRECTO_SUAVE, color: CORRECTO, borde: CORRECTO },
 ];
 
-function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onDelete }) {
+function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onAddBulk, onDelete }) {
   const hoy = new Date().toISOString().slice(0, 10);
   const progresoPorId = useMemo(() => {
     const m = {};
@@ -2538,12 +2548,23 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onD
     return m;
   }, [progreso]);
 
+  const mazos = useMemo(
+    () => [...new Set(flashcards.map((f) => f.mazo || "General"))].sort((a, b) => a.localeCompare(b)),
+    [flashcards]
+  );
+  const [mazoActivo, setMazoActivo] = useState(null); // null = todas las carpetas
+
+  const flashcardsDeCarpeta = useMemo(
+    () => (mazoActivo ? flashcards.filter((f) => (f.mazo || "General") === mazoActivo) : flashcards),
+    [flashcards, mazoActivo]
+  );
+
   const pendientes = useMemo(
-    () => flashcards.filter((f) => {
+    () => flashcardsDeCarpeta.filter((f) => {
       const p = progresoPorId[f.id];
       return !p || !p.proxima_revision || p.proxima_revision <= hoy;
     }),
-    [flashcards, progresoPorId, hoy]
+    [flashcardsDeCarpeta, progresoPorId, hoy]
   );
 
   const [sesion, setSesion] = useState(null);
@@ -2601,7 +2622,10 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onD
     return (
       <div>
         <SectionTitle title="Flashcards" subtitle="Todavía no tienes tarjetas propias. Cada persona tiene su propio mazo privado — nadie más ve las tuyas." />
-        <NuevaFlashcard onAdd={onAdd} />
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <NuevaFlashcard onAdd={onAdd} mazos={[]} mazoPorDefecto={null} />
+          <ImportarFlashcards onAddBulk={onAddBulk} mazos={[]} mazoPorDefecto={null} />
+        </div>
       </div>
     );
   }
@@ -2656,12 +2680,38 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onD
 
   const terminoTarjetas = busquedaTarjetas.trim().toLowerCase();
   const tarjetasFiltradas = terminoTarjetas
-    ? flashcards.filter((f) => f.frontal.toLowerCase().includes(terminoTarjetas) || f.posterior.toLowerCase().includes(terminoTarjetas))
-    : flashcards;
+    ? flashcardsDeCarpeta.filter((f) => f.frontal.toLowerCase().includes(terminoTarjetas) || f.posterior.toLowerCase().includes(terminoTarjetas))
+    : flashcardsDeCarpeta;
 
   return (
     <div>
-      <SectionTitle title="Flashcards" subtitle={`Tu mazo privado — ${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"}`} />
+      <SectionTitle
+        title="Flashcards"
+        subtitle={mazoActivo
+          ? `Carpeta "${mazoActivo}" — ${flashcardsDeCarpeta.length} tarjeta${flashcardsDeCarpeta.length === 1 ? "" : "s"}`
+          : `Tu mazo privado — ${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"} en ${mazos.length} carpeta${mazos.length === 1 ? "" : "s"}`}
+      />
+      {mazos.length > 1 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 18 }}>
+          <button
+            type="button"
+            onClick={() => setMazoActivo(null)}
+            style={{ ...styles.chipCarpeta, ...(mazoActivo === null ? styles.chipCarpetaActiva : {}) }}
+          >
+            Todas
+          </button>
+          {mazos.map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setMazoActivo(m)}
+              style={{ ...styles.chipCarpeta, ...(mazoActivo === m ? styles.chipCarpetaActiva : {}) }}
+            >
+              {m}
+            </button>
+          ))}
+        </div>
+      )}
       {resumen && (
         <Card style={{ marginBottom: 16, textAlign: "center", borderColor: CORRECTO }}>
           <p style={{ fontSize: 15, color: "#1E1C18", margin: 0 }}>
@@ -2671,7 +2721,9 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onD
       )}
       <Card style={{ textAlign: "center", padding: "28px 20px" }}>
         {pendientes.length === 0 ? (
-          <p style={{ fontSize: 15, color: "#1E1C18", margin: 0 }}>No te toca repasar ninguna tarjeta hoy. ¡Vuelve mañana!</p>
+          <p style={{ fontSize: 15, color: "#1E1C18", margin: 0 }}>
+            No te toca repasar ninguna tarjeta{mazoActivo ? ` de "${mazoActivo}"` : ""} hoy. ¡Vuelve mañana!
+          </p>
         ) : (
           <>
             <p style={{ fontSize: 15, color: "#1E1C18", marginTop: 0, marginBottom: 16 }}>
@@ -2701,12 +2753,15 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onD
 
       <div style={{ marginTop: 32 }}>
         <button type="button" onClick={() => setVerTarjetas((v) => !v)} style={{ ...styles.linkBtn, display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
-          {verTarjetas ? <ChevronDown size={15} /> : <ChevronRight size={15} />} Ver, añadir y editar tarjetas ({flashcards.length})
+          {verTarjetas ? <ChevronDown size={15} /> : <ChevronRight size={15} />} Ver, añadir y editar tarjetas ({flashcardsDeCarpeta.length})
         </button>
         {verTarjetas && (
           <div style={{ marginTop: 12 }}>
-            <NuevaFlashcard onAdd={onAdd} />
-            <div style={{ position: "relative", marginBottom: 14, marginTop: 14 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+              <NuevaFlashcard onAdd={onAdd} mazos={mazos} mazoPorDefecto={mazoActivo} />
+              <ImportarFlashcards onAddBulk={onAddBulk} mazos={mazos} mazoPorDefecto={mazoActivo} />
+            </div>
+            <div style={{ position: "relative", marginBottom: 14 }}>
               <Search size={16} color="#9B9689" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
               <input
                 value={busquedaTarjetas}
@@ -2725,14 +2780,48 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onD
   );
 }
 
-function NuevaFlashcard({ onAdd }) {
+function SelectorCarpeta({ mazos, valor, onChange }) {
+  const [modoNueva, setModoNueva] = useState(mazos.length === 0);
+  if (modoNueva) {
+    return (
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          value={valor}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="Nombre de la carpeta (ej. Trastornos de personalidad)"
+          style={{ ...styles.input, flex: 1 }}
+        />
+        {mazos.length > 0 && (
+          <button type="button" onClick={() => { setModoNueva(false); onChange(mazos[0]); }} style={styles.btnSecondary}>
+            Elegir existente
+          </button>
+        )}
+      </div>
+    );
+  }
+  return (
+    <select
+      value={valor}
+      onChange={(e) => {
+        if (e.target.value === "__nueva__") { setModoNueva(true); onChange(""); }
+        else onChange(e.target.value);
+      }}
+      style={styles.input}
+    >
+      {mazos.map((m) => <option key={m} value={m}>{m}</option>)}
+      <option value="__nueva__">+ Nueva carpeta...</option>
+    </select>
+  );
+}
+
+function NuevaFlashcard({ onAdd, mazos, mazoPorDefecto }) {
   const [abierto, setAbierto] = useState(false);
-  const [mazo, setMazo] = useState("");
+  const [mazo, setMazo] = useState(mazoPorDefecto || (mazos[0] || ""));
   const [frontal, setFrontal] = useState("");
   const [posterior, setPosterior] = useState("");
   const [guardando, setGuardando] = useState(false);
 
-  const limpiar = () => { setMazo(""); setFrontal(""); setPosterior(""); };
+  const limpiar = () => { setFrontal(""); setPosterior(""); };
 
   const guardar = async () => {
     if (!frontal.trim() || !posterior.trim()) return;
@@ -2744,16 +2833,16 @@ function NuevaFlashcard({ onAdd }) {
 
   if (!abierto) {
     return (
-      <button type="button" onClick={() => setAbierto(true)} style={{ ...styles.btnSecondary, marginBottom: 14 }}>
+      <button type="button" onClick={() => setAbierto(true)} style={styles.btnSecondary}>
         <Plus size={14} style={{ marginRight: 4 }} /> Añadir tarjeta
       </button>
     );
   }
 
   return (
-    <Card style={{ marginBottom: 14, borderLeft: "3px solid #8A5A9E" }}>
-      <FieldLabel>Mazo (opcional)</FieldLabel>
-      <input value={mazo} onChange={(e) => setMazo(e.target.value)} placeholder="General" style={styles.input} />
+    <Card style={{ marginBottom: 14, borderLeft: "3px solid #8A5A9E", width: "100%" }}>
+      <FieldLabel>Carpeta</FieldLabel>
+      <SelectorCarpeta mazos={mazos} valor={mazo} onChange={setMazo} />
       <FieldLabel style={{ marginTop: 12 }}>Frontal</FieldLabel>
       <textarea value={frontal} onChange={(e) => setFrontal(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
       <FieldLabel style={{ marginTop: 12 }}>Posterior</FieldLabel>
@@ -2761,6 +2850,82 @@ function NuevaFlashcard({ onAdd }) {
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
         <button type="button" onClick={guardar} disabled={guardando} style={{ ...styles.btnPrimary, flex: 1 }}>{guardando ? "Añadiendo..." : "Añadir tarjeta"}</button>
         <button type="button" onClick={() => { limpiar(); setAbierto(false); }} style={styles.btnSecondary}>Cancelar</button>
+      </div>
+    </Card>
+  );
+}
+
+function ImportarFlashcards({ onAddBulk, mazos, mazoPorDefecto }) {
+  const [abierto, setAbierto] = useState(false);
+  const [mazo, setMazo] = useState(mazoPorDefecto || (mazos[0] || ""));
+  const [texto, setTexto] = useState("");
+  const [importando, setImportando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+
+  const parsear = (bruto) => {
+    const separador = bruto.includes("\t") ? "\t" : bruto.includes(" | ") ? " | " : ";";
+    return bruto
+      .split("\n")
+      .map((linea) => linea.trim())
+      .filter(Boolean)
+      .map((linea) => {
+        const partes = linea.split(separador);
+        if (partes.length < 2) return null;
+        const frontal = partes[0].trim();
+        const posterior = partes.slice(1).join(separador).trim();
+        if (!frontal || !posterior) return null;
+        return { frontal, posterior };
+      })
+      .filter(Boolean);
+  };
+
+  const tarjetas = parsear(texto);
+
+  const importar = async () => {
+    if (tarjetas.length === 0 || !mazo.trim()) return;
+    setImportando(true);
+    const n = await onAddBulk(mazo.trim(), tarjetas);
+    setImportando(false);
+    setResultado(n);
+    if (n > 0) setTexto("");
+  };
+
+  if (!abierto) {
+    return (
+      <button type="button" onClick={() => setAbierto(true)} style={styles.btnSecondary}>
+        <ListChecks size={14} style={{ marginRight: 4 }} /> Importar tarjetas
+      </button>
+    );
+  }
+
+  return (
+    <Card style={{ marginBottom: 14, borderLeft: "3px solid #8A5A9E", width: "100%" }}>
+      <FieldLabel>Carpeta de destino</FieldLabel>
+      <SelectorCarpeta mazos={mazos} valor={mazo} onChange={setMazo} />
+      <FieldLabel style={{ marginTop: 12 }}>Pega tus tarjetas, una por línea</FieldLabel>
+      <p style={{ fontSize: 12, color: "#9B9689", margin: "0 0 8px" }}>
+        Cada línea es una tarjeta: frontal y posterior separados por tabulador, " | " o ";" — el formato en que se exportan la mayoría de mazos de Anki o una hoja de cálculo.
+      </p>
+      <textarea
+        value={texto}
+        onChange={(e) => { setTexto(e.target.value); setResultado(null); }}
+        placeholder={"¿Qué es la prevalencia? | Proporción de casos existentes en un momento dado\nOtra pregunta | Su respuesta"}
+        style={{ ...styles.input, minHeight: 140, fontFamily: "monospace", fontSize: 13 }}
+      />
+      <p style={{ fontSize: 12.5, color: TINTA_SUAVE, margin: "8px 0 0" }}>
+        {tarjetas.length} tarjeta{tarjetas.length === 1 ? "" : "s"} detectada{tarjetas.length === 1 ? "" : "s"}
+        {texto.trim() && tarjetas.length === 0 ? " — revisa el separador de cada línea." : "."}
+      </p>
+      {resultado !== null && (
+        <p style={{ fontSize: 13, color: resultado > 0 ? CORRECTO : ACENTO, margin: "4px 0 0" }}>
+          {resultado > 0 ? `¡Importadas ${resultado} tarjetas!` : "No se pudo importar. Inténtalo de nuevo."}
+        </p>
+      )}
+      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+        <button type="button" onClick={importar} disabled={importando || tarjetas.length === 0 || !mazo.trim()} style={{ ...styles.btnPrimary, flex: 1, opacity: importando || tarjetas.length === 0 || !mazo.trim() ? 0.6 : 1 }}>
+          {importando ? "Importando..." : `Importar ${tarjetas.length || ""} tarjeta${tarjetas.length === 1 ? "" : "s"}`}
+        </button>
+        <button type="button" onClick={() => { setTexto(""); setResultado(null); setAbierto(false); }} style={styles.btnSecondary}>Cancelar</button>
       </div>
     </Card>
   );
@@ -3096,6 +3261,8 @@ const styles = {
   tabOrigenBtn: { flex: 1, padding: "11px 14px", borderRadius: 12, border: `1.5px solid ${RAYA}`, background: "#fff", color: TINTA_SUAVE, fontSize: 14, fontWeight: 600, cursor: "pointer" },
   tabOrigenActivo: { background: TINTA, borderColor: TINTA, color: "#fff" },
   tabOrigenActivoIA: { background: "#8A5A9E", borderColor: "#8A5A9E", color: "#fff" },
+  chipCarpeta: { padding: "6px 13px", borderRadius: 20, border: `1.5px solid ${RAYA}`, background: "#fff", color: TINTA_SUAVE, fontSize: 13, fontWeight: 600, cursor: "pointer" },
+  chipCarpetaActiva: { background: "#8A5A9E", borderColor: "#8A5A9E", color: "#fff" },
   rachaDiasChip: { display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: TINTA_TENUE, background: "#F2EFE7", borderRadius: 20, padding: "5px 10px" },
   rachaDiasChipActiva: { color: ACENTO, background: ACENTO_SUAVE },
   modalOverlay: { position: "fixed", inset: 0, background: "rgba(30,28,24,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 },
