@@ -3118,6 +3118,18 @@ function FalloRepetible({ f, index, favoritos, onToggleFavorito }) {
   );
 }
 
+function EnRachaBadge() {
+  return (
+    <span style={styles.enRachaBadge}>
+      <span style={{ position: "relative", width: 6, height: 6, flexShrink: 0 }}>
+        <span style={styles.enRachaPunto} />
+        <span style={{ ...styles.enRachaPunto, animation: "pulsoEnLinea 1.8s ease-out infinite" }} />
+      </span>
+      en racha
+    </span>
+  );
+}
+
 function Ranking({ rachas, user }) {
   const [modo, setModo] = useState("quiz");
   const campoRecord = modo === "quiz" ? "racha_record" : "racha_duelos_record";
@@ -3136,9 +3148,6 @@ function Ranking({ rachas, user }) {
 
   return (
     <div>
-      <style>{`
-        @keyframes energiaGiro { to { transform: rotate(360deg); } }
-      `}</style>
       <SectionTitle title="Ranking" />
 
       <div style={styles.tabsOrigen}>
@@ -3156,20 +3165,14 @@ function Ranking({ rachas, user }) {
         ) : (
           filas.map((r, i) => {
             const enVivo = (r[campoVivo] || 0) > 0;
-            const fila = (
-              <div style={{ ...styles.rankRow, background: r.name === user.name ? ACENTO_SUAVE : styles.rankRow.background, border: enVivo ? "none" : styles.rankRow.border, marginBottom: enVivo ? 0 : styles.rankRow.marginBottom }}>
+            return (
+              <div key={r.name} style={{ ...styles.rankRow, background: r.name === user.name ? ACENTO_SUAVE : styles.rankRow.background }}>
                 <span style={{ width: 24, fontSize: 14, color: i < 3 ? "#C89B3C" : TINTA_TENUE, fontFamily: "var(--font-display)" }}>{i + 1}</span>
                 <span style={{ flex: 1, fontSize: 15, color: TINTA }}>{r.name}</span>
+                {enVivo && <EnRachaBadge />}
                 <span style={{ fontSize: 16, color: colorModo, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
                   <IconoModo size={14} /> {r[campoRecord]}
                 </span>
-              </div>
-            );
-            if (!enVivo) return <div key={r.name}>{fila}</div>;
-            return (
-              <div key={r.name} style={styles.energiaWrap}>
-                <div style={{ ...styles.energiaAnillo, background: `conic-gradient(from 0deg, transparent 0%, transparent 62%, ${colorModo}66 74%, ${colorModo}ee 80%, ${colorModo}66 86%, transparent 100%)` }} />
-                {fila}
               </div>
             );
           })
@@ -3207,24 +3210,16 @@ function ListaRachas({ datos, campo, icono: Icono, colorIcono, user, vacioTexto,
   }
   return (
     <>
-      {datos.map((r, i) => {
-        const fila = (
-          <div style={{ ...styles.rankRow, position: "relative", border: enVivo ? "none" : styles.rankRow.border, marginBottom: enVivo ? 0 : styles.rankRow.marginBottom, background: r.name === user.name ? ACENTO_SUAVE : styles.rankRow.background }}>
-            <span style={{ width: 24, fontSize: 14, color: i < 3 ? "#C89B3C" : "#9B9689", fontFamily: "var(--font-display)" }}>{i + 1}</span>
-            <span style={{ flex: 1, fontSize: 15, color: "#1E1C18" }}>{r.name}</span>
-            <span style={{ fontSize: 16, color: colorIcono, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
-              <Icono size={14} /> {r[campo]}
-            </span>
-          </div>
-        );
-        if (!enVivo) return <div key={r.name}>{fila}</div>;
-        return (
-          <div key={r.name} style={styles.energiaWrap}>
-            <div style={{ ...styles.energiaAnillo, background: `conic-gradient(from 0deg, transparent 0%, transparent 62%, ${colorIcono}66 74%, ${colorIcono}ee 80%, ${colorIcono}66 86%, transparent 100%)` }} />
-            {fila}
-          </div>
-        );
-      })}
+      {datos.map((r, i) => (
+        <div key={r.name} style={{ ...styles.rankRow, background: r.name === user.name ? ACENTO_SUAVE : styles.rankRow.background }}>
+          <span style={{ width: 24, fontSize: 14, color: i < 3 ? "#C89B3C" : "#9B9689", fontFamily: "var(--font-display)" }}>{i + 1}</span>
+          <span style={{ flex: 1, fontSize: 15, color: "#1E1C18" }}>{r.name}</span>
+          {enVivo && <EnRachaBadge />}
+          <span style={{ fontSize: 16, color: colorIcono, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+            <Icono size={14} /> {r[campo]}
+          </span>
+        </div>
+      ))}
     </>
   );
 }
@@ -3285,8 +3280,8 @@ const styles = {
   rankingColumnas: { display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 4, alignItems: "stretch" },
   columnaRanking: { flex: 1, minWidth: 240, background: "#F1ECDD", border: `1.5px solid ${RAYA}`, borderRadius: 16, padding: "14px 14px 16px", boxShadow: SOMBRA_SUAVE },
   tablaRanking: { background: "#F1ECDD", border: `1.5px solid ${RAYA_FUERTE}`, borderRadius: 16, padding: "14px 14px 16px", boxShadow: SOMBRA_SUAVE },
-  energiaWrap: { position: "relative", borderRadius: 9, padding: 1.5, marginBottom: 8, overflow: "hidden" },
-  energiaAnillo: { position: "absolute", inset: -20, animation: "energiaGiro 3.5s linear infinite" },
+  enRachaBadge: { display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, color: ORO, textTransform: "uppercase", letterSpacing: 0.3 },
+  enRachaPunto: { position: "absolute", inset: 0, borderRadius: "50%", background: ORO },
   dueloAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "12px 16px", borderRadius: 14, border: "none", background: ACENTO, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", animation: "dueloPulso 1.6s ease-in-out infinite" },
   rachaAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "11px 16px", borderRadius: 14, border: `1.5px solid ${ACENTO_SUAVE}`, background: ACENTO_SUAVE, color: "#7A2E21", fontSize: 13.5, fontWeight: 600, cursor: "pointer" },
   main: { padding: "24px 22px 50px", maxWidth: 820, margin: "0 auto" },
