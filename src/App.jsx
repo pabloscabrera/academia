@@ -2639,10 +2639,10 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
           <div style={{ ...styles.progressFill, width: `${(idx / sesion.length) * 100}%`, background: "#8A5A9E" }} />
         </div>
         <style>{`
-          .flip-container { perspective: 1600px; margin-top: 16px; min-height: 280px; }
-          .flip-inner { position: relative; width: 100%; height: 100%; min-height: 280px; transition: transform 0.5s; transform-style: preserve-3d; }
+          .flip-container { perspective: 1600px; margin-top: 16px; }
+          .flip-inner { display: grid; width: 100%; transition: transform 0.5s; transform-style: preserve-3d; }
           .flip-inner.flipped { transform: rotateY(180deg); }
-          .flip-face { position: absolute; inset: 0; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; }
+          .flip-face { grid-area: 1 / 1; min-height: 280px; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; overflow-y: auto; }
           .flip-back { transform: rotateY(180deg); }
         `}</style>
         <div className="flip-container" onClick={() => setRevelada((v) => !v)} style={{ cursor: "pointer" }}>
