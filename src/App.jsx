@@ -3,7 +3,7 @@ import {
   Compass, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
   Plus, Check, X, Loader2, User, LogOut, Flag, Pencil, Trash2,
    Zap, Heart, Swords, Flame, Sparkles, Star, Award, Target, Settings,
-   Medal, Gem, Crown, Search, Layers, Lightbulb, Users
+   Medal, Gem, Crown, Search, Layers, Lightbulb, Users, Folder
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { TEMARIO } from "./temario";
@@ -2568,12 +2568,97 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
     () => [...new Set(flashcards.map((f) => f.mazo || "General"))].sort((a, b) => a.localeCompare(b)),
     [flashcards]
   );
-  const [mazoActivo, setMazoActivo] = useState(null); // null = todas las carpetas
 
-  const flashcardsDeCarpeta = useMemo(
-    () => (mazoActivo ? flashcards.filter((f) => (f.mazo || "General") === mazoActivo) : flashcards),
-    [flashcards, mazoActivo]
+  // Un `mazo` con "/" (ej. "Troncales/Neuroanatomía") vive DENTRO de la
+  // carpeta "Troncales" junto a otros mazos hermanos; uno sin "/" es a la
+  // vez su propia carpeta y su propio mazo (fila plana, sin icono de
+  // carpeta, como "Básica" en el listado). `tieneBase` marca el caso raro
+  // de tener tarjetas sueltas en "Troncales" además de en sus subcarpetas.
+  const arbolCarpetas = useMemo(() => {
+    const hijosPorCarpeta = new Map();
+    mazos.forEach((m) => {
+      const corte = m.indexOf("/");
+      const carpeta = corte === -1 ? m : m.slice(0, corte);
+      if (!hijosPorCarpeta.has(carpeta)) hijosPorCarpeta.set(carpeta, new Set());
+      if (corte !== -1) hijosPorCarpeta.get(carpeta).add(m);
+    });
+    return [...hijosPorCarpeta.entries()]
+      .map(([nombre, hijosSet]) => ({
+        nombre,
+        esCarpeta: hijosSet.size > 0,
+        tieneBase: hijosSet.size > 0 && mazos.includes(nombre),
+        hijos: [...hijosSet].sort((a, b) => a.localeCompare(b)),
+      }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }, [mazos]);
+
+  const statsPorMazo = useMemo(() => {
+    const m = new Map();
+    flashcards.forEach((f) => {
+      const clave = f.mazo || "General";
+      if (!m.has(clave)) m.set(clave, { total: 0, pendientes: 0, ultima: null });
+      const s = m.get(clave);
+      s.total += 1;
+      const p = progresoPorId[f.id];
+      if (!p || !p.proxima_revision || p.proxima_revision <= hoy) s.pendientes += 1;
+      if (f.created_at && (!s.ultima || f.created_at > s.ultima)) s.ultima = f.created_at;
+    });
+    return m;
+  }, [flashcards, progresoPorId, hoy]);
+
+  const statsDeCarpeta = (carpeta) => {
+    const stats = { total: 0, pendientes: 0, ultima: null };
+    mazos.forEach((m) => {
+      if (m !== carpeta && !m.startsWith(carpeta + "/")) return;
+      const s = statsPorMazo.get(m);
+      if (!s) return;
+      stats.total += s.total;
+      stats.pendientes += s.pendientes;
+      if (s.ultima && (!stats.ultima || s.ultima > stats.ultima)) stats.ultima = s.ultima;
+    });
+    return stats;
+  };
+
+  const pendientesTotal = useMemo(
+    () => [...statsPorMazo.values()].reduce((acc, s) => acc + s.pendientes, 0),
+    [statsPorMazo]
   );
+
+  const hayVariasCarpetas = mazos.length > 1;
+  const [mostrandoLista, setMostrandoLista] = useState(true); // navegador de carpetas vs. vista de repaso
+  const [carpetaNavegando, setCarpetaNavegando] = useState(null); // carpeta abierta en el navegador
+  const [mazoActivo, setMazoActivo] = useState(null); // mazo exacto seleccionado para repasar/ver
+  const [filtroCarpeta, setFiltroCarpeta] = useState(null); // "todas las de esta carpeta" seleccionado
+
+  const seleccionarMazo = (nombre) => {
+    setMazoActivo(nombre);
+    setFiltroCarpeta(null);
+    setMostrandoLista(false);
+  };
+  const seleccionarCarpetaCompleta = (nombre) => {
+    setFiltroCarpeta(nombre);
+    setMazoActivo(null);
+    setMostrandoLista(false);
+  };
+  const seleccionarTodas = () => {
+    setMazoActivo(null);
+    setFiltroCarpeta(null);
+    setMostrandoLista(false);
+  };
+  const volverANavegador = () => setMostrandoLista(true);
+
+  const flashcardsDeCarpeta = useMemo(() => {
+    if (mazoActivo) return flashcards.filter((f) => (f.mazo || "General") === mazoActivo);
+    if (filtroCarpeta) {
+      return flashcards.filter((f) => {
+        const m = f.mazo || "General";
+        return m === filtroCarpeta || m.startsWith(filtroCarpeta + "/");
+      });
+    }
+    return flashcards;
+  }, [flashcards, mazoActivo, filtroCarpeta]);
+
+  const etiquetaSeleccion = mazoActivo || filtroCarpeta;
 
   const pendientes = useMemo(
     () => flashcardsDeCarpeta.filter((f) => {
@@ -2699,35 +2784,111 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
     ? flashcardsDeCarpeta.filter((f) => f.frontal.toLowerCase().includes(terminoTarjetas) || f.posterior.toLowerCase().includes(terminoTarjetas))
     : flashcardsDeCarpeta;
 
+  if (hayVariasCarpetas && mostrandoLista) {
+    if (carpetaNavegando === null) {
+      return (
+        <div>
+          <SectionTitle
+            title="Flashcards"
+            subtitle={`Tu mazo privado — ${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"} en ${arbolCarpetas.length} carpeta${arbolCarpetas.length === 1 ? "" : "s"}`}
+          />
+          <FilaNavegacion
+            icono={Layers}
+            titulo="Todas las tarjetas"
+            subtitulo={`${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"} en total`}
+            badge={pendientesTotal > 0 ? `${pendientesTotal} hoy` : null}
+            onClick={seleccionarTodas}
+          />
+          {arbolCarpetas.map((c) => {
+            const stats = statsDeCarpeta(c.nombre);
+            const numMazos = c.hijos.length + (c.tieneBase ? 1 : 0);
+            return (
+              <FilaNavegacion
+                key={c.nombre}
+                icono={c.esCarpeta ? Folder : Layers}
+                titulo={c.nombre}
+                subtitulo={c.esCarpeta
+                  ? `${numMazos} mazo${numMazos === 1 ? "" : "s"} · ${stats.total} tarjeta${stats.total === 1 ? "" : "s"}`
+                  : `${stats.total} tarjeta${stats.total === 1 ? "" : "s"}`}
+                badge={stats.pendientes > 0 ? `${stats.pendientes} hoy` : null}
+                onClick={() => (c.esCarpeta ? setCarpetaNavegando(c.nombre) : seleccionarMazo(c.nombre))}
+              />
+            );
+          })}
+        </div>
+      );
+    }
+
+    const carpeta = arbolCarpetas.find((c) => c.nombre === carpetaNavegando);
+    const statsCarpeta = carpeta ? statsDeCarpeta(carpeta.nombre) : { total: 0, pendientes: 0 };
+    const statsBase = carpeta ? statsPorMazo.get(carpeta.nombre) || { total: 0, pendientes: 0 } : { total: 0, pendientes: 0 };
+    return (
+      <div>
+        <button
+          type="button"
+          onClick={() => setCarpetaNavegando(null)}
+          style={{ ...styles.linkBtn, display: "flex", alignItems: "center", gap: 6, padding: 0, marginBottom: 14 }}
+        >
+          <ChevronRight size={15} style={{ transform: "rotate(180deg)" }} /> Carpetas
+        </button>
+        {carpeta && (
+          <>
+            <SectionTitle
+              title={carpeta.nombre}
+              subtitle={`${statsCarpeta.total} tarjeta${statsCarpeta.total === 1 ? "" : "s"} en esta carpeta`}
+            />
+            <FilaNavegacion
+              icono={Layers}
+              titulo={`Todas las de "${carpeta.nombre}"`}
+              subtitulo={`${statsCarpeta.total} tarjeta${statsCarpeta.total === 1 ? "" : "s"}`}
+              badge={statsCarpeta.pendientes > 0 ? `${statsCarpeta.pendientes} hoy` : null}
+              onClick={() => seleccionarCarpetaCompleta(carpeta.nombre)}
+            />
+            {carpeta.tieneBase && (
+              <FilaNavegacion
+                icono={Layers}
+                titulo="General"
+                subtitulo={`${statsBase.total} tarjeta${statsBase.total === 1 ? "" : "s"}`}
+                badge={statsBase.pendientes > 0 ? `${statsBase.pendientes} hoy` : null}
+                onClick={() => seleccionarMazo(carpeta.nombre)}
+              />
+            )}
+            {carpeta.hijos.map((m) => {
+              const s = statsPorMazo.get(m) || { total: 0, pendientes: 0 };
+              return (
+                <FilaNavegacion
+                  key={m}
+                  icono={Layers}
+                  titulo={m.slice(carpeta.nombre.length + 1)}
+                  subtitulo={`${s.total} tarjeta${s.total === 1 ? "" : "s"}`}
+                  badge={s.pendientes > 0 ? `${s.pendientes} hoy` : null}
+                  onClick={() => seleccionarMazo(m)}
+                />
+              );
+            })}
+          </>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div>
+      {hayVariasCarpetas && (
+        <button
+          type="button"
+          onClick={volverANavegador}
+          style={{ ...styles.linkBtn, display: "flex", alignItems: "center", gap: 6, padding: 0, marginBottom: 14 }}
+        >
+          <ChevronRight size={15} style={{ transform: "rotate(180deg)" }} /> Carpetas
+        </button>
+      )}
       <SectionTitle
         title="Flashcards"
-        subtitle={mazoActivo
-          ? `Carpeta "${mazoActivo}" — ${flashcardsDeCarpeta.length} tarjeta${flashcardsDeCarpeta.length === 1 ? "" : "s"}`
-          : `Tu mazo privado — ${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"} en ${mazos.length} carpeta${mazos.length === 1 ? "" : "s"}`}
+        subtitle={etiquetaSeleccion
+          ? `"${etiquetaSeleccion}" — ${flashcardsDeCarpeta.length} tarjeta${flashcardsDeCarpeta.length === 1 ? "" : "s"}`
+          : `Tu mazo privado — ${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"}`}
       />
-      {mazos.length > 1 && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 18 }}>
-          <button
-            type="button"
-            onClick={() => setMazoActivo(null)}
-            style={{ ...styles.chipCarpeta, ...(mazoActivo === null ? styles.chipCarpetaActiva : {}) }}
-          >
-            Todas
-          </button>
-          {mazos.map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setMazoActivo(m)}
-              style={{ ...styles.chipCarpeta, ...(mazoActivo === m ? styles.chipCarpetaActiva : {}) }}
-            >
-              {m}
-            </button>
-          ))}
-        </div>
-      )}
       {resumen && (
         <Card style={{ marginBottom: 16, textAlign: "center", borderColor: CORRECTO }}>
           <p style={{ fontSize: 15, color: "#1E1C18", margin: 0 }}>
@@ -2738,7 +2899,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
       <Card style={{ textAlign: "center", padding: "28px 20px" }}>
         {pendientes.length === 0 ? (
           <p style={{ fontSize: 15, color: "#1E1C18", margin: 0 }}>
-            No te toca repasar ninguna tarjeta{mazoActivo ? ` de "${mazoActivo}"` : ""} hoy. ¡Vuelve mañana!
+            No te toca repasar ninguna tarjeta{etiquetaSeleccion ? ` de "${etiquetaSeleccion}"` : ""} hoy. ¡Vuelve mañana!
           </p>
         ) : (
           <>
@@ -2774,8 +2935,8 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
         {verTarjetas && (
           <div style={{ marginTop: 12 }}>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-              <NuevaFlashcard onAdd={onAdd} mazos={mazos} mazoPorDefecto={mazoActivo} />
-              <ImportarFlashcards onAddBulk={onAddBulk} mazos={mazos} mazoPorDefecto={mazoActivo} />
+              <NuevaFlashcard onAdd={onAdd} mazos={mazos} mazoPorDefecto={etiquetaSeleccion} />
+              <ImportarFlashcards onAddBulk={onAddBulk} mazos={mazos} mazoPorDefecto={etiquetaSeleccion} />
             </div>
             <div style={{ position: "relative", marginBottom: 14 }}>
               <Search size={16} color="#9B9689" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
@@ -2796,6 +2957,20 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
   );
 }
 
+function FilaNavegacion({ icono: Icono, titulo, subtitulo, badge, onClick }) {
+  return (
+    <button type="button" onClick={onClick} style={styles.filaCarpeta}>
+      <span style={styles.filaCarpetaIcono}><Icono size={17} /></span>
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <div style={styles.filaCarpetaTitulo}>{titulo}</div>
+        {subtitulo && <div style={styles.filaCarpetaSubtitulo}>{subtitulo}</div>}
+      </span>
+      {badge != null && <span style={styles.filaCarpetaBadge}>{badge}</span>}
+      <ChevronRight size={16} color="#9B9689" />
+    </button>
+  );
+}
+
 function SelectorCarpeta({ mazos, valor, onChange }) {
   const [modoNueva, setModoNueva] = useState(mazos.length === 0);
   if (modoNueva) {
@@ -2804,7 +2979,7 @@ function SelectorCarpeta({ mazos, valor, onChange }) {
         <input
           value={valor}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="Nombre de la carpeta (ej. Trastornos de personalidad)"
+          placeholder='Nombre del mazo (ej. "Trastornos de personalidad", o "Troncales/Neuroanatomía" para meterlo dentro de una carpeta)'
           style={{ ...styles.input, flex: 1 }}
         />
         {mazos.length > 0 && (
@@ -2857,7 +3032,7 @@ function NuevaFlashcard({ onAdd, mazos, mazoPorDefecto }) {
 
   return (
     <Card style={{ marginBottom: 14, borderLeft: "3px solid #8A5A9E", width: "100%" }}>
-      <FieldLabel>Carpeta</FieldLabel>
+      <FieldLabel>Mazo</FieldLabel>
       <SelectorCarpeta mazos={mazos} valor={mazo} onChange={setMazo} />
       <FieldLabel style={{ marginTop: 12 }}>Frontal</FieldLabel>
       <textarea value={frontal} onChange={(e) => setFrontal(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
@@ -2916,7 +3091,7 @@ function ImportarFlashcards({ onAddBulk, mazos, mazoPorDefecto }) {
 
   return (
     <Card style={{ marginBottom: 14, borderLeft: "3px solid #8A5A9E", width: "100%" }}>
-      <FieldLabel>Carpeta de destino</FieldLabel>
+      <FieldLabel>Mazo de destino</FieldLabel>
       <SelectorCarpeta mazos={mazos} valor={mazo} onChange={setMazo} />
       <FieldLabel style={{ marginTop: 12 }}>Pega tus tarjetas, una por línea</FieldLabel>
       <p style={{ fontSize: 12, color: "#9B9689", margin: "0 0 8px" }}>
@@ -3272,8 +3447,11 @@ const styles = {
   tabOrigenBtn: { flex: 1, padding: "11px 14px", borderRadius: 12, border: `1.5px solid ${RAYA}`, background: "#fff", color: TINTA_SUAVE, fontSize: 14, fontWeight: 600, cursor: "pointer" },
   tabOrigenActivo: { background: TINTA, borderColor: TINTA, color: "#fff" },
   tabOrigenActivoIA: { background: "#8A5A9E", borderColor: "#8A5A9E", color: "#fff" },
-  chipCarpeta: { padding: "6px 13px", borderRadius: 20, border: `1.5px solid ${RAYA}`, background: "#fff", color: TINTA_SUAVE, fontSize: 13, fontWeight: 600, cursor: "pointer" },
-  chipCarpetaActiva: { background: "#8A5A9E", borderColor: "#8A5A9E", color: "#fff" },
+  filaCarpeta: { display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", background: "#fff", border: `1.5px solid ${RAYA}`, borderRadius: 12, padding: "12px 14px", cursor: "pointer", marginBottom: 8 },
+  filaCarpetaIcono: { display: "flex", alignItems: "center", justifyContent: "center", width: 34, height: 34, borderRadius: 9, background: "#F2EFE7", color: "#8A5A9E", flexShrink: 0 },
+  filaCarpetaTitulo: { fontSize: 15, fontWeight: 700, color: TINTA },
+  filaCarpetaSubtitulo: { fontSize: 12, color: "#9B9689", marginTop: 2 },
+  filaCarpetaBadge: { fontSize: 12, fontWeight: 700, color: TINTA_SUAVE, background: "#F2EFE7", borderRadius: 20, padding: "4px 10px", whiteSpace: "nowrap" },
   rachaDiasChip: { display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: TINTA_TENUE, background: "#F2EFE7", borderRadius: 20, padding: "5px 10px" },
   rachaDiasChipActiva: { color: ACENTO, background: ACENTO_SUAVE },
   modalOverlay: { position: "fixed", inset: 0, background: "rgba(30,28,24,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 },
