@@ -594,6 +594,60 @@ export default function AcademiaPIR() {
     return !error;
   };
 
+  // `cascada` decide si `nombre` se trata como una carpeta (afecta también a
+  // todo lo que cuelgue de "nombre/...") o como un mazo exacto suelto (solo
+  // las tarjetas cuyo `mazo` sea exactamente igual). Renombrar/borrar una
+  // carpeta usa cascada=true; renombrar/borrar un mazo concreto dentro de
+  // una carpeta (o la fila "General" de una carpeta con base) usa
+  // cascada=false para no tocar a sus hermanos.
+  const renombrarMazo = async (viejo, nuevo, cascada) => {
+    const destino = (nuevo || "").trim();
+    if (!destino || destino === viejo) return false;
+    const grupos = new Map();
+    flashcards.forEach((f) => {
+      const actual = f.mazo || "General";
+      let nuevoValor = null;
+      if (actual === viejo) nuevoValor = destino;
+      else if (cascada && actual.startsWith(viejo + "/")) nuevoValor = destino + actual.slice(viejo.length);
+      if (nuevoValor === null) return;
+      if (!grupos.has(nuevoValor)) grupos.set(nuevoValor, []);
+      grupos.get(nuevoValor).push(f.id);
+    });
+    if (grupos.size === 0) return false;
+    try {
+      for (const [nuevoMazo, ids] of grupos) {
+        const { error } = await supabase.from("flashcards").update({ mazo: nuevoMazo }).in("id", ids);
+        if (error) throw error;
+      }
+      setFlashcards((prev) => prev.map((f) => {
+        const actual = f.mazo || "General";
+        if (actual === viejo) return { ...f, mazo: destino };
+        if (cascada && actual.startsWith(viejo + "/")) return { ...f, mazo: destino + actual.slice(viejo.length) };
+        return f;
+      }));
+      return true;
+    } catch (err) {
+      console.error("No se pudo renombrar el mazo:", err);
+      return false;
+    }
+  };
+
+  const eliminarMazo = async (nombre, cascada) => {
+    const ids = flashcards
+      .filter((f) => {
+        const actual = f.mazo || "General";
+        return actual === nombre || (cascada && actual.startsWith(nombre + "/"));
+      })
+      .map((f) => f.id);
+    if (ids.length === 0) return false;
+    const { error } = await supabase.from("flashcards").delete().in("id", ids);
+    if (!error) {
+      setFlashcards((prev) => prev.filter((f) => !ids.includes(f.id)));
+      setFlashcardsProgreso((prev) => prev.filter((p) => !ids.includes(p.flashcard_id)));
+    }
+    return !error;
+  };
+
   let contenido;
   if (!ready) {
     contenido = <div style={{ ...styles.center, height: "100%", minHeight: 400 }}><Loader2 className="animate-spin" size={28} color={ACENTO} /></div>;
@@ -663,6 +717,8 @@ export default function AcademiaPIR() {
               onAdd={addFlashcard}
               onAddBulk={addFlashcardsBulk}
               onDelete={deleteFlashcard}
+              onRenombrarMazo={renombrarMazo}
+              onEliminarMazo={eliminarMazo}
             />
           )}
           {section === "perfil" && (
@@ -2556,7 +2612,7 @@ const CALIFICACIONES_FLASHCARD = [
   { calidad: 5, label: "Muy fácil", bg: CORRECTO_SUAVE, color: CORRECTO, borde: CORRECTO },
 ];
 
-function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onAddBulk, onDelete }) {
+function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo }) {
   const hoy = new Date().toISOString().slice(0, 10);
   const progresoPorId = useMemo(() => {
     const m = {};
@@ -2628,6 +2684,15 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
   const [carpetaNavegando, setCarpetaNavegando] = useState(null); // carpeta abierta en el navegador
   const [mazoActivo, setMazoActivo] = useState(null); // mazo exacto seleccionado para repasar/ver
   const [filtroCarpeta, setFiltroCarpeta] = useState(null); // "todas las de esta carpeta" seleccionado
+
+  // Si renombras/borras la carpeta que tenías abierta (o el último mazo que
+  // quedaba dentro), deja de existir en arbolCarpetas — vuelve al listado
+  // raíz en vez de quedarse mirando una carpeta fantasma.
+  useEffect(() => {
+    if (carpetaNavegando && !arbolCarpetas.some((c) => c.nombre === carpetaNavegando)) {
+      setCarpetaNavegando(null);
+    }
+  }, [carpetaNavegando, arbolCarpetas]);
 
   const seleccionarMazo = (nombre) => {
     setMazoActivo(nombre);
@@ -2802,7 +2867,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
             const stats = statsDeCarpeta(c.nombre);
             const numMazos = c.hijos.length + (c.tieneBase ? 1 : 0);
             return (
-              <FilaNavegacion
+              <FilaCarpetaEditable
                 key={c.nombre}
                 icono={c.esCarpeta ? Folder : Layers}
                 titulo={c.nombre}
@@ -2811,9 +2876,16 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
                   : `${stats.total} tarjeta${stats.total === 1 ? "" : "s"}`}
                 badge={stats.pendientes > 0 ? `${stats.pendientes} hoy` : null}
                 onClick={() => (c.esCarpeta ? setCarpetaNavegando(c.nombre) : seleccionarMazo(c.nombre))}
+                onRenombrar={(nuevo) => onRenombrarMazo(c.nombre, nuevo, true)}
+                onBorrar={() => onEliminarMazo(c.nombre, true)}
+                avisoBorrado={`¿Borrar "${c.nombre}" y sus ${stats.total} tarjeta${stats.total === 1 ? "" : "s"}? No se puede deshacer.`}
               />
             );
           })}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+            <NuevaFlashcard onAdd={onAdd} mazos={mazos} mazoPorDefecto="" forzarNueva etiqueta="Nueva carpeta o mazo" />
+            <ImportarFlashcards onAddBulk={onAddBulk} mazos={mazos} mazoPorDefecto="" forzarNueva />
+          </div>
         </div>
       );
     }
@@ -2844,27 +2916,39 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
               onClick={() => seleccionarCarpetaCompleta(carpeta.nombre)}
             />
             {carpeta.tieneBase && (
-              <FilaNavegacion
+              <FilaCarpetaEditable
                 icono={Layers}
                 titulo="General"
+                valorEditable={carpeta.nombre}
                 subtitulo={`${statsBase.total} tarjeta${statsBase.total === 1 ? "" : "s"}`}
                 badge={statsBase.pendientes > 0 ? `${statsBase.pendientes} hoy` : null}
                 onClick={() => seleccionarMazo(carpeta.nombre)}
+                onRenombrar={(nuevo) => onRenombrarMazo(carpeta.nombre, nuevo, false)}
+                onBorrar={() => onEliminarMazo(carpeta.nombre, false)}
+                avisoBorrado={`¿Borrar estas ${statsBase.total} tarjeta${statsBase.total === 1 ? "" : "s"} sueltas de "${carpeta.nombre}"? No se puede deshacer.`}
               />
             )}
             {carpeta.hijos.map((m) => {
               const s = statsPorMazo.get(m) || { total: 0, pendientes: 0 };
+              const etiquetaMazo = m.slice(carpeta.nombre.length + 1).trim();
               return (
-                <FilaNavegacion
+                <FilaCarpetaEditable
                   key={m}
                   icono={Layers}
-                  titulo={m.slice(carpeta.nombre.length + 1).trim()}
+                  titulo={etiquetaMazo}
                   subtitulo={`${s.total} tarjeta${s.total === 1 ? "" : "s"}`}
                   badge={s.pendientes > 0 ? `${s.pendientes} hoy` : null}
                   onClick={() => seleccionarMazo(m)}
+                  onRenombrar={(nuevo) => onRenombrarMazo(m, `${carpeta.nombre}/${nuevo}`, false)}
+                  onBorrar={() => onEliminarMazo(m, false)}
+                  avisoBorrado={`¿Borrar "${etiquetaMazo}" y sus ${s.total} tarjeta${s.total === 1 ? "" : "s"}? No se puede deshacer.`}
                 />
               );
             })}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+              <NuevaFlashcard onAdd={onAdd} mazos={mazos} mazoPorDefecto={`${carpeta.nombre}/`} forzarNueva etiqueta="Nuevo mazo aquí" />
+              <ImportarFlashcards onAddBulk={onAddBulk} mazos={mazos} mazoPorDefecto={`${carpeta.nombre}/`} forzarNueva />
+            </div>
           </>
         )}
       </div>
@@ -2968,8 +3052,89 @@ function FilaNavegacion({ icono: Icono, titulo, subtitulo, badge, onClick }) {
   );
 }
 
-function SelectorCarpeta({ mazos, valor, onChange }) {
-  const [modoNueva, setModoNueva] = useState(mazos.length === 0);
+// Como FilaNavegacion, pero con lápiz (renombrar in situ) y papelera
+// (borrar con confirmación) junto al nombre — usada para carpetas y mazos
+// reales, nunca para las filas sintéticas "Todas las tarjetas"/"Todas las
+// de esta carpeta".
+function FilaCarpetaEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onRenombrar, onBorrar, avisoBorrado, valorEditable }) {
+  const [modo, setModo] = useState("normal"); // normal | editando | confirmando
+  const valorInicial = valorEditable != null ? valorEditable : titulo;
+  const [nombreNuevo, setNombreNuevo] = useState(valorInicial);
+  const [procesando, setProcesando] = useState(false);
+
+  if (modo === "editando") {
+    return (
+      <Card style={{ marginBottom: 8, padding: 12 }}>
+        <input
+          value={nombreNuevo}
+          onChange={(e) => setNombreNuevo(e.target.value)}
+          autoFocus
+          style={{ ...styles.input, marginBottom: 10 }}
+        />
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            disabled={procesando || !nombreNuevo.trim()}
+            onClick={async () => {
+              setProcesando(true);
+              const ok = await onRenombrar(nombreNuevo.trim());
+              setProcesando(false);
+              if (ok) setModo("normal"); else setNombreNuevo(valorInicial);
+            }}
+            style={{ ...styles.btnPrimary, flex: 1, opacity: procesando ? 0.7 : 1 }}
+          >
+            {procesando ? "Guardando..." : "Guardar"}
+          </button>
+          <button type="button" onClick={() => { setNombreNuevo(valorInicial); setModo("normal"); }} style={styles.btnSecondary}>
+            Cancelar
+          </button>
+        </div>
+      </Card>
+    );
+  }
+
+  if (modo === "confirmando") {
+    return (
+      <Card style={{ marginBottom: 8, padding: 12, borderColor: ACENTO }}>
+        <p style={{ fontSize: 13, color: TINTA, margin: "0 0 10px" }}>{avisoBorrado}</p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            disabled={procesando}
+            onClick={async () => { setProcesando(true); await onBorrar(); setProcesando(false); }}
+            style={{ ...styles.btnPrimary, flex: 1, background: ACENTO, borderColor: ACENTO, opacity: procesando ? 0.7 : 1 }}
+          >
+            {procesando ? "Borrando..." : "Sí, borrar"}
+          </button>
+          <button type="button" onClick={() => setModo("normal")} style={styles.btnSecondary}>Cancelar</button>
+        </div>
+      </Card>
+    );
+  }
+
+  return (
+    <div style={styles.filaCarpeta}>
+      <button type="button" onClick={onClick} style={styles.filaCarpetaBoton}>
+        <span style={styles.filaCarpetaIcono}><Icono size={17} /></span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <div style={styles.filaCarpetaTitulo}>{titulo}</div>
+          {subtitulo && <div style={styles.filaCarpetaSubtitulo}>{subtitulo}</div>}
+        </span>
+        {badge != null && <span style={styles.filaCarpetaBadge}>{badge}</span>}
+      </button>
+      <button type="button" onClick={() => setModo("editando")} title="Renombrar" style={styles.filaCarpetaIconBtn}>
+        <Pencil size={14} />
+      </button>
+      <button type="button" onClick={() => setModo("confirmando")} title="Borrar" style={styles.filaCarpetaIconBtn}>
+        <Trash2 size={14} />
+      </button>
+      <ChevronRight size={16} color="#9B9689" />
+    </div>
+  );
+}
+
+function SelectorCarpeta({ mazos, valor, onChange, forzarNueva }) {
+  const [modoNueva, setModoNueva] = useState(forzarNueva || mazos.length === 0);
   if (modoNueva) {
     return (
       <div style={{ display: "flex", gap: 8 }}>
@@ -3002,7 +3167,7 @@ function SelectorCarpeta({ mazos, valor, onChange }) {
   );
 }
 
-function NuevaFlashcard({ onAdd, mazos, mazoPorDefecto }) {
+function NuevaFlashcard({ onAdd, mazos, mazoPorDefecto, forzarNueva, etiqueta }) {
   const [abierto, setAbierto] = useState(false);
   const [mazo, setMazo] = useState(mazoPorDefecto || (mazos[0] || ""));
   const [frontal, setFrontal] = useState("");
@@ -3022,7 +3187,7 @@ function NuevaFlashcard({ onAdd, mazos, mazoPorDefecto }) {
   if (!abierto) {
     return (
       <button type="button" onClick={() => setAbierto(true)} style={styles.btnSecondary}>
-        <Plus size={14} style={{ marginRight: 4 }} /> Añadir tarjeta
+        <Plus size={14} style={{ marginRight: 4 }} /> {etiqueta || "Añadir tarjeta"}
       </button>
     );
   }
@@ -3030,7 +3195,7 @@ function NuevaFlashcard({ onAdd, mazos, mazoPorDefecto }) {
   return (
     <Card style={{ marginBottom: 14, borderLeft: "3px solid #8A5A9E", width: "100%" }}>
       <FieldLabel>Mazo</FieldLabel>
-      <SelectorCarpeta mazos={mazos} valor={mazo} onChange={setMazo} />
+      <SelectorCarpeta mazos={mazos} valor={mazo} onChange={setMazo} forzarNueva={forzarNueva} />
       <FieldLabel style={{ marginTop: 12 }}>Frontal</FieldLabel>
       <textarea value={frontal} onChange={(e) => setFrontal(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
       <FieldLabel style={{ marginTop: 12 }}>Posterior</FieldLabel>
@@ -3043,7 +3208,7 @@ function NuevaFlashcard({ onAdd, mazos, mazoPorDefecto }) {
   );
 }
 
-function ImportarFlashcards({ onAddBulk, mazos, mazoPorDefecto }) {
+function ImportarFlashcards({ onAddBulk, mazos, mazoPorDefecto, forzarNueva }) {
   const [abierto, setAbierto] = useState(false);
   const [mazo, setMazo] = useState(mazoPorDefecto || (mazos[0] || ""));
   const [texto, setTexto] = useState("");
@@ -3089,7 +3254,7 @@ function ImportarFlashcards({ onAddBulk, mazos, mazoPorDefecto }) {
   return (
     <Card style={{ marginBottom: 14, borderLeft: "3px solid #8A5A9E", width: "100%" }}>
       <FieldLabel>Mazo de destino</FieldLabel>
-      <SelectorCarpeta mazos={mazos} valor={mazo} onChange={setMazo} />
+      <SelectorCarpeta mazos={mazos} valor={mazo} onChange={setMazo} forzarNueva={forzarNueva} />
       <FieldLabel style={{ marginTop: 12 }}>Pega tus tarjetas, una por línea</FieldLabel>
       <p style={{ fontSize: 12, color: "#9B9689", margin: "0 0 8px" }}>
         Cada línea es una tarjeta: frontal y posterior separados por tabulador, " | " o ";" — el formato en que se exportan la mayoría de mazos de Anki o una hoja de cálculo.
@@ -3444,11 +3609,13 @@ const styles = {
   tabOrigenBtn: { flex: 1, padding: "11px 14px", borderRadius: 12, border: `1.5px solid ${RAYA}`, background: "#fff", color: TINTA_SUAVE, fontSize: 14, fontWeight: 600, cursor: "pointer" },
   tabOrigenActivo: { background: TINTA, borderColor: TINTA, color: "#fff" },
   tabOrigenActivoIA: { background: "#8A5A9E", borderColor: "#8A5A9E", color: "#fff" },
-  filaCarpeta: { display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left", background: "#fff", border: `1.5px solid ${RAYA}`, borderRadius: 12, padding: "12px 14px", cursor: "pointer", marginBottom: 8 },
+  filaCarpeta: { display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "#fff", border: `1.5px solid ${RAYA}`, borderRadius: 12, padding: "12px 14px", cursor: "pointer", marginBottom: 8 },
+  filaCarpetaBoton: { display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, margin: 0, font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" },
   filaCarpetaIcono: { display: "flex", alignItems: "center", justifyContent: "center", width: 34, height: 34, borderRadius: 9, background: "#F2EFE7", color: "#8A5A9E", flexShrink: 0 },
   filaCarpetaTitulo: { fontSize: 15, fontWeight: 700, color: TINTA },
   filaCarpetaSubtitulo: { fontSize: 12, color: "#9B9689", marginTop: 2 },
   filaCarpetaBadge: { fontSize: 12, fontWeight: 700, color: TINTA_SUAVE, background: "#F2EFE7", borderRadius: 20, padding: "4px 10px", whiteSpace: "nowrap" },
+  filaCarpetaIconBtn: { display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 8, border: "none", background: "none", color: "#9B9689", cursor: "pointer", flexShrink: 0 },
   rachaDiasChip: { display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: TINTA_TENUE, background: "#F2EFE7", borderRadius: 20, padding: "5px 10px" },
   rachaDiasChipActiva: { color: ACENTO, background: ACENTO_SUAVE },
   modalOverlay: { position: "fixed", inset: 0, background: "rgba(30,28,24,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 },
