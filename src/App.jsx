@@ -1072,6 +1072,17 @@ function Header({
             {enLinea}
           </span>
         )}
+        <span
+          title="Preguntas que has respondido en total"
+          style={{
+            display: "flex", alignItems: "center", gap: 5, marginLeft: 6,
+            padding: "3px 9px", borderRadius: 999, border: `1px solid ${RAYA}`,
+            fontSize: 12, color: TINTA_SUAVE,
+          }}
+        >
+          <ListChecks size={12} />
+          {(miRacha && miRacha.total_respondidas) || 0}
+        </span>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <span style={{ fontSize: 13, color: TINTA_SUAVE, display: "flex", alignItems: "center", gap: 4 }}>
@@ -1480,21 +1491,26 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
       <div style={{ marginTop: 20 }}>
         <FieldLabel>Toca una pregunta para repasarla</FieldLabel>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {poolOriginal.map((q, i) => (
-            <button
-              type="button"
-              key={q.id}
-              onClick={() => setPreguntaAbierta(preguntaAbierta === q.id ? null : q.id)}
-              style={{
-                ...styles.cuadroPregunta,
-                borderColor: preguntaAbierta === q.id ? "#1E1C18" : ACENTO,
-                background: preguntaAbierta === q.id ? "#1E1C18" : ACENTO_SUAVE,
-                color: preguntaAbierta === q.id ? "#fff" : ACENTO,
-              }}
-            >
-              {i + 1}
-            </button>
-          ))}
+          {poolOriginal.map((q, i) => {
+            const correcta = resultados[q.id] ? resultados[q.id].correct : true;
+            const color = correcta ? CORRECTO : ACENTO;
+            const colorSuave = correcta ? CORRECTO_SUAVE : ACENTO_SUAVE;
+            return (
+              <button
+                type="button"
+                key={q.id}
+                onClick={() => setPreguntaAbierta(preguntaAbierta === q.id ? null : q.id)}
+                style={{
+                  ...styles.cuadroPregunta,
+                  borderColor: preguntaAbierta === q.id ? "#1E1C18" : color,
+                  background: preguntaAbierta === q.id ? "#1E1C18" : colorSuave,
+                  color: preguntaAbierta === q.id ? "#fff" : color,
+                }}
+              >
+                {i + 1}
+              </button>
+            );
+          })}
         </div>
         {abierta && (
           <Card style={{ marginTop: 14 }}>
