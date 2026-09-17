@@ -2624,7 +2624,6 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
     [statsPorMazo]
   );
 
-  const hayVariasCarpetas = mazos.length > 1;
   const [mostrandoLista, setMostrandoLista] = useState(true); // navegador de carpetas vs. vista de repaso
   const [carpetaNavegando, setCarpetaNavegando] = useState(null); // carpeta abierta en el navegador
   const [mazoActivo, setMazoActivo] = useState(null); // mazo exacto seleccionado para repasar/ver
@@ -2784,7 +2783,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
     ? flashcardsDeCarpeta.filter((f) => f.frontal.toLowerCase().includes(terminoTarjetas) || f.posterior.toLowerCase().includes(terminoTarjetas))
     : flashcardsDeCarpeta;
 
-  if (hayVariasCarpetas && mostrandoLista) {
+  if (mostrandoLista) {
     if (carpetaNavegando === null) {
       return (
         <div>
@@ -2859,7 +2858,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
                 <FilaNavegacion
                   key={m}
                   icono={Layers}
-                  titulo={m.slice(carpeta.nombre.length + 1)}
+                  titulo={m.slice(carpeta.nombre.length + 1).trim()}
                   subtitulo={`${s.total} tarjeta${s.total === 1 ? "" : "s"}`}
                   badge={s.pendientes > 0 ? `${s.pendientes} hoy` : null}
                   onClick={() => seleccionarMazo(m)}
@@ -2874,15 +2873,13 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
 
   return (
     <div>
-      {hayVariasCarpetas && (
-        <button
-          type="button"
-          onClick={volverANavegador}
-          style={{ ...styles.linkBtn, display: "flex", alignItems: "center", gap: 6, padding: 0, marginBottom: 14 }}
-        >
-          <ChevronRight size={15} style={{ transform: "rotate(180deg)" }} /> Carpetas
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={volverANavegador}
+        style={{ ...styles.linkBtn, display: "flex", alignItems: "center", gap: 6, padding: 0, marginBottom: 14 }}
+      >
+        <ChevronRight size={15} style={{ transform: "rotate(180deg)" }} /> Carpetas
+      </button>
       <SectionTitle
         title="Flashcards"
         subtitle={etiquetaSeleccion
