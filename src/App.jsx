@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Compass, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
   Plus, Check, X, Loader2, User, LogOut, Flag, Pencil, Trash2,
-   Zap, Heart, Swords, Flame, Sparkles, Star, Award, Target, Settings,
+   Zap, Heart, Swords, Sword, Flame, Sparkles, Star, Award, Target, Settings,
    Medal, Gem, Crown, Search, Layers, Lightbulb, Users, Folder
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
@@ -2016,11 +2016,25 @@ function Duelo({ user, questions, onDueloEnd, onProgresoDiario, autoUnirse, onAu
   const [tiempoRestante, setTiempoRestante] = useState(DURACION_PREGUNTA);
   const [cuentaRevelacion, setCuentaRevelacion] = useState(null);
   const [buscando, setBuscando] = useState(false);
+  const [mostrarChoque, setMostrarChoque] = useState(false);
   const duelRef = useRef(null);
   const avanzadoRef = useRef(null);
   const streakRegistradaRef = useRef(null);
+  const choqueMostradoRef = useRef(null);
 
   useEffect(() => { duelRef.current = duelo; }, [duelo]);
+
+  // Choque de espadas al arrancar el duelo: solo la primera vez que este
+  // duelo concreto entra en "jugando" con la pregunta 0 (no al reconectar
+  // a mitad de partida ni al pasar de pregunta en pregunta).
+  useEffect(() => {
+    if (fase === "jugando" && duelo && duelo.indice === 0 && choqueMostradoRef.current !== duelo.id) {
+      choqueMostradoRef.current = duelo.id;
+      setMostrarChoque(true);
+      const t = setTimeout(() => setMostrarChoque(false), 1100);
+      return () => clearTimeout(t);
+    }
+  }, [fase, duelo && duelo.id, duelo && duelo.indice]);
 
   useEffect(() => {
     return () => {
@@ -2287,7 +2301,7 @@ function Duelo({ user, questions, onDueloEnd, onProgresoDiario, autoUnirse, onAu
       <div>
         <SectionTitle title="Duelo terminado" />
         <Card style={{ textAlign: "center", padding: "32px 20px" }}>
-          <Swords size={26} color={empate ? "#9B9689" : gane ? CORRECTO : "#A6362B"} style={{ marginBottom: 10 }} />
+          <EspadaResultado resultado={empate ? "empate" : gane ? "gane" : "perdi"} />
           <div style={{ fontSize: 22, fontFamily: "var(--font-display)", color: "#1E1C18" }}>
             {empate ? "Empate" : gane ? "¡Has ganado!" : "Has perdido"}
           </div>
@@ -2305,6 +2319,7 @@ function Duelo({ user, questions, onDueloEnd, onProgresoDiario, autoUnirse, onAu
 
   return (
     <div>
+      {mostrarChoque && <ChoqueEspadas />}
       <div style={styles.vsHeader}>
         <div style={{ textAlign: "left" }}>
           <div style={{ fontSize: 13, color: "#1E1C18", fontWeight: 600 }}>{user.name}</div>
@@ -2363,6 +2378,85 @@ function Duelo({ user, questions, onDueloEnd, onProgresoDiario, autoUnirse, onAu
           )}
         </Card>
       )}
+    </div>
+  );
+}
+
+// Choque de espadas mostrado una vez, al arrancar el duelo: dos espadas
+// entran desde los lados y se cruzan en el centro con un destello, y todo
+// el overlay se desvanece solo (vía CSS, sin estado extra) justo antes de
+// que `mostrarChoque` se ponga a false y lo desmonte.
+function ChoqueEspadas() {
+  return (
+    <div className="choque-overlay" style={styles.choqueOverlay}>
+      <style>{`
+        @keyframes espadaEntraIzq {
+          0% { transform: translateX(-90px) rotate(-75deg); opacity: 0; }
+          55% { transform: translateX(0) rotate(-45deg); opacity: 1; }
+          65% { transform: translateX(5px) rotate(-40deg); }
+          80% { transform: translateX(-3px) rotate(-47deg); }
+          100% { transform: translateX(0) rotate(-45deg); opacity: 1; }
+        }
+        @keyframes espadaEntraDer {
+          0% { transform: translateX(90px) rotate(75deg) scaleX(-1); opacity: 0; }
+          55% { transform: translateX(0) rotate(45deg) scaleX(-1); opacity: 1; }
+          65% { transform: translateX(-5px) rotate(40deg) scaleX(-1); }
+          80% { transform: translateX(3px) rotate(47deg) scaleX(-1); }
+          100% { transform: translateX(0) rotate(45deg) scaleX(-1); opacity: 1; }
+        }
+        @keyframes choqueDestello {
+          0%, 52% { opacity: 0; transform: translate(-50%, -50%) scale(0.2); }
+          62% { opacity: 1; transform: translate(-50%, -50%) scale(1.4); }
+          100% { opacity: 0; transform: translate(-50%, -50%) scale(2); }
+        }
+        @keyframes choqueDesvanece {
+          0%, 78% { opacity: 1; }
+          100% { opacity: 0; }
+        }
+        .choque-overlay { animation: choqueDesvanece 1.1s ease-in both; }
+        .choque-espada-izq { animation: espadaEntraIzq 0.7s cubic-bezier(.3,.2,.2,1.2) both; }
+        .choque-espada-der { animation: espadaEntraDer 0.7s cubic-bezier(.3,.2,.2,1.2) both; }
+        .choque-destello { animation: choqueDestello 0.7s ease-out both; }
+      `}</style>
+      <Sword size={42} color={ACENTO} className="choque-espada-izq" style={{ transformOrigin: "80% 80%" }} />
+      <span className="choque-destello" style={styles.choqueDestello} />
+      <Sword size={42} color={ACENTO} className="choque-espada-der" style={{ transformOrigin: "20% 80%" }} />
+    </div>
+  );
+}
+
+// Icono de resultado en la pantalla "Duelo terminado": si ganas o empatas se
+// deja exactamente como estaba (el icono cruzado de siempre, sin animar);
+// si pierdes, ese mismo icono tiembla y se parte en dos mitades (recortadas
+// con clip-path sobre el mismo SVG) que caen y se desvanecen.
+function EspadaResultado({ resultado }) {
+  const color = resultado === "empate" ? "#9B9689" : resultado === "gane" ? CORRECTO : "#A6362B";
+  if (resultado !== "perdi") {
+    return <Swords size={26} color={color} style={{ marginBottom: 10 }} />;
+  }
+  return (
+    <div style={{ position: "relative", width: 26, height: 26, margin: "0 auto 10px" }}>
+      <style>{`
+        @keyframes espadaTiembla {
+          0%, 100% { transform: translateX(0); }
+          20% { transform: translateX(-3px); }
+          40% { transform: translateX(3px); }
+          60% { transform: translateX(-2px); }
+          80% { transform: translateX(2px); }
+        }
+        @keyframes rompeIzq {
+          0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+          100% { transform: translate(-14px, 20px) rotate(-55deg); opacity: 0; }
+        }
+        @keyframes rompeDer {
+          0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+          100% { transform: translate(14px, 20px) rotate(55deg); opacity: 0; }
+        }
+        .espada-rota-izq { clip-path: inset(0 50% 0 0); animation: espadaTiembla 0.35s ease-in-out 2, rompeIzq 0.5s ease-in 0.7s both; }
+        .espada-rota-der { clip-path: inset(0 0 0 50%); animation: espadaTiembla 0.35s ease-in-out 2, rompeDer 0.5s ease-in 0.7s both; }
+      `}</style>
+      <Swords size={26} color={color} className="espada-rota-izq" style={{ position: "absolute", top: 0, left: 0 }} />
+      <Swords size={26} color={color} className="espada-rota-der" style={{ position: "absolute", top: 0, left: 0 }} />
     </div>
   );
 }
@@ -3659,6 +3753,8 @@ const styles = {
   expandBtn: { display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left" },
   rankRow: { display: "flex", alignItems: "center", gap: 12, padding: "13px 18px", border: `1.5px solid ${RAYA}`, borderRadius: 14, marginBottom: 8, fontSize: 16, background: "#F6F4EC" },
   vsHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "14px 6px", borderBottom: `1px solid ${RAYA}` },
+  choqueOverlay: { position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, height: 64, marginBottom: 2 },
+  choqueDestello: { position: "absolute", top: "50%", left: "50%", width: 30, height: 30, borderRadius: "50%", background: `radial-gradient(circle, ${ACENTO_SUAVE} 0%, transparent 70%)`, pointerEvents: "none" },
   daypoCard: { background: "#F6F4EC", border: `1.5px solid ${RAYA}`, borderRadius: 18, padding: 26, boxShadow: SOMBRA_SUAVE },
   daypoPregunta: { fontFamily: "var(--font-display)", fontWeight: 470, fontSize: 22, color: TINTA, lineHeight: 1.4, marginBottom: 20 },
   daypoOpcion: { display: "flex", alignItems: "center", gap: 14, width: "100%", boxSizing: "border-box", textAlign: "left", padding: "16px 18px", borderRadius: 14, border: `1.5px solid ${RAYA}`, marginBottom: 10, fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 15.5, color: TINTA, background: "#F6F4EC", cursor: "pointer", WebkitAppearance: "none", appearance: "none", outline: "none" },
