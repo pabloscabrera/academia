@@ -2500,11 +2500,6 @@ function CelebracionDuelo({ gane }) {
           0% { transform: translateY(-24px) rotate(0deg); opacity: 1; }
           100% { transform: translateY(105vh) rotate(360deg); opacity: 0; }
         }
-        @keyframes celebracionEmojiPop {
-          0% { transform: translate(-50%, -40%) scale(0.4); opacity: 0; }
-          55% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
-          100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
-        }
       `}</style>
       {piezas.map((p, i) => (
         gane ? (
@@ -2529,7 +2524,6 @@ function CelebracionDuelo({ gane }) {
           </span>
         )
       ))}
-      <div style={styles.celebracionEmojiCentro}>{gane ? "👏" : "😭"}</div>
     </div>
   );
 }
@@ -3829,7 +3823,6 @@ const styles = {
   choqueOverlay: { position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, height: 64, marginBottom: 2 },
   choqueDestello: { position: "absolute", top: "50%", left: "50%", width: 30, height: 30, borderRadius: "50%", background: `radial-gradient(circle, ${ACENTO_SUAVE} 0%, transparent 70%)`, pointerEvents: "none" },
   celebracionOverlay: { position: "fixed", inset: 0, overflow: "hidden", pointerEvents: "none", zIndex: 55 },
-  celebracionEmojiCentro: { position: "absolute", top: "36%", left: "50%", fontSize: 72, animation: "celebracionEmojiPop 0.6s cubic-bezier(.34,1.4,.64,1) both" },
   daypoCard: { background: "#F6F4EC", border: `1.5px solid ${RAYA}`, borderRadius: 18, padding: 26, boxShadow: SOMBRA_SUAVE },
   daypoPregunta: { fontFamily: "var(--font-display)", fontWeight: 470, fontSize: 22, color: TINTA, lineHeight: 1.4, marginBottom: 20 },
   daypoOpcion: { display: "flex", alignItems: "center", gap: 14, width: "100%", boxSizing: "border-box", textAlign: "left", padding: "16px 18px", borderRadius: 14, border: `1.5px solid ${RAYA}`, marginBottom: 10, fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 15.5, color: TINTA, background: "#F6F4EC", cursor: "pointer", WebkitAppearance: "none", appearance: "none", outline: "none" },
