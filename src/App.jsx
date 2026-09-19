@@ -2017,10 +2017,12 @@ function Duelo({ user, questions, onDueloEnd, onProgresoDiario, autoUnirse, onAu
   const [cuentaRevelacion, setCuentaRevelacion] = useState(null);
   const [buscando, setBuscando] = useState(false);
   const [mostrarChoque, setMostrarChoque] = useState(false);
+  const [mostrarCelebracion, setMostrarCelebracion] = useState(false);
   const duelRef = useRef(null);
   const avanzadoRef = useRef(null);
   const streakRegistradaRef = useRef(null);
   const choqueMostradoRef = useRef(null);
+  const celebracionMostradaRef = useRef(null);
 
   useEffect(() => { duelRef.current = duelo; }, [duelo]);
 
@@ -2035,6 +2037,19 @@ function Duelo({ user, questions, onDueloEnd, onProgresoDiario, autoUnirse, onAu
       return () => clearTimeout(t);
     }
   }, [fase, duelo && duelo.id, duelo && duelo.indice]);
+
+  // Confeti (ganas) o lluvia de emoticonos llorando (pierdes) a pantalla
+  // completa al terminar, una sola vez por duelo; no se muestra en empate.
+  useEffect(() => {
+    if (fase === "terminado" && duelo && celebracionMostradaRef.current !== duelo.id) {
+      celebracionMostradaRef.current = duelo.id;
+      if (duelo.ganador) {
+        setMostrarCelebracion(true);
+        const t = setTimeout(() => setMostrarCelebracion(false), 2600);
+        return () => clearTimeout(t);
+      }
+    }
+  }, [fase, duelo && duelo.id, duelo && duelo.ganador]);
 
   useEffect(() => {
     return () => {
@@ -2299,6 +2314,7 @@ function Duelo({ user, questions, onDueloEnd, onProgresoDiario, autoUnirse, onAu
     }
     return (
       <div>
+        {mostrarCelebracion && !empate && <CelebracionDuelo gane={gane} />}
         <SectionTitle title="Duelo terminado" />
         <Card style={{ textAlign: "center", padding: "32px 20px" }}>
           <EspadaResultado resultado={empate ? "empate" : gane ? "gane" : "perdi"} />
@@ -2457,6 +2473,63 @@ function EspadaResultado({ resultado }) {
       `}</style>
       <Swords size={26} color={color} className="espada-rota-izq" style={{ position: "absolute", top: 0, left: 0 }} />
       <Swords size={26} color={color} className="espada-rota-der" style={{ position: "absolute", top: 0, left: 0 }} />
+    </div>
+  );
+}
+
+// Overlay a pantalla completa en "Duelo terminado": confeti + 👏 si ganas,
+// lluvia de emoticonos llorando + 😭 grande si pierdes. `pointerEvents: "none"`
+// para no bloquear el botón "Volver al lobby" que sigue debajo; se desmonta
+// solo (vía el timeout que pone `mostrarCelebracion` a false en `Duelo`).
+function CelebracionDuelo({ gane }) {
+  const piezas = useMemo(() => Array.from({ length: gane ? 46 : 24 }, (_, i) => ({
+    izquierda: Math.random() * 100,
+    retraso: Math.random() * 0.6,
+    duracion: 2.2 + Math.random() * 1.4,
+    color: CONFETI_COLORES[i % CONFETI_COLORES.length],
+    rotacion: Math.random() * 360,
+    tamano: 5 + Math.random() * 4,
+    emoji: Math.random() < 0.5 ? "😢" : "😭",
+    fontSize: 16 + Math.random() * 12,
+  })), [gane]);
+
+  return (
+    <div style={styles.celebracionOverlay}>
+      <style>{`
+        @keyframes celebracionCae {
+          0% { transform: translateY(-24px) rotate(0deg); opacity: 1; }
+          100% { transform: translateY(105vh) rotate(360deg); opacity: 0; }
+        }
+        @keyframes celebracionEmojiPop {
+          0% { transform: translate(-50%, -40%) scale(0.4); opacity: 0; }
+          55% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+          100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+        }
+      `}</style>
+      {piezas.map((p, i) => (
+        gane ? (
+          <span
+            key={i}
+            style={{
+              position: "absolute", top: 0, left: `${p.izquierda}%`, width: p.tamano, height: p.tamano * 1.4,
+              background: p.color, borderRadius: 2,
+              animation: `celebracionCae ${p.duracion}s linear ${p.retraso}s forwards`,
+              transform: `rotate(${p.rotacion}deg)`,
+            }}
+          />
+        ) : (
+          <span
+            key={i}
+            style={{
+              position: "absolute", top: 0, left: `${p.izquierda}%`, fontSize: p.fontSize, lineHeight: 1,
+              animation: `celebracionCae ${p.duracion}s linear ${p.retraso}s forwards`,
+            }}
+          >
+            {p.emoji}
+          </span>
+        )
+      ))}
+      <div style={styles.celebracionEmojiCentro}>{gane ? "👏" : "😭"}</div>
     </div>
   );
 }
@@ -3755,6 +3828,8 @@ const styles = {
   vsHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "14px 6px", borderBottom: `1px solid ${RAYA}` },
   choqueOverlay: { position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, height: 64, marginBottom: 2 },
   choqueDestello: { position: "absolute", top: "50%", left: "50%", width: 30, height: 30, borderRadius: "50%", background: `radial-gradient(circle, ${ACENTO_SUAVE} 0%, transparent 70%)`, pointerEvents: "none" },
+  celebracionOverlay: { position: "fixed", inset: 0, overflow: "hidden", pointerEvents: "none", zIndex: 55 },
+  celebracionEmojiCentro: { position: "absolute", top: "36%", left: "50%", fontSize: 72, animation: "celebracionEmojiPop 0.6s cubic-bezier(.34,1.4,.64,1) both" },
   daypoCard: { background: "#F6F4EC", border: `1.5px solid ${RAYA}`, borderRadius: 18, padding: 26, boxShadow: SOMBRA_SUAVE },
   daypoPregunta: { fontFamily: "var(--font-display)", fontWeight: 470, fontSize: 22, color: TINTA, lineHeight: 1.4, marginBottom: 20 },
   daypoOpcion: { display: "flex", alignItems: "center", gap: 14, width: "100%", boxSizing: "border-box", textAlign: "left", padding: "16px 18px", borderRadius: 14, border: `1.5px solid ${RAYA}`, marginBottom: 10, fontFamily: "'IBM Plex Sans', sans-serif", fontSize: 15.5, color: TINTA, background: "#F6F4EC", cursor: "pointer", WebkitAppearance: "none", appearance: "none", outline: "none" },
