@@ -3,7 +3,7 @@ import {
   Compass, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
   Plus, Check, X, Loader2, User, LogOut, Flag, Pencil, Trash2,
    Zap, Heart, Swords, Sword, Flame, Sparkles, Star, Award, Target, Settings,
-   Medal, Gem, Crown, Search, Layers, Lightbulb, Users, Folder
+   Medal, Gem, Crown, Search, Layers, Lightbulb, Users, Folder, Eye
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { TEMARIO } from "./temario";
@@ -153,6 +153,7 @@ export default function AcademiaPIR() {
   const [ranking, setRanking] = useState([]);
   const [rachas, setRachas] = useState([]);
   const [fallos, setFallos] = useState([]);
+  const [preguntasProgreso, setPreguntasProgreso] = useState([]);
   const [favoritos, setFavoritos] = useState([]);
   const [flashcards, setFlashcards] = useState([]);
   const [flashcardsProgreso, setFlashcardsProgreso] = useState([]);
@@ -281,10 +282,12 @@ export default function AcademiaPIR() {
       const { data: fData } = await supabase.from("fallos").select("*").eq("name", user.name);
       const { data: favData } = await supabase.from("favoritos").select("*").eq("name", user.name);
       const { data: progresoData } = await supabase.from("flashcards_progreso").select("*").eq("name", user.name);
+      const { data: preguntasProgresoData } = await supabase.from("preguntas_progreso").select("*").eq("name", user.name);
       if (activo) {
         setFallos(fData || []);
         setFavoritos(favData || []);
         setFlashcardsProgreso(progresoData || []);
+        setPreguntasProgreso(preguntasProgresoData || []);
       }
     })();
     return () => { activo = false; };
@@ -521,6 +524,24 @@ export default function AcademiaPIR() {
     }
   };
 
+  const registrarProgresoPregunta = async (pregunta, correcta) => {
+    if (!pregunta || !pregunta.id) return;
+    const previa = preguntasProgreso.find((p) => p.pregunta_id === pregunta.id);
+    const nuevasVeces = (previa ? previa.veces : 0) + 1;
+    const acertada = (previa && previa.acertada) || !!correcta;
+    try {
+      const { data, error } = await supabase
+        .from("preguntas_progreso")
+        .upsert({ name: user.name, pregunta_id: pregunta.id, veces: nuevasVeces, acertada, updated_at: new Date().toISOString() }, { onConflict: "name,pregunta_id" })
+        .select();
+      if (!error && data && data[0]) {
+        setPreguntasProgreso((prev) => [...prev.filter((p) => p.pregunta_id !== pregunta.id), data[0]]);
+      }
+    } catch (err) {
+      console.error("No se pudo guardar el progreso de la pregunta:", err);
+    }
+  };
+
   const toggleFavorito = async (pregunta) => {
     if (!pregunta || !pregunta.id) return;
     const esFavorita = favoritos.some((f) => f.pregunta_id === pregunta.id);
@@ -679,7 +700,7 @@ export default function AcademiaPIR() {
           user={user} onLogout={handleLogout} miRacha={rachas.find((r) => r.name === user.name)} onAjustes={() => setMostrarAjustes(true)}
           questions={questions} onAddQuestion={addQuestion} onUpdateQuestion={updateQuestion} onDeleteQuestion={deleteQuestion}
           favoritos={favoritos} onToggleFavorito={toggleFavorito} rachas={rachas} onGirarRuleta={girarRuleta}
-          enLinea={enLinea}
+          enLinea={enLinea} preguntasProgreso={preguntasProgreso}
         />
         <Nav section={section} setSection={setSection} alerta={!!dueloEsperando} />
         {dueloEsperando && section !== "duelo" && (
@@ -740,6 +761,7 @@ export default function AcademiaPIR() {
               onStreakAnswer={registrarAcierto}
               onProgresoDiario={registrarProgresoDiario}
               onFallo={registrarFallo}
+              onRespuestaPregunta={registrarProgresoPregunta}
               favoritos={favoritos}
               onToggleFavorito={toggleFavorito}
               miRacha={rachas.find((r) => r.name === user.name)}
@@ -751,6 +773,7 @@ export default function AcademiaPIR() {
               questions={questions}
               onDueloEnd={registrarResultadoDuelo}
               onProgresoDiario={registrarProgresoDiario}
+              onRespuestaPregunta={registrarProgresoPregunta}
               autoUnirse={autoUnirseDuelo}
               onAutoUnirseConsumido={() => setAutoUnirseDuelo(false)}
             />
@@ -1091,7 +1114,7 @@ const FRASES_MOTIVADORAS = [
 function Header({
   user, onLogout, miRacha, onAjustes,
   questions, onAddQuestion, onUpdateQuestion, onDeleteQuestion, favoritos, onToggleFavorito,
-  rachas, onGirarRuleta, enLinea,
+  rachas, onGirarRuleta, enLinea, preguntasProgreso,
 }) {
   const [mostrarLogros, setMostrarLogros] = useState(false);
   const [mostrarRanking, setMostrarRanking] = useState(false);
@@ -1227,6 +1250,7 @@ function Header({
               onDelete={onDeleteQuestion}
               favoritos={favoritos}
               onToggleFavorito={onToggleFavorito}
+              preguntasProgreso={preguntasProgreso}
             />
           </main>
         </div>
@@ -1266,7 +1290,7 @@ function Nav({ section, setSection, alerta }) {
   );
 }
 
-function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiario, onFallo, favoritos, onToggleFavorito, miRacha }) {
+function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiario, onFallo, onRespuestaPregunta, favoritos, onToggleFavorito, miRacha }) {
   const [incluirInventadas, setIncluirInventadas] = useState(false);
   const base = useMemo(() => (incluirInventadas ? questions : questions.filter((q) => !q.inventada)), [questions, incluirInventadas]);
   const cursos = useMemo(() => {
@@ -1338,6 +1362,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
       }
       if (onProgresoDiario) onProgresoDiario(correcto);
       if (!correcto && onFallo) onFallo(q);
+      if (onRespuestaPregunta) onRespuestaPregunta(q, correcto);
     }
   };
 
@@ -1594,16 +1619,29 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
   );
 }
 
-function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos, onToggleFavorito }) {
-  const [origen, setOrigen] = useState("reales");
+function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos, onToggleFavorito, preguntasProgreso }) {
+  const [origen, setOrigen] = useState("reales"); // "reales" | "pendientes"
   const [showForm, setShowForm] = useState(false);
   const [busqueda, setBusqueda] = useState("");
-  const totalReales = useMemo(() => questions.filter((q) => !q.inventada).length, [questions]);
-  const totalInventadas = useMemo(() => questions.filter((q) => q.inventada).length, [questions]);
-  const porOrigen = useMemo(
-    () => questions.filter((q) => !!q.inventada === (origen === "inventadas")),
-    [questions, origen]
+
+  const progresoPorId = useMemo(() => {
+    const m = {};
+    (preguntasProgreso || []).forEach((p) => { m[p.pregunta_id] = p; });
+    return m;
+  }, [preguntasProgreso]);
+
+  const preguntasReales = useMemo(() => questions.filter((q) => !q.inventada), [questions]);
+  const totalReales = preguntasReales.length;
+  const hechasReales = useMemo(
+    () => preguntasReales.filter((q) => progresoPorId[q.id] && progresoPorId[q.id].acertada).length,
+    [preguntasReales, progresoPorId]
   );
+  const pendientes = useMemo(
+    () => preguntasReales.filter((q) => !progresoPorId[q.id] || !progresoPorId[q.id].veces),
+    [preguntasReales, progresoPorId]
+  );
+
+  const porOrigen = origen === "pendientes" ? pendientes : preguntasReales;
   const cursos = useMemo(() => [...new Set(porOrigen.map((q) => q.curso))], [porOrigen]);
   const termino = busqueda.trim().toLowerCase();
   const filtered = termino
@@ -1621,7 +1659,7 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos,
     <div>
       <SectionTitle
         title="Banco de preguntas"
-        subtitle={`${questions.length} preguntas disponibles`}
+        subtitle={`${hechasReales}/${totalReales} preguntas reales hechas con éxito`}
         action={origen === "reales" && (
           <button type="button" onClick={() => setShowForm((s) => !s)} style={styles.btnSecondary}>
             <Plus size={14} style={{ marginRight: 4 }} /> Añadir
@@ -1639,23 +1677,15 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos,
         </button>
         <button
           type="button"
-          onClick={() => cambiarOrigen("inventadas")}
-          style={{ ...styles.tabOrigenBtn, ...(origen === "inventadas" ? styles.tabOrigenActivoIA : {}) }}
+          onClick={() => cambiarOrigen("pendientes")}
+          style={{ ...styles.tabOrigenBtn, ...(origen === "pendientes" ? styles.tabOrigenActivoIA : {}) }}
         >
-          <Sparkles size={13} style={{ marginRight: 4, verticalAlign: "-2px" }} /> Inventadas por IA ({totalInventadas})
+          <Eye size={13} style={{ marginRight: 4, verticalAlign: "-2px" }} /> Pendientes ({pendientes.length})
         </button>
       </div>
 
       {origen === "reales" && showForm && (
         <NuevaPregunta onAdd={(q) => { onAdd(q); setShowForm(false); }} cursos={cursos} />
-      )}
-
-      {origen === "inventadas" && (
-        <GenerarPreguntasIA user={user} onGuardar={user.isAdmin ? onAdd : null} />
-      )}
-
-      {origen === "inventadas" && porOrigen.length > 0 && (
-        <FieldLabel style={{ marginTop: 4 }}>Preguntas ya guardadas en el banco</FieldLabel>
       )}
 
       {porOrigen.length > 0 && (
@@ -1678,7 +1708,7 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos,
         <p style={{ fontSize: 13.5, color: "#9B9689", padding: "8px 0" }}>Ninguna pregunta contiene "{busqueda.trim()}".</p>
       )}
       {filtered.map((q) => (
-        <PreguntaCard key={q.id} q={q} isAdmin={user.isAdmin} onUpdate={onUpdate} onDelete={onDelete} favoritos={favoritos} onToggleFavorito={onToggleFavorito} />
+        <PreguntaCard key={q.id} q={q} isAdmin={user.isAdmin} onUpdate={onUpdate} onDelete={onDelete} favoritos={favoritos} onToggleFavorito={onToggleFavorito} progreso={progresoPorId[q.id]} />
       ))}
     </div>
   );
@@ -1837,6 +1867,25 @@ function PreguntaGeneradaCard({ p, guardada, onGuardar }) {
   );
 }
 
+// Ojo + número: cuántas veces se ha respondido esta pregunta concreta (en
+// Autoevaluaciones o Duelo), para poder llevar el control de cuáles del
+// banco ya se han hecho. Gris si nunca se ha respondido, tinta si se ha
+// respondido pero nunca acertado, verde si ya se acertó alguna vez.
+function ProgresoPreguntaBadge({ progreso }) {
+  const veces = progreso ? progreso.veces : 0;
+  const acertada = !!(progreso && progreso.acertada);
+  const color = veces === 0 ? "#B7BEC8" : acertada ? CORRECTO : TINTA_SUAVE;
+  const titulo = veces === 0
+    ? "Todavía no la has respondido"
+    : `La has respondido ${veces} ${veces === 1 ? "vez" : "veces"}${acertada ? " · acertada" : ""}`;
+  return (
+    <span title={titulo} style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11.5, fontWeight: 600, color, flexShrink: 0, padding: "4px 2px" }}>
+      <Eye size={14} />
+      {veces}
+    </span>
+  );
+}
+
 function FavoritoBtn({ pregunta, favoritos, onToggle, size = 16 }) {
   const esFavorita = favoritos && favoritos.some((f) => f.pregunta_id === pregunta.id);
   return (
@@ -1851,7 +1900,7 @@ function FavoritoBtn({ pregunta, favoritos, onToggle, size = 16 }) {
   );
 }
 
-function PreguntaCard({ q, isAdmin, onUpdate, onDelete, favoritos, onToggleFavorito }) {
+function PreguntaCard({ q, isAdmin, onUpdate, onDelete, favoritos, onToggleFavorito, progreso }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1884,6 +1933,7 @@ function PreguntaCard({ q, isAdmin, onUpdate, onDelete, favoritos, onToggleFavor
           </div>
           {open ? <ChevronDown size={16} color="#9B9689" /> : <ChevronRight size={16} color="#9B9689" />}
         </button>
+        <ProgresoPreguntaBadge progreso={progreso} />
         {onToggleFavorito && <FavoritoBtn pregunta={q} favoritos={favoritos} onToggle={onToggleFavorito} />}
       </div>
       {open && (
@@ -2006,7 +2056,7 @@ const PAUSA_REVELACION = 5;
 const PREGUNTAS_POR_DUELO = 200;
 const DUELO_ESPERA_MAX_MS = 30 * 1000;
 
-function Duelo({ user, questions, onDueloEnd, onProgresoDiario, autoUnirse, onAutoUnirseConsumido }) {
+function Duelo({ user, questions, onDueloEnd, onProgresoDiario, onRespuestaPregunta, autoUnirse, onAutoUnirseConsumido }) {
   const questionsReales = useMemo(() => questions.filter((q) => !q.inventada), [questions]);
   const [fase, setFase] = useState("lobby");
   const [duelo, setDuelo] = useState(null);
@@ -2222,6 +2272,7 @@ function Duelo({ user, questions, onDueloEnd, onProgresoDiario, autoUnirse, onAu
     await supabase.from("duelo_respuestas").insert([{ duelo_id: duelo.id, jugador: user.name, indice: duelo.indice, opcion }]);
     const preguntaActual = preguntasDuelo[duelo.indice % preguntasDuelo.length];
     if (onProgresoDiario && preguntaActual) onProgresoDiario(opcion === preguntaActual.correcta);
+    if (onRespuestaPregunta && preguntaActual) onRespuestaPregunta(preguntaActual, opcion === preguntaActual.correcta);
   };
 
   const resolverPregunta = async () => {
