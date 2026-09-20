@@ -282,7 +282,8 @@ export default function AcademiaPIR() {
       const { data: fData } = await supabase.from("fallos").select("*").eq("name", user.name);
       const { data: favData } = await supabase.from("favoritos").select("*").eq("name", user.name);
       const { data: progresoData } = await supabase.from("flashcards_progreso").select("*").eq("name", user.name);
-      const { data: preguntasProgresoData } = await supabase.from("preguntas_progreso").select("*").eq("name", user.name);
+      const { data: preguntasProgresoData, error: preguntasProgresoError } = await supabase.from("preguntas_progreso").select("*").eq("name", user.name);
+      if (preguntasProgresoError) console.error("No se pudo cargar preguntas_progreso:", preguntasProgresoError.message);
       if (activo) {
         setFallos(fData || []);
         setFavoritos(favData || []);
@@ -534,6 +535,7 @@ export default function AcademiaPIR() {
         .from("preguntas_progreso")
         .upsert({ name: user.name, pregunta_id: pregunta.id, veces: nuevasVeces, acertada, updated_at: new Date().toISOString() }, { onConflict: "name,pregunta_id" })
         .select();
+      if (error) console.error("No se pudo guardar el progreso de la pregunta:", error.message);
       if (!error && data && data[0]) {
         setPreguntasProgreso((prev) => [...prev.filter((p) => p.pregunta_id !== pregunta.id), data[0]]);
       }
