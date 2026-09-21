@@ -588,31 +588,48 @@ export default function AcademiaPIR() {
     return !error;
   };
 
+  // `mazos` es un array de nombres de mazo destino: una tarjeta con más de
+  // uno se inserta como una fila por mazo, todas compartiendo el mismo
+  // grupo_id, de modo que su progreso de repaso (SM-2) se guarda una sola
+  // vez y se comparte entre todas sus copias (ver supabase-flashcards-grupo-id.sql).
   const addFlashcard = async (f) => {
-    const { data, error } = await supabase
-      .from("flashcards")
-      .insert([{ mazo: f.mazo || "General", frontal: f.frontal, posterior: f.posterior }])
-      .select();
-    if (!error && data && data[0]) {
-      setFlashcards((prev) => [...prev, data[0]]);
-    }
-    return !error;
-  };
-
-  const addFlashcardsBulk = async (mazo, tarjetas) => {
-    const filas = tarjetas.map((t) => ({ mazo: mazo || "General", frontal: t.frontal, posterior: t.posterior }));
+    const mazos = (f.mazos && f.mazos.length ? f.mazos : [f.mazo]).filter(Boolean);
+    if (mazos.length === 0) return false;
+    const grupoId = crypto.randomUUID();
+    const filas = mazos.map((mazo) => ({ mazo, frontal: f.frontal, posterior: f.posterior, grupo_id: grupoId }));
     const { data, error } = await supabase.from("flashcards").insert(filas).select();
     if (!error && data) {
       setFlashcards((prev) => [...prev, ...data]);
     }
-    return error ? 0 : data.length;
+    return !error;
+  };
+
+  const addFlashcardsBulk = async (mazos, tarjetas) => {
+    const destinos = (Array.isArray(mazos) ? mazos : [mazos]).filter(Boolean);
+    if (destinos.length === 0) return 0;
+    const filas = tarjetas.flatMap((t) => {
+      const grupoId = crypto.randomUUID();
+      return destinos.map((mazo) => ({ mazo, frontal: t.frontal, posterior: t.posterior, grupo_id: grupoId }));
+    });
+    const { data, error } = await supabase.from("flashcards").insert(filas).select();
+    if (!error && data) {
+      setFlashcards((prev) => [...prev, ...data]);
+    }
+    return error ? 0 : tarjetas.length;
   };
 
   const deleteFlashcard = async (id) => {
+    const carta = flashcards.find((f) => f.id === id);
+    const grupoId = carta ? carta.grupo_id || carta.id : id;
     const { error } = await supabase.from("flashcards").delete().eq("id", id);
     if (!error) {
-      setFlashcards((prev) => prev.filter((f) => f.id !== id));
-      setFlashcardsProgreso((prev) => prev.filter((p) => p.flashcard_id !== id));
+      const restantes = flashcards.filter((f) => f.id !== id);
+      setFlashcards(restantes);
+      const quedanCopias = restantes.some((f) => (f.grupo_id || f.id) === grupoId);
+      if (!quedanCopias) {
+        await supabase.from("flashcards_progreso").delete().eq("flashcard_id", grupoId);
+        setFlashcardsProgreso((prev) => prev.filter((p) => p.flashcard_id !== grupoId));
+      }
     }
     return !error;
   };
@@ -656,17 +673,29 @@ export default function AcademiaPIR() {
   };
 
   const eliminarMazo = async (nombre, cascada) => {
-    const ids = flashcards
-      .filter((f) => {
-        const actual = f.mazo || "General";
-        return actual === nombre || (cascada && actual.startsWith(nombre + "/"));
-      })
-      .map((f) => f.id);
+    const filas = flashcards.filter((f) => {
+      const actual = f.mazo || "General";
+      return actual === nombre || (cascada && actual.startsWith(nombre + "/"));
+    });
+    const ids = filas.map((f) => f.id);
     if (ids.length === 0) return false;
     const { error } = await supabase.from("flashcards").delete().in("id", ids);
     if (!error) {
-      setFlashcards((prev) => prev.filter((f) => !ids.includes(f.id)));
-      setFlashcardsProgreso((prev) => prev.filter((p) => !ids.includes(p.flashcard_id)));
+      const restantes = flashcards.filter((f) => !ids.includes(f.id));
+      setFlashcards(restantes);
+      // flashcards_progreso.flashcard_id ya no es una FK a flashcards(id)
+      // (no puede serlo: grupo_id se repite entre las copias de una misma
+      // tarjeta), así que ya no hay "on delete cascade" automático — solo se
+      // borra el progreso de los grupos que se quedan sin ninguna copia viva
+      // (si una tarjeta tenía otra copia fuera de este mazo/carpeta, su
+      // progreso compartido sigue intacto).
+      const gruposEliminados = new Set(filas.map((f) => f.grupo_id || f.id));
+      const gruposSupervivientes = new Set(restantes.map((f) => f.grupo_id || f.id));
+      const gruposHuerfanos = [...gruposEliminados].filter((g) => !gruposSupervivientes.has(g));
+      if (gruposHuerfanos.length > 0) {
+        await supabase.from("flashcards_progreso").delete().in("flashcard_id", gruposHuerfanos);
+      }
+      setFlashcardsProgreso((prev) => prev.filter((p) => !gruposHuerfanos.includes(p.flashcard_id)));
     }
     return !error;
   };
@@ -2869,7 +2898,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
       if (!m.has(clave)) m.set(clave, { total: 0, pendientes: 0, ultima: null });
       const s = m.get(clave);
       s.total += 1;
-      const p = progresoPorId[f.id];
+      const p = progresoPorId[f.grupo_id || f.id];
       if (!p || !p.proxima_revision || p.proxima_revision <= hoy) s.pendientes += 1;
       if (f.created_at && (!s.ultima || f.created_at > s.ultima)) s.ultima = f.created_at;
     });
@@ -2940,7 +2969,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
 
   const pendientes = useMemo(
     () => flashcardsDeCarpeta.filter((f) => {
-      const p = progresoPorId[f.id];
+      const p = progresoPorId[f.grupo_id || f.id];
       return !p || !p.proxima_revision || p.proxima_revision <= hoy;
     }),
     [flashcardsDeCarpeta, progresoPorId, hoy]
@@ -2961,7 +2990,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
   // las que nunca se han visto.
   const ordenarPorPrioridad = (lista) => {
     const conPrioridad = lista.map((f) => {
-      const p = progresoPorId[f.id];
+      const p = progresoPorId[f.grupo_id || f.id];
       if (!p) return { f, prioridad: 2, orden: Math.random() };
       if (p.repeticiones === 0) return { f, prioridad: 0, orden: p.ultima_revision || "" };
       return { f, prioridad: 1, orden: p.proxima_revision || "" };
@@ -2986,7 +3015,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
     if (enviando) return;
     setEnviando(true);
     const carta = sesion[idx];
-    await onRepaso(carta.id, calidad);
+    await onRepaso(carta.grupo_id || carta.id, calidad);
     setEnviando(false);
     if (idx + 1 < sesion.length) {
       setIdx(idx + 1);
@@ -3097,8 +3126,8 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
             );
           })}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-            <NuevaFlashcard onAdd={onAdd} mazos={mazos} mazoPorDefecto="" forzarNueva etiqueta="Nueva carpeta o mazo" />
-            <ImportarFlashcards onAddBulk={onAddBulk} mazos={mazos} mazoPorDefecto="" forzarNueva />
+            <NuevaFlashcard onAdd={onAdd} mazos={mazos} mazoPorDefecto="" etiqueta="Nueva carpeta o mazo" />
+            <ImportarFlashcards onAddBulk={onAddBulk} mazos={mazos} mazoPorDefecto="" />
           </div>
         </div>
       );
@@ -3160,8 +3189,8 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
               );
             })}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-              <NuevaFlashcard onAdd={onAdd} mazos={mazos} mazoPorDefecto={`${carpeta.nombre}/`} forzarNueva etiqueta="Nuevo mazo aquí" />
-              <ImportarFlashcards onAddBulk={onAddBulk} mazos={mazos} mazoPorDefecto={`${carpeta.nombre}/`} forzarNueva />
+              <NuevaFlashcard onAdd={onAdd} mazos={mazos} mazoPorDefecto={`${carpeta.nombre}/`} etiqueta="Nuevo mazo aquí" />
+              <ImportarFlashcards onAddBulk={onAddBulk} mazos={mazos} mazoPorDefecto={`${carpeta.nombre}/`} />
             </div>
           </>
         )}
@@ -3347,53 +3376,54 @@ function FilaCarpetaEditable({ icono: Icono, titulo, subtitulo, badge, onClick, 
   );
 }
 
-function SelectorCarpeta({ mazos, valor, onChange, forzarNueva }) {
-  const [modoNueva, setModoNueva] = useState(forzarNueva || mazos.length === 0);
-  if (modoNueva) {
-    return (
-      <div style={{ display: "flex", gap: 8 }}>
-        <input
-          value={valor}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder='Nombre del mazo (ej. "Trastornos de personalidad", o "Troncales/Neuroanatomía" para meterlo dentro de una carpeta)'
-          style={{ ...styles.input, flex: 1 }}
-        />
-        {mazos.length > 0 && (
-          <button type="button" onClick={() => { setModoNueva(false); onChange(mazos[0]); }} style={styles.btnSecondary}>
-            Elegir existente
-          </button>
-        )}
-      </div>
-    );
-  }
+// Reemplaza al antiguo SelectorCarpeta (un solo mazo, select-o-texto): ahora
+// una tarjeta (o una importación en bloque) puede ir a VARIOS mazos a la vez
+// — cada mazo ya existente se marca con su casilla, y el campo de texto
+// siempre visible debajo permite además crear uno nuevo (o dejarlo vacío si
+// solo se quiere usar mazos existentes). Añadido per petición explícita del
+// usuario de poder crear un mazo nuevo Y añadir el mismo contenido a un mazo
+// ya existente en una sola acción, con el repaso compartido entre ambos
+// (ver grupo_id en addFlashcard/addFlashcardsBulk).
+function SelectorMazosMultiple({ mazos, seleccionados, onToggle, nuevaCarpeta, onCambiarNueva }) {
   return (
-    <select
-      value={valor}
-      onChange={(e) => {
-        if (e.target.value === "__nueva__") { setModoNueva(true); onChange(""); }
-        else onChange(e.target.value);
-      }}
-      style={styles.input}
-    >
-      {mazos.map((m) => <option key={m} value={m}>{m}</option>)}
-      <option value="__nueva__">+ Nueva carpeta...</option>
-    </select>
+    <div>
+      {mazos.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 160, overflowY: "auto", border: `1px solid ${RAYA}`, borderRadius: 8, padding: 10, marginBottom: 8 }}>
+          {mazos.map((m) => (
+            <label key={m} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: TINTA, cursor: "pointer" }}>
+              <input type="checkbox" checked={seleccionados.includes(m)} onChange={() => onToggle(m)} />
+              {m}
+            </label>
+          ))}
+        </div>
+      )}
+      <input
+        value={nuevaCarpeta}
+        onChange={(e) => onCambiarNueva(e.target.value)}
+        placeholder='Mazo nuevo (opcional): "Trastornos de personalidad", o "Troncales/Neuroanatomía" para meterlo dentro de una carpeta'
+        style={styles.input}
+      />
+    </div>
   );
 }
 
-function NuevaFlashcard({ onAdd, mazos, mazoPorDefecto, forzarNueva, etiqueta }) {
+function NuevaFlashcard({ onAdd, mazos, mazoPorDefecto, etiqueta }) {
   const [abierto, setAbierto] = useState(false);
-  const [mazo, setMazo] = useState(mazoPorDefecto || (mazos[0] || ""));
+  const [seleccionados, setSeleccionados] = useState(() => (mazoPorDefecto && mazos.includes(mazoPorDefecto) ? [mazoPorDefecto] : []));
+  const [nuevaCarpeta, setNuevaCarpeta] = useState(() => (mazoPorDefecto && !mazos.includes(mazoPorDefecto) ? mazoPorDefecto : ""));
   const [frontal, setFrontal] = useState("");
   const [posterior, setPosterior] = useState("");
   const [guardando, setGuardando] = useState(false);
 
+  const toggleMazo = (m) => setSeleccionados((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
+  const destinos = [...new Set([...seleccionados, ...(nuevaCarpeta.trim() ? [nuevaCarpeta.trim()] : [])])];
+
   const limpiar = () => { setFrontal(""); setPosterior(""); };
 
   const guardar = async () => {
-    if (!frontal.trim() || !posterior.trim()) return;
+    if (!frontal.trim() || !posterior.trim() || destinos.length === 0) return;
     setGuardando(true);
-    const ok = await onAdd({ mazo: mazo.trim(), frontal: frontal.trim(), posterior: posterior.trim() });
+    const ok = await onAdd({ mazos: destinos, frontal: frontal.trim(), posterior: posterior.trim() });
     setGuardando(false);
     if (ok) { limpiar(); setAbierto(false); }
   };
@@ -3408,26 +3438,30 @@ function NuevaFlashcard({ onAdd, mazos, mazoPorDefecto, forzarNueva, etiqueta })
 
   return (
     <Card style={{ marginBottom: 14, borderLeft: "3px solid #8A5A9E", width: "100%" }}>
-      <FieldLabel>Mazo</FieldLabel>
-      <SelectorCarpeta mazos={mazos} valor={mazo} onChange={setMazo} forzarNueva={forzarNueva} />
+      <FieldLabel>Mazo(s) de destino</FieldLabel>
+      <SelectorMazosMultiple mazos={mazos} seleccionados={seleccionados} onToggle={toggleMazo} nuevaCarpeta={nuevaCarpeta} onCambiarNueva={setNuevaCarpeta} />
       <FieldLabel style={{ marginTop: 12 }}>Frontal</FieldLabel>
       <textarea value={frontal} onChange={(e) => setFrontal(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
       <FieldLabel style={{ marginTop: 12 }}>Posterior</FieldLabel>
       <textarea value={posterior} onChange={(e) => setPosterior(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-        <button type="button" onClick={guardar} disabled={guardando} style={{ ...styles.btnPrimary, flex: 1 }}>{guardando ? "Añadiendo..." : "Añadir tarjeta"}</button>
+        <button type="button" onClick={guardar} disabled={guardando || destinos.length === 0} style={{ ...styles.btnPrimary, flex: 1, opacity: guardando || destinos.length === 0 ? 0.6 : 1 }}>{guardando ? "Añadiendo..." : "Añadir tarjeta"}</button>
         <button type="button" onClick={() => { limpiar(); setAbierto(false); }} style={styles.btnSecondary}>Cancelar</button>
       </div>
     </Card>
   );
 }
 
-function ImportarFlashcards({ onAddBulk, mazos, mazoPorDefecto, forzarNueva }) {
+function ImportarFlashcards({ onAddBulk, mazos, mazoPorDefecto }) {
   const [abierto, setAbierto] = useState(false);
-  const [mazo, setMazo] = useState(mazoPorDefecto || (mazos[0] || ""));
+  const [seleccionados, setSeleccionados] = useState(() => (mazoPorDefecto && mazos.includes(mazoPorDefecto) ? [mazoPorDefecto] : []));
+  const [nuevaCarpeta, setNuevaCarpeta] = useState(() => (mazoPorDefecto && !mazos.includes(mazoPorDefecto) ? mazoPorDefecto : ""));
   const [texto, setTexto] = useState("");
   const [importando, setImportando] = useState(false);
   const [resultado, setResultado] = useState(null);
+
+  const toggleMazo = (m) => setSeleccionados((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
+  const destinos = [...new Set([...seleccionados, ...(nuevaCarpeta.trim() ? [nuevaCarpeta.trim()] : [])])];
 
   const parsear = (bruto) => {
     const separador = bruto.includes("\t") ? "\t" : bruto.includes(" | ") ? " | " : ";";
@@ -3449,9 +3483,9 @@ function ImportarFlashcards({ onAddBulk, mazos, mazoPorDefecto, forzarNueva }) {
   const tarjetas = parsear(texto);
 
   const importar = async () => {
-    if (tarjetas.length === 0 || !mazo.trim()) return;
+    if (tarjetas.length === 0 || destinos.length === 0) return;
     setImportando(true);
-    const n = await onAddBulk(mazo.trim(), tarjetas);
+    const n = await onAddBulk(destinos, tarjetas);
     setImportando(false);
     setResultado(n);
     if (n > 0) setTexto("");
@@ -3467,8 +3501,8 @@ function ImportarFlashcards({ onAddBulk, mazos, mazoPorDefecto, forzarNueva }) {
 
   return (
     <Card style={{ marginBottom: 14, borderLeft: "3px solid #8A5A9E", width: "100%" }}>
-      <FieldLabel>Mazo de destino</FieldLabel>
-      <SelectorCarpeta mazos={mazos} valor={mazo} onChange={setMazo} forzarNueva={forzarNueva} />
+      <FieldLabel>Mazo(s) de destino</FieldLabel>
+      <SelectorMazosMultiple mazos={mazos} seleccionados={seleccionados} onToggle={toggleMazo} nuevaCarpeta={nuevaCarpeta} onCambiarNueva={setNuevaCarpeta} />
       <FieldLabel style={{ marginTop: 12 }}>Pega tus tarjetas, una por línea</FieldLabel>
       <p style={{ fontSize: 12, color: "#9B9689", margin: "0 0 8px" }}>
         Cada línea es una tarjeta: frontal y posterior separados por tabulador, " | " o ";" — el formato en que se exportan la mayoría de mazos de Anki o una hoja de cálculo.
@@ -3489,7 +3523,7 @@ function ImportarFlashcards({ onAddBulk, mazos, mazoPorDefecto, forzarNueva }) {
         </p>
       )}
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-        <button type="button" onClick={importar} disabled={importando || tarjetas.length === 0 || !mazo.trim()} style={{ ...styles.btnPrimary, flex: 1, opacity: importando || tarjetas.length === 0 || !mazo.trim() ? 0.6 : 1 }}>
+        <button type="button" onClick={importar} disabled={importando || tarjetas.length === 0 || destinos.length === 0} style={{ ...styles.btnPrimary, flex: 1, opacity: importando || tarjetas.length === 0 || destinos.length === 0 ? 0.6 : 1 }}>
           {importando ? "Importando..." : `Importar ${tarjetas.length || ""} tarjeta${tarjetas.length === 1 ? "" : "s"}`}
         </button>
         <button type="button" onClick={() => { setTexto(""); setResultado(null); setAbierto(false); }} style={styles.btnSecondary}>Cancelar</button>
