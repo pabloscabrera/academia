@@ -3,7 +3,7 @@ import {
   Compass, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
   Plus, Check, X, Loader2, User, LogOut, Flag, Pencil, Trash2,
    Zap, Heart, Swords, Sword, Flame, Sparkles, Star, Award, Target, Settings,
-   Medal, Gem, Crown, Search, Layers, Lightbulb, Users, Folder, Eye, FolderInput
+   Medal, Gem, Crown, Search, Layers, Lightbulb, Users, Eye
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { TEMARIO } from "./temario";
@@ -576,17 +576,10 @@ export default function AcademiaPIR() {
     }
   };
 
-  // `f` puede traer frontal/posterior (editar el contenido) y/o mazo (mover
-  // esta tarjeta suelta a otro mazo, ya exista o no) — solo se actualizan
-  // los campos presentes.
   const updateFlashcard = async (id, f) => {
-    const cambios = {};
-    if (f.frontal !== undefined) cambios.frontal = f.frontal;
-    if (f.posterior !== undefined) cambios.posterior = f.posterior;
-    if (f.mazo !== undefined) cambios.mazo = f.mazo;
     const { data, error } = await supabase
       .from("flashcards")
-      .update(cambios)
+      .update({ frontal: f.frontal, posterior: f.posterior })
       .eq("id", id)
       .select();
     if (!error && data && data[0]) {
@@ -595,34 +588,24 @@ export default function AcademiaPIR() {
     return !error;
   };
 
-  // `mazos` es un array de nombres de mazo destino: una tarjeta con más de
-  // uno se inserta como una fila por mazo, todas compartiendo el mismo
-  // grupo_id, de modo que su progreso de repaso (SM-2) se guarda una sola
-  // vez y se comparte entre todas sus copias (ver supabase-flashcards-grupo-id.sql).
   const addFlashcard = async (f) => {
-    const mazos = (f.mazos && f.mazos.length ? f.mazos : [f.mazo]).filter(Boolean);
-    if (mazos.length === 0) return false;
-    const grupoId = crypto.randomUUID();
-    const filas = mazos.map((mazo) => ({ mazo, frontal: f.frontal, posterior: f.posterior, grupo_id: grupoId }));
-    const { data, error } = await supabase.from("flashcards").insert(filas).select();
-    if (!error && data) {
-      setFlashcards((prev) => [...prev, ...data]);
+    const { data, error } = await supabase
+      .from("flashcards")
+      .insert([{ mazo: f.mazo || "General", frontal: f.frontal, posterior: f.posterior }])
+      .select();
+    if (!error && data && data[0]) {
+      setFlashcards((prev) => [...prev, data[0]]);
     }
     return !error;
   };
 
-  const addFlashcardsBulk = async (mazos, tarjetas) => {
-    const destinos = (Array.isArray(mazos) ? mazos : [mazos]).filter(Boolean);
-    if (destinos.length === 0) return 0;
-    const filas = tarjetas.flatMap((t) => {
-      const grupoId = crypto.randomUUID();
-      return destinos.map((mazo) => ({ mazo, frontal: t.frontal, posterior: t.posterior, grupo_id: grupoId }));
-    });
+  const addFlashcardsBulk = async (mazo, tarjetas) => {
+    const filas = tarjetas.map((t) => ({ mazo: mazo || "General", frontal: t.frontal, posterior: t.posterior }));
     const { data, error } = await supabase.from("flashcards").insert(filas).select();
     if (!error && data) {
       setFlashcards((prev) => [...prev, ...data]);
     }
-    return error ? 0 : tarjetas.length;
+    return error ? 0 : data.length;
   };
 
   const deleteFlashcard = async (id) => {
@@ -641,37 +624,15 @@ export default function AcademiaPIR() {
     return !error;
   };
 
-  // `cascada` decide si `nombre` se trata como una carpeta (afecta también a
-  // todo lo que cuelgue de "nombre/...") o como un mazo exacto suelto (solo
-  // las tarjetas cuyo `mazo` sea exactamente igual). Renombrar/borrar una
-  // carpeta usa cascada=true; renombrar/borrar un mazo concreto dentro de
-  // una carpeta (o la fila "General" de una carpeta con base) usa
-  // cascada=false para no tocar a sus hermanos.
-  const renombrarMazo = async (viejo, nuevo, cascada) => {
+  const renombrarMazo = async (viejo, nuevo) => {
     const destino = (nuevo || "").trim();
     if (!destino || destino === viejo) return false;
-    const grupos = new Map();
-    flashcards.forEach((f) => {
-      const actual = f.mazo || "General";
-      let nuevoValor = null;
-      if (actual === viejo) nuevoValor = destino;
-      else if (cascada && actual.startsWith(viejo + "/")) nuevoValor = destino + actual.slice(viejo.length);
-      if (nuevoValor === null) return;
-      if (!grupos.has(nuevoValor)) grupos.set(nuevoValor, []);
-      grupos.get(nuevoValor).push(f.id);
-    });
-    if (grupos.size === 0) return false;
+    const ids = flashcards.filter((f) => (f.mazo || "General") === viejo).map((f) => f.id);
+    if (ids.length === 0) return false;
     try {
-      for (const [nuevoMazo, ids] of grupos) {
-        const { error } = await supabase.from("flashcards").update({ mazo: nuevoMazo }).in("id", ids);
-        if (error) throw error;
-      }
-      setFlashcards((prev) => prev.map((f) => {
-        const actual = f.mazo || "General";
-        if (actual === viejo) return { ...f, mazo: destino };
-        if (cascada && actual.startsWith(viejo + "/")) return { ...f, mazo: destino + actual.slice(viejo.length) };
-        return f;
-      }));
+      const { error } = await supabase.from("flashcards").update({ mazo: destino }).in("id", ids);
+      if (error) throw error;
+      setFlashcards((prev) => prev.map((f) => ((f.mazo || "General") === viejo ? { ...f, mazo: destino } : f)));
       return true;
     } catch (err) {
       console.error("No se pudo renombrar el mazo:", err);
@@ -679,11 +640,8 @@ export default function AcademiaPIR() {
     }
   };
 
-  const eliminarMazo = async (nombre, cascada) => {
-    const filas = flashcards.filter((f) => {
-      const actual = f.mazo || "General";
-      return actual === nombre || (cascada && actual.startsWith(nombre + "/"));
-    });
+  const eliminarMazo = async (nombre) => {
+    const filas = flashcards.filter((f) => (f.mazo || "General") === nombre);
     const ids = filas.map((f) => f.id);
     if (ids.length === 0) return false;
     const { error } = await supabase.from("flashcards").delete().in("id", ids);
@@ -2875,111 +2833,57 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
     [flashcards]
   );
 
-  // Un `mazo` con "/" (ej. "Troncales/Neuroanatomía") vive DENTRO de la
-  // carpeta "Troncales" junto a otros mazos hermanos; uno sin "/" es a la
-  // vez su propia carpeta y su propio mazo (fila plana, sin icono de
-  // carpeta, como "Básica" en el listado). `tieneBase` marca el caso raro
-  // de tener tarjetas sueltas en "Troncales" además de en sus subcarpetas.
-  const arbolCarpetas = useMemo(() => {
-    const hijosPorCarpeta = new Map();
-    mazos.forEach((m) => {
-      const corte = m.indexOf("/");
-      const carpeta = corte === -1 ? m : m.slice(0, corte);
-      if (!hijosPorCarpeta.has(carpeta)) hijosPorCarpeta.set(carpeta, new Set());
-      if (corte !== -1) hijosPorCarpeta.get(carpeta).add(m);
-    });
-    return [...hijosPorCarpeta.entries()]
-      .map(([nombre, hijosSet]) => ({
-        nombre,
-        esCarpeta: hijosSet.size > 0,
-        tieneBase: hijosSet.size > 0 && mazos.includes(nombre),
-        hijos: [...hijosSet].sort((a, b) => a.localeCompare(b)),
-      }))
-      .sort((a, b) => a.nombre.localeCompare(b.nombre));
-  }, [mazos]);
-
   const statsPorMazo = useMemo(() => {
     const m = new Map();
     flashcards.forEach((f) => {
       const clave = f.mazo || "General";
-      if (!m.has(clave)) m.set(clave, { total: 0, pendientes: 0, ultima: null });
+      if (!m.has(clave)) m.set(clave, { total: 0, pendientes: 0 });
       const s = m.get(clave);
       s.total += 1;
       const p = progresoPorId[f.grupo_id || f.id];
       if (!p || !p.proxima_revision || p.proxima_revision <= hoy) s.pendientes += 1;
-      if (f.created_at && (!s.ultima || f.created_at > s.ultima)) s.ultima = f.created_at;
     });
     return m;
   }, [flashcards, progresoPorId, hoy]);
-
-  const statsDeCarpeta = (carpeta) => {
-    const stats = { total: 0, pendientes: 0, ultima: null };
-    mazos.forEach((m) => {
-      if (m !== carpeta && !m.startsWith(carpeta + "/")) return;
-      const s = statsPorMazo.get(m);
-      if (!s) return;
-      stats.total += s.total;
-      stats.pendientes += s.pendientes;
-      if (s.ultima && (!stats.ultima || s.ultima > stats.ultima)) stats.ultima = s.ultima;
-    });
-    return stats;
-  };
 
   const pendientesTotal = useMemo(
     () => [...statsPorMazo.values()].reduce((acc, s) => acc + s.pendientes, 0),
     [statsPorMazo]
   );
 
-  const [mostrandoLista, setMostrandoLista] = useState(true); // navegador de carpetas vs. vista de repaso
-  const [carpetaNavegando, setCarpetaNavegando] = useState(null); // carpeta abierta en el navegador
+  const [mostrandoLista, setMostrandoLista] = useState(true); // listado de mazos vs. vista de repaso
   const [mazoActivo, setMazoActivo] = useState(null); // mazo exacto seleccionado para repasar/ver
-  const [filtroCarpeta, setFiltroCarpeta] = useState(null); // "todas las de esta carpeta" seleccionado
 
-  // Si renombras/borras la carpeta que tenías abierta (o el último mazo que
-  // quedaba dentro), deja de existir en arbolCarpetas — vuelve al listado
-  // raíz en vez de quedarse mirando una carpeta fantasma.
+  // Si borras el mazo que tenías abierto, deja de existir en `mazos` —
+  // vuelve al listado en vez de quedarse mirando un mazo fantasma.
   useEffect(() => {
-    if (carpetaNavegando && !arbolCarpetas.some((c) => c.nombre === carpetaNavegando)) {
-      setCarpetaNavegando(null);
+    if (mazoActivo && !mazos.includes(mazoActivo)) {
+      setMazoActivo(null);
+      setMostrandoLista(true);
     }
-  }, [carpetaNavegando, arbolCarpetas]);
+  }, [mazoActivo, mazos]);
 
   const seleccionarMazo = (nombre) => {
     setMazoActivo(nombre);
-    setFiltroCarpeta(null);
-    setMostrandoLista(false);
-  };
-  const seleccionarCarpetaCompleta = (nombre) => {
-    setFiltroCarpeta(nombre);
-    setMazoActivo(null);
     setMostrandoLista(false);
   };
   const seleccionarTodas = () => {
     setMazoActivo(null);
-    setFiltroCarpeta(null);
     setMostrandoLista(false);
   };
-  const volverANavegador = () => setMostrandoLista(true);
+  const volverALista = () => setMostrandoLista(true);
 
-  const flashcardsDeCarpeta = useMemo(() => {
-    if (mazoActivo) return flashcards.filter((f) => (f.mazo || "General") === mazoActivo);
-    if (filtroCarpeta) {
-      return flashcards.filter((f) => {
-        const m = f.mazo || "General";
-        return m === filtroCarpeta || m.startsWith(filtroCarpeta + "/");
-      });
-    }
-    return flashcards;
-  }, [flashcards, mazoActivo, filtroCarpeta]);
-
-  const etiquetaSeleccion = mazoActivo || filtroCarpeta;
+  const flashcardsDelMazo = useMemo(
+    () => (mazoActivo ? flashcards.filter((f) => (f.mazo || "General") === mazoActivo) : flashcards),
+    [flashcards, mazoActivo]
+  );
 
   const pendientes = useMemo(
-    () => flashcardsDeCarpeta.filter((f) => {
+    () => flashcardsDelMazo.filter((f) => {
       const p = progresoPorId[f.grupo_id || f.id];
       return !p || !p.proxima_revision || p.proxima_revision <= hoy;
     }),
-    [flashcardsDeCarpeta, progresoPorId, hoy]
+    [flashcardsDelMazo, progresoPorId, hoy]
   );
 
   const [sesion, setSesion] = useState(null);
@@ -3038,8 +2942,8 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
       <div>
         <SectionTitle title="Flashcards" subtitle="Todavía no tienes tarjetas propias. Cada persona tiene su propio mazo privado — nadie más ve las tuyas." />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <NuevaFlashcard onAdd={onAdd} mazos={[]} mazoPorDefecto={null} />
-          <ImportarFlashcards onAddBulk={onAddBulk} mazos={[]} mazoPorDefecto={null} />
+          <NuevaFlashcard onAdd={onAdd} />
+          <ImportarFlashcards onAddBulk={onAddBulk} />
         </div>
       </div>
     );
@@ -3095,121 +2999,43 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
 
   const terminoTarjetas = busquedaTarjetas.trim().toLowerCase();
   const tarjetasFiltradas = terminoTarjetas
-    ? flashcardsDeCarpeta.filter((f) => f.frontal.toLowerCase().includes(terminoTarjetas) || f.posterior.toLowerCase().includes(terminoTarjetas))
-    : flashcardsDeCarpeta;
+    ? flashcardsDelMazo.filter((f) => f.frontal.toLowerCase().includes(terminoTarjetas) || f.posterior.toLowerCase().includes(terminoTarjetas))
+    : flashcardsDelMazo;
 
   if (mostrandoLista) {
-    if (carpetaNavegando === null) {
-      return (
-        <div>
-          <SectionTitle
-            title="Flashcards"
-            subtitle={`Tu mazo privado — ${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"} en ${arbolCarpetas.length} carpeta${arbolCarpetas.length === 1 ? "" : "s"}`}
-          />
-          <FilaNavegacion
-            icono={Layers}
-            titulo="Todas las tarjetas"
-            subtitulo={`${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"} en total`}
-            badge={pendientesTotal > 0 ? `${pendientesTotal} hoy` : null}
-            onClick={seleccionarTodas}
-          />
-          {arbolCarpetas.map((c) => {
-            const stats = statsDeCarpeta(c.nombre);
-            const numMazos = c.hijos.length + (c.tieneBase ? 1 : 0);
-            return (
-              <FilaCarpetaEditable
-                key={c.nombre}
-                icono={c.esCarpeta ? Folder : Layers}
-                titulo={c.nombre}
-                subtitulo={c.esCarpeta
-                  ? `${numMazos} mazo${numMazos === 1 ? "" : "s"} · ${stats.total} tarjeta${stats.total === 1 ? "" : "s"}`
-                  : `${stats.total} tarjeta${stats.total === 1 ? "" : "s"}`}
-                badge={stats.pendientes > 0 ? `${stats.pendientes} hoy` : null}
-                onClick={() => (c.esCarpeta ? setCarpetaNavegando(c.nombre) : seleccionarMazo(c.nombre))}
-                onRenombrar={(nuevo) => onRenombrarMazo(c.nombre, nuevo, true)}
-                onMover={(nuevo) => onRenombrarMazo(c.nombre, nuevo, true)}
-                onBorrar={() => onEliminarMazo(c.nombre, true)}
-                avisoBorrado={`¿Borrar "${c.nombre}" y sus ${stats.total} tarjeta${stats.total === 1 ? "" : "s"}? No se puede deshacer.`}
-                nombrePropio={c.nombre}
-                destinos={arbolCarpetas.map((x) => x.nombre).filter((n) => n !== c.nombre)}
-              />
-            );
-          })}
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-            <NuevaFlashcard onAdd={onAdd} mazos={mazos} mazoPorDefecto="" etiqueta="Nueva carpeta o mazo" />
-            <ImportarFlashcards onAddBulk={onAddBulk} mazos={mazos} mazoPorDefecto="" />
-          </div>
-        </div>
-      );
-    }
-
-    const carpeta = arbolCarpetas.find((c) => c.nombre === carpetaNavegando);
-    const statsCarpeta = carpeta ? statsDeCarpeta(carpeta.nombre) : { total: 0, pendientes: 0 };
-    const statsBase = carpeta ? statsPorMazo.get(carpeta.nombre) || { total: 0, pendientes: 0 } : { total: 0, pendientes: 0 };
     return (
       <div>
-        <button
-          type="button"
-          onClick={() => setCarpetaNavegando(null)}
-          style={{ ...styles.linkBtn, display: "flex", alignItems: "center", gap: 6, padding: 0, marginBottom: 14 }}
-        >
-          <ChevronRight size={15} style={{ transform: "rotate(180deg)" }} /> Carpetas
-        </button>
-        {carpeta && (
-          <>
-            <SectionTitle
-              title={carpeta.nombre}
-              subtitle={`${statsCarpeta.total} tarjeta${statsCarpeta.total === 1 ? "" : "s"} en esta carpeta`}
-            />
-            <FilaNavegacion
+        <SectionTitle
+          title="Flashcards"
+          subtitle={`Tu mazo privado — ${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"} en ${mazos.length} mazo${mazos.length === 1 ? "" : "s"}`}
+        />
+        <FilaNavegacion
+          icono={Layers}
+          titulo="Todas las tarjetas"
+          subtitulo={`${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"} en total`}
+          badge={pendientesTotal > 0 ? `${pendientesTotal} hoy` : null}
+          onClick={seleccionarTodas}
+        />
+        {mazos.map((m) => {
+          const s = statsPorMazo.get(m) || { total: 0, pendientes: 0 };
+          return (
+            <FilaMazoEditable
+              key={m}
               icono={Layers}
-              titulo={`Todas las de "${carpeta.nombre}"`}
-              subtitulo={`${statsCarpeta.total} tarjeta${statsCarpeta.total === 1 ? "" : "s"}`}
-              badge={statsCarpeta.pendientes > 0 ? `${statsCarpeta.pendientes} hoy` : null}
-              onClick={() => seleccionarCarpetaCompleta(carpeta.nombre)}
+              titulo={m}
+              subtitulo={`${s.total} tarjeta${s.total === 1 ? "" : "s"}`}
+              badge={s.pendientes > 0 ? `${s.pendientes} hoy` : null}
+              onClick={() => seleccionarMazo(m)}
+              onRenombrar={(nuevo) => onRenombrarMazo(m, nuevo)}
+              onBorrar={() => onEliminarMazo(m)}
+              avisoBorrado={`¿Borrar "${m}" y sus ${s.total} tarjeta${s.total === 1 ? "" : "s"}? No se puede deshacer.`}
             />
-            {carpeta.tieneBase && (
-              <FilaCarpetaEditable
-                icono={Layers}
-                titulo="General"
-                valorEditable={carpeta.nombre}
-                subtitulo={`${statsBase.total} tarjeta${statsBase.total === 1 ? "" : "s"}`}
-                badge={statsBase.pendientes > 0 ? `${statsBase.pendientes} hoy` : null}
-                onClick={() => seleccionarMazo(carpeta.nombre)}
-                onRenombrar={(nuevo) => onRenombrarMazo(carpeta.nombre, nuevo, false)}
-                onMover={(nuevo) => onRenombrarMazo(carpeta.nombre, nuevo, false)}
-                onBorrar={() => onEliminarMazo(carpeta.nombre, false)}
-                avisoBorrado={`¿Borrar estas ${statsBase.total} tarjeta${statsBase.total === 1 ? "" : "s"} sueltas de "${carpeta.nombre}"? No se puede deshacer.`}
-                nombrePropio={carpeta.nombre}
-                destinos={arbolCarpetas.map((x) => x.nombre).filter((n) => n !== carpeta.nombre)}
-              />
-            )}
-            {carpeta.hijos.map((m) => {
-              const s = statsPorMazo.get(m) || { total: 0, pendientes: 0 };
-              const etiquetaMazo = m.slice(carpeta.nombre.length + 1).trim();
-              return (
-                <FilaCarpetaEditable
-                  key={m}
-                  icono={Layers}
-                  titulo={etiquetaMazo}
-                  subtitulo={`${s.total} tarjeta${s.total === 1 ? "" : "s"}`}
-                  badge={s.pendientes > 0 ? `${s.pendientes} hoy` : null}
-                  onClick={() => seleccionarMazo(m)}
-                  onRenombrar={(nuevo) => onRenombrarMazo(m, `${carpeta.nombre}/${nuevo}`, false)}
-                  onMover={(nuevo) => onRenombrarMazo(m, nuevo, false)}
-                  onBorrar={() => onEliminarMazo(m, false)}
-                  avisoBorrado={`¿Borrar "${etiquetaMazo}" y sus ${s.total} tarjeta${s.total === 1 ? "" : "s"}? No se puede deshacer.`}
-                  nombrePropio={etiquetaMazo}
-                  destinos={arbolCarpetas.map((x) => x.nombre).filter((n) => n !== carpeta.nombre)}
-                />
-              );
-            })}
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-              <NuevaFlashcard onAdd={onAdd} mazos={mazos} mazoPorDefecto={`${carpeta.nombre}/`} etiqueta="Nuevo mazo aquí" />
-              <ImportarFlashcards onAddBulk={onAddBulk} mazos={mazos} mazoPorDefecto={`${carpeta.nombre}/`} />
-            </div>
-          </>
-        )}
+          );
+        })}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+          <NuevaFlashcard onAdd={onAdd} etiqueta="Nuevo mazo" />
+          <ImportarFlashcards onAddBulk={onAddBulk} />
+        </div>
       </div>
     );
   }
@@ -3218,15 +3044,15 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
     <div>
       <button
         type="button"
-        onClick={volverANavegador}
+        onClick={volverALista}
         style={{ ...styles.linkBtn, display: "flex", alignItems: "center", gap: 6, padding: 0, marginBottom: 14 }}
       >
-        <ChevronRight size={15} style={{ transform: "rotate(180deg)" }} /> Carpetas
+        <ChevronRight size={15} style={{ transform: "rotate(180deg)" }} /> Mazos
       </button>
       <SectionTitle
         title="Flashcards"
-        subtitle={etiquetaSeleccion
-          ? `"${etiquetaSeleccion}" — ${flashcardsDeCarpeta.length} tarjeta${flashcardsDeCarpeta.length === 1 ? "" : "s"}`
+        subtitle={mazoActivo
+          ? `"${mazoActivo}" — ${flashcardsDelMazo.length} tarjeta${flashcardsDelMazo.length === 1 ? "" : "s"}`
           : `Tu mazo privado — ${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"}`}
       />
       {resumen && (
@@ -3239,7 +3065,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
       <Card style={{ textAlign: "center", padding: "28px 20px" }}>
         {pendientes.length === 0 ? (
           <p style={{ fontSize: 15, color: "#1E1C18", margin: 0 }}>
-            No te toca repasar ninguna tarjeta{etiquetaSeleccion ? ` de "${etiquetaSeleccion}"` : ""} hoy. ¡Vuelve mañana!
+            No te toca repasar ninguna tarjeta{mazoActivo ? ` de "${mazoActivo}"` : ""} hoy. ¡Vuelve mañana!
           </p>
         ) : (
           <>
@@ -3270,13 +3096,13 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
 
       <div style={{ marginTop: 32 }}>
         <button type="button" onClick={() => setVerTarjetas((v) => !v)} style={{ ...styles.linkBtn, display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
-          {verTarjetas ? <ChevronDown size={15} /> : <ChevronRight size={15} />} Ver, añadir y editar tarjetas ({flashcardsDeCarpeta.length})
+          {verTarjetas ? <ChevronDown size={15} /> : <ChevronRight size={15} />} Ver, añadir y editar tarjetas ({flashcardsDelMazo.length})
         </button>
         {verTarjetas && (
           <div style={{ marginTop: 12 }}>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-              <NuevaFlashcard onAdd={onAdd} mazos={mazos} mazoPorDefecto={etiquetaSeleccion} />
-              <ImportarFlashcards onAddBulk={onAddBulk} mazos={mazos} mazoPorDefecto={etiquetaSeleccion} />
+              <NuevaFlashcard onAdd={onAdd} mazoFijo={mazoActivo || undefined} />
+              <ImportarFlashcards onAddBulk={onAddBulk} mazoFijo={mazoActivo || undefined} />
             </div>
             <div style={{ position: "relative", marginBottom: 14 }}>
               <Search size={16} color="#9B9689" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
@@ -3288,7 +3114,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
               />
             </div>
             {tarjetasFiltradas.map((f) => (
-              <FlashcardEditableCard key={f.id} f={f} onUpdate={onUpdate} onDelete={onDelete} mazos={mazos} />
+              <FlashcardEditableCard key={f.id} f={f} onUpdate={onUpdate} onDelete={onDelete} />
             ))}
           </div>
         )}
@@ -3312,16 +3138,12 @@ function FilaNavegacion({ icono: Icono, titulo, subtitulo, badge, onClick }) {
 }
 
 // Como FilaNavegacion, pero con lápiz (renombrar in situ) y papelera
-// (borrar con confirmación) junto al nombre — usada para carpetas y mazos
-// reales, nunca para las filas sintéticas "Todas las tarjetas"/"Todas las
-// de esta carpeta".
-function FilaCarpetaEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onRenombrar, onMover, onBorrar, avisoBorrado, valorEditable, nombrePropio, destinos }) {
-  const [modo, setModo] = useState("normal"); // normal | editando | moviendo | confirmando
-  const valorInicial = valorEditable != null ? valorEditable : titulo;
-  const [nombreNuevo, setNombreNuevo] = useState(valorInicial);
+// (borrar con confirmación) junto al nombre — usada para cada mazo real,
+// nunca para la fila sintética "Todas las tarjetas".
+function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onRenombrar, onBorrar, avisoBorrado }) {
+  const [modo, setModo] = useState("normal"); // normal | editando | confirmando
+  const [nombreNuevo, setNombreNuevo] = useState(titulo);
   const [procesando, setProcesando] = useState(false);
-  const destinosDisponibles = destinos || [];
-  const [destinoElegido, setDestinoElegido] = useState(destinosDisponibles[0] || "");
 
   if (modo === "editando") {
     return (
@@ -3340,44 +3162,15 @@ function FilaCarpetaEditable({ icono: Icono, titulo, subtitulo, badge, onClick, 
               setProcesando(true);
               const ok = await onRenombrar(nombreNuevo.trim());
               setProcesando(false);
-              if (ok) setModo("normal"); else setNombreNuevo(valorInicial);
+              if (ok) setModo("normal"); else setNombreNuevo(titulo);
             }}
             style={{ ...styles.btnPrimary, flex: 1, opacity: procesando ? 0.7 : 1 }}
           >
             {procesando ? "Guardando..." : "Guardar"}
           </button>
-          <button type="button" onClick={() => { setNombreNuevo(valorInicial); setModo("normal"); }} style={styles.btnSecondary}>
+          <button type="button" onClick={() => { setNombreNuevo(titulo); setModo("normal"); }} style={styles.btnSecondary}>
             Cancelar
           </button>
-        </div>
-      </Card>
-    );
-  }
-
-  // Mover no pide escribir nada: se elige el destino de una lista y "titulo"
-  // (el nombre propio de esta carpeta o mazo) pasa a vivir dentro de él,
-  // como mover una carpeta dentro de otra en un explorador de archivos.
-  if (modo === "moviendo") {
-    return (
-      <Card style={{ marginBottom: 8, padding: 12 }}>
-        <select value={destinoElegido} onChange={(e) => setDestinoElegido(e.target.value)} style={{ ...styles.input, marginBottom: 10 }}>
-          {destinosDisponibles.map((d) => <option key={d} value={d}>{d}</option>)}
-        </select>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button
-            type="button"
-            disabled={procesando || !destinoElegido}
-            onClick={async () => {
-              setProcesando(true);
-              const ok = await onMover(`${destinoElegido}/${nombrePropio}`);
-              setProcesando(false);
-              if (ok) setModo("normal");
-            }}
-            style={{ ...styles.btnPrimary, flex: 1, opacity: procesando ? 0.7 : 1 }}
-          >
-            {procesando ? "Moviendo..." : `Mover a "${destinoElegido}"`}
-          </button>
-          <button type="button" onClick={() => setModo("normal")} style={styles.btnSecondary}>Cancelar</button>
         </div>
       </Card>
     );
@@ -3415,11 +3208,6 @@ function FilaCarpetaEditable({ icono: Icono, titulo, subtitulo, badge, onClick, 
       <button type="button" onClick={() => setModo("editando")} title="Renombrar" style={styles.filaCarpetaIconBtn}>
         <Pencil size={14} />
       </button>
-      {destinosDisponibles.length > 0 && (
-        <button type="button" onClick={() => setModo("moviendo")} title="Mover" style={styles.filaCarpetaIconBtn}>
-          <FolderInput size={14} />
-        </button>
-      )}
       <button type="button" onClick={() => setModo("confirmando")} title="Borrar" style={styles.filaCarpetaIconBtn}>
         <Trash2 size={14} />
       </button>
@@ -3428,56 +3216,35 @@ function FilaCarpetaEditable({ icono: Icono, titulo, subtitulo, badge, onClick, 
   );
 }
 
-// Reemplaza al antiguo SelectorCarpeta (un solo mazo, select-o-texto): ahora
-// una tarjeta (o una importación en bloque) puede ir a VARIOS mazos a la vez
-// — cada mazo ya existente se marca con su casilla, y el campo de texto
-// siempre visible debajo permite además crear uno nuevo (o dejarlo vacío si
-// solo se quiere usar mazos existentes). Añadido per petición explícita del
-// usuario de poder crear un mazo nuevo Y añadir el mismo contenido a un mazo
-// ya existente en una sola acción, con el repaso compartido entre ambos
-// (ver grupo_id en addFlashcard/addFlashcardsBulk).
-function SelectorMazosMultiple({ mazos, seleccionados, onToggle, nuevaCarpeta, onCambiarNueva }) {
-  return (
-    <div>
-      {mazos.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 160, overflowY: "auto", border: `1px solid ${RAYA}`, borderRadius: 8, padding: 10, marginBottom: 8 }}>
-          {mazos.map((m) => (
-            <label key={m} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: TINTA, cursor: "pointer" }}>
-              <input type="checkbox" checked={seleccionados.includes(m)} onChange={() => onToggle(m)} />
-              {m}
-            </label>
-          ))}
-        </div>
-      )}
-      <input
-        value={nuevaCarpeta}
-        onChange={(e) => onCambiarNueva(e.target.value)}
-        placeholder='Mazo nuevo (opcional): "Trastornos de personalidad", o "Troncales/Neuroanatomía" para meterlo dentro de una carpeta'
-        style={styles.input}
-      />
-    </div>
-  );
-}
-
-function NuevaFlashcard({ onAdd, mazos, mazoPorDefecto, etiqueta }) {
+// `mazoFijo` es el mazo en el que se está (ya dentro de él, sin elegir
+// destino): la tarjeta se añade directamente ahí y el formulario no se
+// cierra al guardar, para poder meter varias seguidas rápido. Sin
+// `mazoFijo` (solo en el listado raíz) pide el nombre del mazo nuevo que
+// se va a crear — no hay forma de añadir una tarjeta a "otro mazo más" ni
+// de elegir entre varios existentes, cada tarjeta va a un único mazo.
+function NuevaFlashcard({ onAdd, mazoFijo, etiqueta }) {
   const [abierto, setAbierto] = useState(false);
-  const [seleccionados, setSeleccionados] = useState(() => (mazoPorDefecto && mazos.includes(mazoPorDefecto) ? [mazoPorDefecto] : []));
-  const [nuevaCarpeta, setNuevaCarpeta] = useState(() => (mazoPorDefecto && !mazos.includes(mazoPorDefecto) ? mazoPorDefecto : ""));
+  const [mazo, setMazo] = useState("");
   const [frontal, setFrontal] = useState("");
   const [posterior, setPosterior] = useState("");
   const [guardando, setGuardando] = useState(false);
-
-  const toggleMazo = (m) => setSeleccionados((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
-  const destinos = [...new Set([...seleccionados, ...(nuevaCarpeta.trim() ? [nuevaCarpeta.trim()] : [])])];
-
-  const limpiar = () => { setFrontal(""); setPosterior(""); };
+  const frontalRef = useRef(null);
+  const destino = mazoFijo || mazo.trim();
 
   const guardar = async () => {
-    if (!frontal.trim() || !posterior.trim() || destinos.length === 0) return;
+    if (!frontal.trim() || !posterior.trim() || !destino) return;
     setGuardando(true);
-    const ok = await onAdd({ mazos: destinos, frontal: frontal.trim(), posterior: posterior.trim() });
+    const ok = await onAdd({ mazo: destino, frontal: frontal.trim(), posterior: posterior.trim() });
     setGuardando(false);
-    if (ok) { limpiar(); setAbierto(false); }
+    if (!ok) return;
+    setFrontal("");
+    setPosterior("");
+    if (mazoFijo) {
+      frontalRef.current?.focus();
+    } else {
+      setMazo("");
+      setAbierto(false);
+    }
   };
 
   if (!abierto) {
@@ -3490,30 +3257,31 @@ function NuevaFlashcard({ onAdd, mazos, mazoPorDefecto, etiqueta }) {
 
   return (
     <Card style={{ marginBottom: 14, borderLeft: "3px solid #8A5A9E", width: "100%" }}>
-      <FieldLabel>Mazo(s) de destino</FieldLabel>
-      <SelectorMazosMultiple mazos={mazos} seleccionados={seleccionados} onToggle={toggleMazo} nuevaCarpeta={nuevaCarpeta} onCambiarNueva={setNuevaCarpeta} />
-      <FieldLabel style={{ marginTop: 12 }}>Frontal</FieldLabel>
-      <textarea value={frontal} onChange={(e) => setFrontal(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
+      {!mazoFijo && (
+        <>
+          <FieldLabel>Nombre del mazo nuevo</FieldLabel>
+          <input value={mazo} onChange={(e) => setMazo(e.target.value)} placeholder='Ej. "Trastornos de personalidad"' style={{ ...styles.input, marginBottom: 12 }} />
+        </>
+      )}
+      <FieldLabel>Frontal</FieldLabel>
+      <textarea ref={frontalRef} value={frontal} onChange={(e) => setFrontal(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
       <FieldLabel style={{ marginTop: 12 }}>Posterior</FieldLabel>
       <textarea value={posterior} onChange={(e) => setPosterior(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-        <button type="button" onClick={guardar} disabled={guardando || destinos.length === 0} style={{ ...styles.btnPrimary, flex: 1, opacity: guardando || destinos.length === 0 ? 0.6 : 1 }}>{guardando ? "Añadiendo..." : "Añadir tarjeta"}</button>
-        <button type="button" onClick={() => { limpiar(); setAbierto(false); }} style={styles.btnSecondary}>Cancelar</button>
+        <button type="button" onClick={guardar} disabled={guardando || !frontal.trim() || !posterior.trim() || !destino} style={{ ...styles.btnPrimary, flex: 1, opacity: guardando ? 0.6 : 1 }}>{guardando ? "Añadiendo..." : "Añadir tarjeta"}</button>
+        <button type="button" onClick={() => { setFrontal(""); setPosterior(""); setMazo(""); setAbierto(false); }} style={styles.btnSecondary}>{mazoFijo ? "Cerrar" : "Cancelar"}</button>
       </div>
     </Card>
   );
 }
 
-function ImportarFlashcards({ onAddBulk, mazos, mazoPorDefecto }) {
+function ImportarFlashcards({ onAddBulk, mazoFijo }) {
   const [abierto, setAbierto] = useState(false);
-  const [seleccionados, setSeleccionados] = useState(() => (mazoPorDefecto && mazos.includes(mazoPorDefecto) ? [mazoPorDefecto] : []));
-  const [nuevaCarpeta, setNuevaCarpeta] = useState(() => (mazoPorDefecto && !mazos.includes(mazoPorDefecto) ? mazoPorDefecto : ""));
+  const [mazo, setMazo] = useState("");
   const [texto, setTexto] = useState("");
   const [importando, setImportando] = useState(false);
   const [resultado, setResultado] = useState(null);
-
-  const toggleMazo = (m) => setSeleccionados((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
-  const destinos = [...new Set([...seleccionados, ...(nuevaCarpeta.trim() ? [nuevaCarpeta.trim()] : [])])];
+  const destino = mazoFijo || mazo.trim();
 
   const parsear = (bruto) => {
     const separador = bruto.includes("\t") ? "\t" : bruto.includes(" | ") ? " | " : ";";
@@ -3535,9 +3303,9 @@ function ImportarFlashcards({ onAddBulk, mazos, mazoPorDefecto }) {
   const tarjetas = parsear(texto);
 
   const importar = async () => {
-    if (tarjetas.length === 0 || destinos.length === 0) return;
+    if (tarjetas.length === 0 || !destino) return;
     setImportando(true);
-    const n = await onAddBulk(destinos, tarjetas);
+    const n = await onAddBulk(destino, tarjetas);
     setImportando(false);
     setResultado(n);
     if (n > 0) setTexto("");
@@ -3553,9 +3321,13 @@ function ImportarFlashcards({ onAddBulk, mazos, mazoPorDefecto }) {
 
   return (
     <Card style={{ marginBottom: 14, borderLeft: "3px solid #8A5A9E", width: "100%" }}>
-      <FieldLabel>Mazo(s) de destino</FieldLabel>
-      <SelectorMazosMultiple mazos={mazos} seleccionados={seleccionados} onToggle={toggleMazo} nuevaCarpeta={nuevaCarpeta} onCambiarNueva={setNuevaCarpeta} />
-      <FieldLabel style={{ marginTop: 12 }}>Pega tus tarjetas, una por línea</FieldLabel>
+      {!mazoFijo && (
+        <>
+          <FieldLabel>Nombre del mazo nuevo</FieldLabel>
+          <input value={mazo} onChange={(e) => setMazo(e.target.value)} placeholder='Ej. "Trastornos de personalidad"' style={{ ...styles.input, marginBottom: 12 }} />
+        </>
+      )}
+      <FieldLabel>Pega tus tarjetas, una por línea</FieldLabel>
       <p style={{ fontSize: 12, color: "#9B9689", margin: "0 0 8px" }}>
         Cada línea es una tarjeta: frontal y posterior separados por tabulador, " | " o ";" — el formato en que se exportan la mayoría de mazos de Anki o una hoja de cálculo.
       </p>
@@ -3575,7 +3347,7 @@ function ImportarFlashcards({ onAddBulk, mazos, mazoPorDefecto }) {
         </p>
       )}
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-        <button type="button" onClick={importar} disabled={importando || tarjetas.length === 0 || destinos.length === 0} style={{ ...styles.btnPrimary, flex: 1, opacity: importando || tarjetas.length === 0 || destinos.length === 0 ? 0.6 : 1 }}>
+        <button type="button" onClick={importar} disabled={importando || tarjetas.length === 0 || !destino} style={{ ...styles.btnPrimary, flex: 1, opacity: importando || tarjetas.length === 0 || !destino ? 0.6 : 1 }}>
           {importando ? "Importando..." : `Importar ${tarjetas.length || ""} tarjeta${tarjetas.length === 1 ? "" : "s"}`}
         </button>
         <button type="button" onClick={() => { setTexto(""); setResultado(null); setAbierto(false); }} style={styles.btnSecondary}>Cancelar</button>
@@ -3584,13 +3356,9 @@ function ImportarFlashcards({ onAddBulk, mazos, mazoPorDefecto }) {
   );
 }
 
-function FlashcardEditableCard({ f, onUpdate, onDelete, mazos }) {
+function FlashcardEditableCard({ f, onUpdate, onDelete }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [moviendo, setMoviendo] = useState(false);
-  const otrosMazos = (mazos || []).filter((m) => m !== f.mazo);
-  const [mazoDestino, setMazoDestino] = useState(otrosMazos[0] || "");
-  const [moviendoGuardando, setMoviendoGuardando] = useState(false);
   const [frontal, setFrontal] = useState(f.frontal);
   const [posterior, setPosterior] = useState(f.posterior);
   const [saving, setSaving] = useState(false);
@@ -3605,36 +3373,11 @@ function FlashcardEditableCard({ f, onUpdate, onDelete, mazos }) {
     if (ok) setEditing(false);
   };
 
-  const mover = async () => {
-    if (!mazoDestino) return;
-    setMoviendoGuardando(true);
-    const ok = await onUpdate(f.id, { mazo: mazoDestino });
-    setMoviendoGuardando(false);
-    if (ok) setMoviendo(false);
-  };
-
   const borrar = async () => {
     setBorrando(true);
     await onDelete(f.id);
     setBorrando(false);
   };
-
-  if (moviendo) {
-    return (
-      <Card style={{ marginBottom: 10, borderLeft: "3px solid #8A5A9E" }}>
-        <FieldLabel>Mover a mazo</FieldLabel>
-        <select value={mazoDestino} onChange={(e) => setMazoDestino(e.target.value)} style={{ ...styles.input, marginBottom: 10 }}>
-          {otrosMazos.map((m) => <option key={m} value={m}>{m}</option>)}
-        </select>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button type="button" onClick={mover} disabled={moviendoGuardando || !mazoDestino} style={{ ...styles.btnPrimary, flex: 1, opacity: moviendoGuardando ? 0.7 : 1 }}>
-            {moviendoGuardando ? "Moviendo..." : `Mover a "${mazoDestino}"`}
-          </button>
-          <button type="button" onClick={() => setMoviendo(false)} style={styles.btnSecondary}>Cancelar</button>
-        </div>
-      </Card>
-    );
-  }
 
   if (editing) {
     return (
@@ -3667,11 +3410,6 @@ function FlashcardEditableCard({ f, onUpdate, onDelete, mazos }) {
             <button type="button" onClick={() => setEditing(true)} style={styles.btnSecondary}>
               <Pencil size={13} style={{ marginRight: 4 }} /> Editar
             </button>
-            {otrosMazos.length > 0 && (
-              <button type="button" onClick={() => setMoviendo(true)} style={styles.btnSecondary}>
-                <FolderInput size={13} style={{ marginRight: 4 }} /> Mover
-              </button>
-            )}
             {confirmarBorrar ? (
               <>
                 <button type="button" onClick={borrar} disabled={borrando} style={{ ...styles.btnSecondary, color: ACENTO, borderColor: ACENTO }}>
