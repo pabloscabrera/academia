@@ -3,7 +3,7 @@ import {
   Compass, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
   Plus, Check, X, Loader2, User, LogOut, Flag, Pencil, Trash2,
    Zap, Heart, Swords, Sword, Flame, Sparkles, Star, Award, Target, Settings,
-   Medal, Gem, Crown, Search, Layers, Lightbulb, Users, Eye
+   Medal, Gem, Crown, Search, Layers, Lightbulb, Users, Eye, FolderInput
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { TEMARIO } from "./temario";
@@ -3029,6 +3029,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
               onRenombrar={(nuevo) => onRenombrarMazo(m, nuevo)}
               onBorrar={() => onEliminarMazo(m)}
               avisoBorrado={`¿Borrar "${m}" y sus ${s.total} tarjeta${s.total === 1 ? "" : "s"}? No se puede deshacer.`}
+              otrosMazos={mazos.filter((x) => x !== m)}
             />
           );
         })}
@@ -3140,10 +3141,12 @@ function FilaNavegacion({ icono: Icono, titulo, subtitulo, badge, onClick }) {
 // Como FilaNavegacion, pero con lápiz (renombrar in situ) y papelera
 // (borrar con confirmación) junto al nombre — usada para cada mazo real,
 // nunca para la fila sintética "Todas las tarjetas".
-function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onRenombrar, onBorrar, avisoBorrado }) {
-  const [modo, setModo] = useState("normal"); // normal | editando | confirmando
+function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onRenombrar, onBorrar, avisoBorrado, otrosMazos }) {
+  const [modo, setModo] = useState("normal"); // normal | editando | enviando | confirmando
   const [nombreNuevo, setNombreNuevo] = useState(titulo);
   const [procesando, setProcesando] = useState(false);
+  const destinos = otrosMazos || [];
+  const [destinoElegido, setDestinoElegido] = useState(destinos[0] || "");
 
   if (modo === "editando") {
     return (
@@ -3171,6 +3174,37 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onR
           <button type="button" onClick={() => { setNombreNuevo(titulo); setModo("normal"); }} style={styles.btnSecondary}>
             Cancelar
           </button>
+        </div>
+      </Card>
+    );
+  }
+
+  // Enviar a otro mazo: se elige uno ya existente de una lista (sin escribir
+  // nada) y todas las tarjetas de este mazo pasan a formar parte de él —
+  // como `mazo` es solo una etiqueta compartida, "enviar" es simplemente
+  // renombrar este mazo para que coincida exactamente con el destino.
+  if (modo === "enviando") {
+    return (
+      <Card style={{ marginBottom: 8, padding: 12 }}>
+        <FieldLabel>Enviar todas las tarjetas de "{titulo}" a:</FieldLabel>
+        <select value={destinoElegido} onChange={(e) => setDestinoElegido(e.target.value)} style={{ ...styles.input, marginTop: 6, marginBottom: 10 }}>
+          {destinos.map((d) => <option key={d} value={d}>{d}</option>)}
+        </select>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            disabled={procesando || !destinoElegido}
+            onClick={async () => {
+              setProcesando(true);
+              const ok = await onRenombrar(destinoElegido);
+              setProcesando(false);
+              if (ok) setModo("normal");
+            }}
+            style={{ ...styles.btnPrimary, flex: 1, opacity: procesando ? 0.7 : 1 }}
+          >
+            {procesando ? "Enviando..." : `Enviar a "${destinoElegido}"`}
+          </button>
+          <button type="button" onClick={() => setModo("normal")} style={styles.btnSecondary}>Cancelar</button>
         </div>
       </Card>
     );
@@ -3208,6 +3242,11 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onR
       <button type="button" onClick={() => setModo("editando")} title="Renombrar" style={styles.filaCarpetaIconBtn}>
         <Pencil size={14} />
       </button>
+      {destinos.length > 0 && (
+        <button type="button" onClick={() => setModo("enviando")} title="Enviar a otro mazo" style={styles.filaCarpetaIconBtn}>
+          <FolderInput size={14} />
+        </button>
+      )}
       <button type="button" onClick={() => setModo("confirmando")} title="Borrar" style={styles.filaCarpetaIconBtn}>
         <Trash2 size={14} />
       </button>
