@@ -1318,7 +1318,11 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
   const [submitting, setSubmitting] = useState(false);
   const [relampago, setRelampago] = useState(false);
   const [rachaViva, setRachaViva] = useState(0);
-  const recordPrevio = (miRacha && miRacha.racha_record) || 0;
+  // El récord se congela al empezar la tirada: `miRacha.racha_record` se
+  // actualiza en vivo (registrarAcierto lo sube en cuanto superas el anterior),
+  // así que compararse contra él directamente daba siempre empate y el fueguito
+  // no se encendía nunca.
+  const [recordPrevio, setRecordPrevio] = useState(0);
 
   useEffect(() => {
     let timer;
@@ -1347,6 +1351,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
     setIdx(0); setAnswers([]); setSelected(null); setRevealed(false); setSeconds(0);
     setRonda(1); setResultados({}); setPrimerIntento(null); setPreguntaAbierta(null);
     setRelampago(true); setRachaViva(0);
+    setRecordPrevio((miRacha && miRacha.racha_record) || 0);
     setState("running");
   };
 
