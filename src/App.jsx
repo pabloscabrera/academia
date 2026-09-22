@@ -576,10 +576,16 @@ export default function AcademiaPIR() {
     }
   };
 
+  // `f` puede traer frontal/posterior (editar el contenido) y/o mazo (mover
+  // esta tarjeta a otro mazo) — solo se actualiza lo que venga.
   const updateFlashcard = async (id, f) => {
+    const cambios = {};
+    if (f.frontal !== undefined) cambios.frontal = f.frontal;
+    if (f.posterior !== undefined) cambios.posterior = f.posterior;
+    if (f.mazo !== undefined) cambios.mazo = f.mazo;
     const { data, error } = await supabase
       .from("flashcards")
-      .update({ frontal: f.frontal, posterior: f.posterior })
+      .update(cambios)
       .eq("id", id)
       .select();
     if (!error && data && data[0]) {
@@ -3115,7 +3121,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
               />
             </div>
             {tarjetasFiltradas.map((f) => (
-              <FlashcardEditableCard key={f.id} f={f} onUpdate={onUpdate} onDelete={onDelete} />
+              <FlashcardEditableCard key={f.id} f={f} onUpdate={onUpdate} onDelete={onDelete} mazos={mazos} />
             ))}
           </div>
         )}
@@ -3395,14 +3401,17 @@ function ImportarFlashcards({ onAddBulk, mazoFijo }) {
   );
 }
 
-function FlashcardEditableCard({ f, onUpdate, onDelete }) {
+function FlashcardEditableCard({ f, onUpdate, onDelete, mazos }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [moviendo, setMoviendo] = useState(false);
   const [frontal, setFrontal] = useState(f.frontal);
   const [posterior, setPosterior] = useState(f.posterior);
   const [saving, setSaving] = useState(false);
   const [borrando, setBorrando] = useState(false);
   const [confirmarBorrar, setConfirmarBorrar] = useState(false);
+  const otrosMazos = (mazos || []).filter((m) => m !== (f.mazo || "General"));
+  const [mazoDestino, setMazoDestino] = useState(otrosMazos[0] || "");
 
   const guardar = async () => {
     if (!frontal.trim() || !posterior.trim()) return;
@@ -3412,11 +3421,36 @@ function FlashcardEditableCard({ f, onUpdate, onDelete }) {
     if (ok) setEditing(false);
   };
 
+  const mover = async () => {
+    if (!mazoDestino) return;
+    setSaving(true);
+    const ok = await onUpdate(f.id, { mazo: mazoDestino });
+    setSaving(false);
+    if (ok) setMoviendo(false);
+  };
+
   const borrar = async () => {
     setBorrando(true);
     await onDelete(f.id);
     setBorrando(false);
   };
+
+  if (moviendo) {
+    return (
+      <Card style={{ marginBottom: 10, borderLeft: "3px solid #8A5A9E" }}>
+        <FieldLabel>Mover esta tarjeta a:</FieldLabel>
+        <select value={mazoDestino} onChange={(e) => setMazoDestino(e.target.value)} style={{ ...styles.input, marginTop: 6, marginBottom: 10 }}>
+          {otrosMazos.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={mover} disabled={saving || !mazoDestino} style={{ ...styles.btnPrimary, flex: 1, opacity: saving ? 0.7 : 1 }}>
+            {saving ? "Moviendo..." : `Mover a "${mazoDestino}"`}
+          </button>
+          <button type="button" onClick={() => setMoviendo(false)} style={styles.btnSecondary}>Cancelar</button>
+        </div>
+      </Card>
+    );
+  }
 
   if (editing) {
     return (
@@ -3449,6 +3483,11 @@ function FlashcardEditableCard({ f, onUpdate, onDelete }) {
             <button type="button" onClick={() => setEditing(true)} style={styles.btnSecondary}>
               <Pencil size={13} style={{ marginRight: 4 }} /> Editar
             </button>
+            {otrosMazos.length > 0 && (
+              <button type="button" onClick={() => setMoviendo(true)} style={styles.btnSecondary}>
+                <FolderInput size={13} style={{ marginRight: 4 }} /> Mover
+              </button>
+            )}
             {confirmarBorrar ? (
               <>
                 <button type="button" onClick={borrar} disabled={borrando} style={{ ...styles.btnSecondary, color: ACENTO, borderColor: ACENTO }}>
