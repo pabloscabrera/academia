@@ -2898,9 +2898,19 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
   );
 
   // Etiquetas (flashcards.etiquetas, un text[] por tarjeta): son
-  // transversales al mazo, así que aquí solo se listan las que existen en lo
-  // que estás mirando y sirven para estrechar el repaso a una de ellas.
-  const [etiquetaActiva, setEtiquetaActiva] = useState(null);
+  // transversales al mazo. Se pueden marcar VARIAS a la vez y el repaso se
+  // queda con las tarjetas que lleven cualquiera de ellas (o, no y): pedir
+  // "porcentajes y DSM-5" a la vez casi siempre daría cero tarjetas, y lo
+  // que se quiere es repasar esos dos temas juntos.
+  const [etiquetasActivas, setEtiquetasActivas] = useState([]);
+
+  // Para elegir al etiquetar se ofrecen TODAS las que ya usas (da igual el
+  // mazo); para filtrar, solo las que existen en lo que estás mirando.
+  const todasLasEtiquetas = useMemo(() => {
+    const s = new Set();
+    flashcards.forEach((f) => (f.etiquetas || []).forEach((e) => s.add(e)));
+    return [...s].sort((a, b) => a.localeCompare(b));
+  }, [flashcards]);
 
   const etiquetasDelMazo = useMemo(() => {
     const s = new Set();
@@ -2909,12 +2919,20 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
   }, [flashcardsDelMazo]);
 
   useEffect(() => {
-    if (etiquetaActiva && !etiquetasDelMazo.includes(etiquetaActiva)) setEtiquetaActiva(null);
-  }, [etiquetaActiva, etiquetasDelMazo]);
+    setEtiquetasActivas((prev) => {
+      const validas = prev.filter((e) => etiquetasDelMazo.includes(e));
+      return validas.length === prev.length ? prev : validas;
+    });
+  }, [etiquetasDelMazo]);
+
+  const alternarEtiqueta = (e) =>
+    setEtiquetasActivas((prev) => (prev.includes(e) ? prev.filter((x) => x !== e) : [...prev, e]));
 
   const flashcardsFiltradas = useMemo(
-    () => (etiquetaActiva ? flashcardsDelMazo.filter((f) => (f.etiquetas || []).includes(etiquetaActiva)) : flashcardsDelMazo),
-    [flashcardsDelMazo, etiquetaActiva]
+    () => (etiquetasActivas.length === 0
+      ? flashcardsDelMazo
+      : flashcardsDelMazo.filter((f) => (f.etiquetas || []).some((e) => etiquetasActivas.includes(e)))),
+    [flashcardsDelMazo, etiquetasActivas]
   );
 
   const pendientes = useMemo(
@@ -2981,8 +2999,8 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
       <div>
         <SectionTitle title="Flashcards" subtitle="Todavía no tienes tarjetas propias. Cada persona tiene su propio mazo privado — nadie más ve las tuyas." />
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <NuevaFlashcard onAdd={onAdd} />
-          <ImportarFlashcards onAddBulk={onAddBulk} />
+          <NuevaFlashcard onAdd={onAdd} etiquetasExistentes={todasLasEtiquetas} />
+          <ImportarFlashcards onAddBulk={onAddBulk} etiquetasExistentes={todasLasEtiquetas} />
         </div>
       </div>
     );
@@ -3073,8 +3091,8 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
           );
         })}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-          <NuevaFlashcard onAdd={onAdd} textoBoton="Nuevo mazo" />
-          <ImportarFlashcards onAddBulk={onAddBulk} />
+          <NuevaFlashcard onAdd={onAdd} textoBoton="Nuevo mazo" etiquetasExistentes={todasLasEtiquetas} />
+          <ImportarFlashcards onAddBulk={onAddBulk} etiquetasExistentes={todasLasEtiquetas} />
         </div>
       </div>
     );
@@ -3091,29 +3109,30 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
       </button>
       <SectionTitle
         title="Flashcards"
-        subtitle={mazoActivo
-          ? `"${mazoActivo}" — ${flashcardsFiltradas.length} tarjeta${flashcardsFiltradas.length === 1 ? "" : "s"}${etiquetaActiva ? ` con la etiqueta "${etiquetaActiva}"` : ""}`
-          : `Tu mazo privado — ${flashcardsFiltradas.length} tarjeta${flashcardsFiltradas.length === 1 ? "" : "s"}${etiquetaActiva ? ` con la etiqueta "${etiquetaActiva}"` : ""}`}
+        subtitle={`${mazoActivo ? `"${mazoActivo}"` : "Tu mazo privado"} — ${flashcardsFiltradas.length} tarjeta${flashcardsFiltradas.length === 1 ? "" : "s"}${etiquetasActivas.length > 0 ? ` de ${etiquetasActivas.join(" · ")}` : ""}`}
       />
       {etiquetasDelMazo.length > 0 && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
-          <button
-            type="button"
-            onClick={() => setEtiquetaActiva(null)}
-            style={{ ...styles.chipEtiqueta, ...(etiquetaActiva === null ? styles.chipEtiquetaActiva : {}) }}
-          >
-            Todas
-          </button>
-          {etiquetasDelMazo.map((e) => (
+        <div style={{ marginBottom: 16 }}>
+          <FieldLabel>Repasar solo estos temas</FieldLabel>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
             <button
-              key={e}
               type="button"
-              onClick={() => setEtiquetaActiva(etiquetaActiva === e ? null : e)}
-              style={{ ...styles.chipEtiqueta, ...(etiquetaActiva === e ? styles.chipEtiquetaActiva : {}) }}
+              onClick={() => setEtiquetasActivas([])}
+              style={{ ...styles.chipEtiqueta, ...(etiquetasActivas.length === 0 ? styles.chipEtiquetaActiva : {}) }}
             >
-              {e}
+              Todos
             </button>
-          ))}
+            {etiquetasDelMazo.map((e) => (
+              <button
+                key={e}
+                type="button"
+                onClick={() => alternarEtiqueta(e)}
+                style={{ ...styles.chipEtiqueta, ...(etiquetasActivas.includes(e) ? styles.chipEtiquetaActiva : {}) }}
+              >
+                {e}
+              </button>
+            ))}
+          </div>
         </div>
       )}
       {resumen && (
@@ -3126,7 +3145,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
       <Card style={{ textAlign: "center", padding: "28px 20px" }}>
         {pendientes.length === 0 ? (
           <p style={{ fontSize: 15, color: "#1E1C18", margin: 0 }}>
-            No te toca repasar ninguna tarjeta{etiquetaActiva ? ` de "${etiquetaActiva}"` : mazoActivo ? ` de "${mazoActivo}"` : ""} hoy. ¡Vuelve mañana!
+            No te toca repasar ninguna tarjeta{etiquetasActivas.length > 0 ? ` de ${etiquetasActivas.join(" · ")}` : mazoActivo ? ` de "${mazoActivo}"` : ""} hoy. ¡Vuelve mañana!
           </p>
         ) : (
           <>
@@ -3162,8 +3181,8 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
         {verTarjetas && (
           <div style={{ marginTop: 12 }}>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-              <NuevaFlashcard onAdd={onAdd} mazoFijo={mazoActivo || undefined} />
-              <ImportarFlashcards onAddBulk={onAddBulk} mazoFijo={mazoActivo || undefined} />
+              <NuevaFlashcard onAdd={onAdd} mazoFijo={mazoActivo || undefined} etiquetasExistentes={todasLasEtiquetas} />
+              <ImportarFlashcards onAddBulk={onAddBulk} mazoFijo={mazoActivo || undefined} etiquetasExistentes={todasLasEtiquetas} />
             </div>
             <div style={{ position: "relative", marginBottom: 14 }}>
               <Search size={16} color="#9B9689" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
@@ -3175,7 +3194,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
               />
             </div>
             {tarjetasFiltradas.map((f) => (
-              <FlashcardEditableCard key={f.id} f={f} onUpdate={onUpdate} onDelete={onDelete} mazos={mazos} />
+              <FlashcardEditableCard key={f.id} f={f} onUpdate={onUpdate} onDelete={onDelete} mazos={mazos} etiquetasExistentes={todasLasEtiquetas} />
             ))}
           </div>
         )}
@@ -3315,18 +3334,75 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onR
   );
 }
 
+// Etiquetar sin escribir de más: las etiquetas que ya usas se tocan para
+// ponerlas o quitarlas, y el campo de texto es solo para estrenar una
+// nueva. Así no acaban conviviendo "porcentajes" y "Porcentajes" por una
+// mayúscula.
+function SelectorEtiquetas({ existentes, valor, onChange }) {
+  const [nueva, setNueva] = useState("");
+  const sugerencias = (existentes || []).filter((e) => !valor.includes(e));
+
+  const anadirEscrita = () => {
+    const nuevas = parsearEtiquetas(nueva);
+    if (nuevas.length === 0) return;
+    onChange([...new Set([...valor, ...nuevas])]);
+    setNueva("");
+  };
+
+  return (
+    <div>
+      {valor.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+          {valor.map((e) => (
+            <button
+              key={e}
+              type="button"
+              onClick={() => onChange(valor.filter((x) => x !== e))}
+              title="Quitar esta etiqueta"
+              style={{ ...styles.chipEtiqueta, ...styles.chipEtiquetaActiva, display: "flex", alignItems: "center", gap: 5 }}
+            >
+              {e} <X size={11} />
+            </button>
+          ))}
+        </div>
+      )}
+      {sugerencias.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+          {sugerencias.map((e) => (
+            <button key={e} type="button" onClick={() => onChange([...valor, e])} style={styles.chipEtiqueta}>
+              + {e}
+            </button>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          value={nueva}
+          onChange={(ev) => setNueva(ev.target.value)}
+          onKeyDown={(ev) => { if (ev.key === "Enter") { ev.preventDefault(); anadirEscrita(); } }}
+          placeholder="Etiqueta nueva (ej. Psicopatología)"
+          style={{ ...styles.input, flex: 1 }}
+        />
+        <button type="button" onClick={anadirEscrita} disabled={!nueva.trim()} style={{ ...styles.btnSecondary, opacity: nueva.trim() ? 1 : 0.5 }}>
+          Añadir
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // `mazoFijo` es el mazo en el que se está (ya dentro de él, sin elegir
 // destino): la tarjeta se añade directamente ahí y el formulario no se
 // cierra al guardar, para poder meter varias seguidas rápido. Sin
 // `mazoFijo` (solo en el listado raíz) pide el nombre del mazo nuevo que
 // se va a crear — no hay forma de añadir una tarjeta a "otro mazo más" ni
 // de elegir entre varios existentes, cada tarjeta va a un único mazo.
-function NuevaFlashcard({ onAdd, mazoFijo, textoBoton }) {
+function NuevaFlashcard({ onAdd, mazoFijo, textoBoton, etiquetasExistentes }) {
   const [abierto, setAbierto] = useState(false);
   const [mazo, setMazo] = useState("");
   const [frontal, setFrontal] = useState("");
   const [posterior, setPosterior] = useState("");
-  const [etiquetas, setEtiquetas] = useState("");
+  const [etiquetas, setEtiquetas] = useState([]);
   const [guardando, setGuardando] = useState(false);
   const frontalRef = useRef(null);
   const destino = mazoFijo || mazo.trim();
@@ -3334,7 +3410,7 @@ function NuevaFlashcard({ onAdd, mazoFijo, textoBoton }) {
   const guardar = async () => {
     if (!frontal.trim() || !posterior.trim() || !destino) return;
     setGuardando(true);
-    const ok = await onAdd({ mazo: destino, frontal: frontal.trim(), posterior: posterior.trim(), etiquetas: parsearEtiquetas(etiquetas) });
+    const ok = await onAdd({ mazo: destino, frontal: frontal.trim(), posterior: posterior.trim(), etiquetas });
     setGuardando(false);
     if (!ok) return;
     // Las etiquetas NO se limpian: así pones "porcentajes" una vez y metes
@@ -3369,21 +3445,21 @@ function NuevaFlashcard({ onAdd, mazoFijo, textoBoton }) {
       <textarea ref={frontalRef} value={frontal} onChange={(e) => setFrontal(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
       <FieldLabel style={{ marginTop: 12 }}>Posterior</FieldLabel>
       <textarea value={posterior} onChange={(e) => setPosterior(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
-      <FieldLabel style={{ marginTop: 12 }}>Etiquetas (opcional, separadas por comas)</FieldLabel>
-      <input value={etiquetas} onChange={(e) => setEtiquetas(e.target.value)} placeholder='Ej. "porcentajes, DSM-5"' style={styles.input} />
+      <FieldLabel style={{ marginTop: 12 }}>Etiquetas del tema (opcional)</FieldLabel>
+      <SelectorEtiquetas existentes={etiquetasExistentes} valor={etiquetas} onChange={setEtiquetas} />
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
         <button type="button" onClick={guardar} disabled={guardando || !frontal.trim() || !posterior.trim() || !destino} style={{ ...styles.btnPrimary, flex: 1, opacity: guardando ? 0.6 : 1 }}>{guardando ? "Añadiendo..." : "Añadir tarjeta"}</button>
-        <button type="button" onClick={() => { setFrontal(""); setPosterior(""); setMazo(""); setEtiquetas(""); setAbierto(false); }} style={styles.btnSecondary}>{mazoFijo ? "Cerrar" : "Cancelar"}</button>
+        <button type="button" onClick={() => { setFrontal(""); setPosterior(""); setMazo(""); setEtiquetas([]); setAbierto(false); }} style={styles.btnSecondary}>{mazoFijo ? "Cerrar" : "Cancelar"}</button>
       </div>
     </Card>
   );
 }
 
-function ImportarFlashcards({ onAddBulk, mazoFijo }) {
+function ImportarFlashcards({ onAddBulk, mazoFijo, etiquetasExistentes }) {
   const [abierto, setAbierto] = useState(false);
   const [mazo, setMazo] = useState("");
   const [texto, setTexto] = useState("");
-  const [etiquetas, setEtiquetas] = useState("");
+  const [etiquetas, setEtiquetas] = useState([]);
   const [importando, setImportando] = useState(false);
   const [resultado, setResultado] = useState(null);
   const destino = mazoFijo || mazo.trim();
@@ -3410,7 +3486,7 @@ function ImportarFlashcards({ onAddBulk, mazoFijo }) {
   const importar = async () => {
     if (tarjetas.length === 0 || !destino) return;
     setImportando(true);
-    const n = await onAddBulk(destino, tarjetas, parsearEtiquetas(etiquetas));
+    const n = await onAddBulk(destino, tarjetas, etiquetas);
     setImportando(false);
     setResultado(n);
     if (n > 0) setTexto("");
@@ -3446,8 +3522,8 @@ function ImportarFlashcards({ onAddBulk, mazoFijo }) {
         {tarjetas.length} tarjeta{tarjetas.length === 1 ? "" : "s"} detectada{tarjetas.length === 1 ? "" : "s"}
         {texto.trim() && tarjetas.length === 0 ? " — revisa el separador de cada línea." : "."}
       </p>
-      <FieldLabel style={{ marginTop: 12 }}>Etiquetas para todas (opcional, separadas por comas)</FieldLabel>
-      <input value={etiquetas} onChange={(e) => setEtiquetas(e.target.value)} placeholder='Ej. "porcentajes, DSM-5"' style={styles.input} />
+      <FieldLabel style={{ marginTop: 12 }}>Etiquetas del tema para todas (opcional)</FieldLabel>
+      <SelectorEtiquetas existentes={etiquetasExistentes} valor={etiquetas} onChange={setEtiquetas} />
       {resultado !== null && (
         <p style={{ fontSize: 13, color: resultado > 0 ? CORRECTO : ACENTO, margin: "4px 0 0" }}>
           {resultado > 0 ? `¡Importadas ${resultado} tarjetas!` : "No se pudo importar. Inténtalo de nuevo."}
@@ -3463,13 +3539,13 @@ function ImportarFlashcards({ onAddBulk, mazoFijo }) {
   );
 }
 
-function FlashcardEditableCard({ f, onUpdate, onDelete, mazos }) {
+function FlashcardEditableCard({ f, onUpdate, onDelete, mazos, etiquetasExistentes }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [moviendo, setMoviendo] = useState(false);
   const [frontal, setFrontal] = useState(f.frontal);
   const [posterior, setPosterior] = useState(f.posterior);
-  const [etiquetas, setEtiquetas] = useState((f.etiquetas || []).join(", "));
+  const [etiquetas, setEtiquetas] = useState(f.etiquetas || []);
   const [saving, setSaving] = useState(false);
   const [borrando, setBorrando] = useState(false);
   const [confirmarBorrar, setConfirmarBorrar] = useState(false);
@@ -3479,7 +3555,7 @@ function FlashcardEditableCard({ f, onUpdate, onDelete, mazos }) {
   const guardar = async () => {
     if (!frontal.trim() || !posterior.trim()) return;
     setSaving(true);
-    const ok = await onUpdate(f.id, { frontal: frontal.trim(), posterior: posterior.trim(), etiquetas: parsearEtiquetas(etiquetas) });
+    const ok = await onUpdate(f.id, { frontal: frontal.trim(), posterior: posterior.trim(), etiquetas });
     setSaving(false);
     if (ok) setEditing(false);
   };
@@ -3522,11 +3598,11 @@ function FlashcardEditableCard({ f, onUpdate, onDelete, mazos }) {
         <textarea value={frontal} onChange={(e) => setFrontal(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
         <FieldLabel style={{ marginTop: 12 }}>Posterior</FieldLabel>
         <textarea value={posterior} onChange={(e) => setPosterior(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
-        <FieldLabel style={{ marginTop: 12 }}>Etiquetas (separadas por comas)</FieldLabel>
-        <input value={etiquetas} onChange={(e) => setEtiquetas(e.target.value)} placeholder='Ej. "porcentajes, DSM-5"' style={styles.input} />
+        <FieldLabel style={{ marginTop: 12 }}>Etiquetas del tema</FieldLabel>
+        <SelectorEtiquetas existentes={etiquetasExistentes} valor={etiquetas} onChange={setEtiquetas} />
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
           <button type="button" onClick={guardar} disabled={saving} style={{ ...styles.btnPrimary, flex: 1 }}>{saving ? "Guardando..." : "Guardar cambios"}</button>
-          <button type="button" onClick={() => { setFrontal(f.frontal); setPosterior(f.posterior); setEtiquetas((f.etiquetas || []).join(", ")); setEditing(false); }} style={styles.btnSecondary}>Cancelar</button>
+          <button type="button" onClick={() => { setFrontal(f.frontal); setPosterior(f.posterior); setEtiquetas(f.etiquetas || []); setEditing(false); }} style={styles.btnSecondary}>Cancelar</button>
         </div>
       </Card>
     );
