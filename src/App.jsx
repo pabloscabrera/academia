@@ -583,6 +583,7 @@ export default function AcademiaPIR() {
     if (f.frontal !== undefined) cambios.frontal = f.frontal;
     if (f.posterior !== undefined) cambios.posterior = f.posterior;
     if (f.mazo !== undefined) cambios.mazo = f.mazo;
+    if (f.etiquetas !== undefined) cambios.etiquetas = f.etiquetas;
     const { data, error } = await supabase
       .from("flashcards")
       .update(cambios)
@@ -597,7 +598,7 @@ export default function AcademiaPIR() {
   const addFlashcard = async (f) => {
     const { data, error } = await supabase
       .from("flashcards")
-      .insert([{ mazo: f.mazo || "General", frontal: f.frontal, posterior: f.posterior }])
+      .insert([{ mazo: f.mazo || "General", frontal: f.frontal, posterior: f.posterior, etiquetas: f.etiquetas || [] }])
       .select();
     if (!error && data && data[0]) {
       setFlashcards((prev) => [...prev, data[0]]);
@@ -605,8 +606,8 @@ export default function AcademiaPIR() {
     return !error;
   };
 
-  const addFlashcardsBulk = async (mazo, tarjetas) => {
-    const filas = tarjetas.map((t) => ({ mazo: mazo || "General", frontal: t.frontal, posterior: t.posterior }));
+  const addFlashcardsBulk = async (mazo, tarjetas, etiquetas) => {
+    const filas = tarjetas.map((t) => ({ mazo: mazo || "General", frontal: t.frontal, posterior: t.posterior, etiquetas: etiquetas || [] }));
     const { data, error } = await supabase.from("flashcards").insert(filas).select();
     if (!error && data) {
       setFlashcards((prev) => [...prev, ...data]);
@@ -2824,6 +2825,13 @@ function Logros({ user, miRacha, compact }) {
 }
 
 const TAM_SESION_FLASHCARDS = 20;
+
+// Las etiquetas se escriben como texto libre separado por comas y se guardan
+// en flashcards.etiquetas (text[]): se recortan, se quitan las vacías y se
+// deduplican, para que "Porcentajes, dsm , Porcentajes" no cree tres.
+const parsearEtiquetas = (texto) => [
+  ...new Set((texto || "").split(",").map((e) => e.trim()).filter(Boolean)),
+];
 const CALIFICACIONES_FLASHCARD = [
   { calidad: 0, label: "Muy difícil", bg: ACENTO_SUAVE, color: ACENTO, borde: ACENTO },
   { calidad: 3, label: "Difícil", bg: AVISO_SUAVE, color: AVISO, borde: AVISO },
@@ -2889,12 +2897,32 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
     [flashcards, mazoActivo]
   );
 
+  // Etiquetas (flashcards.etiquetas, un text[] por tarjeta): son
+  // transversales al mazo, así que aquí solo se listan las que existen en lo
+  // que estás mirando y sirven para estrechar el repaso a una de ellas.
+  const [etiquetaActiva, setEtiquetaActiva] = useState(null);
+
+  const etiquetasDelMazo = useMemo(() => {
+    const s = new Set();
+    flashcardsDelMazo.forEach((f) => (f.etiquetas || []).forEach((e) => s.add(e)));
+    return [...s].sort((a, b) => a.localeCompare(b));
+  }, [flashcardsDelMazo]);
+
+  useEffect(() => {
+    if (etiquetaActiva && !etiquetasDelMazo.includes(etiquetaActiva)) setEtiquetaActiva(null);
+  }, [etiquetaActiva, etiquetasDelMazo]);
+
+  const flashcardsFiltradas = useMemo(
+    () => (etiquetaActiva ? flashcardsDelMazo.filter((f) => (f.etiquetas || []).includes(etiquetaActiva)) : flashcardsDelMazo),
+    [flashcardsDelMazo, etiquetaActiva]
+  );
+
   const pendientes = useMemo(
-    () => flashcardsDelMazo.filter((f) => {
+    () => flashcardsFiltradas.filter((f) => {
       const p = progresoPorId[f.grupo_id || f.id];
       return !p || !p.proxima_revision || p.proxima_revision <= hoy;
     }),
-    [flashcardsDelMazo, progresoPorId, hoy]
+    [flashcardsFiltradas, progresoPorId, hoy]
   );
 
   const [sesion, setSesion] = useState(null);
@@ -3010,8 +3038,8 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
 
   const terminoTarjetas = busquedaTarjetas.trim().toLowerCase();
   const tarjetasFiltradas = terminoTarjetas
-    ? flashcardsDelMazo.filter((f) => f.frontal.toLowerCase().includes(terminoTarjetas) || f.posterior.toLowerCase().includes(terminoTarjetas))
-    : flashcardsDelMazo;
+    ? flashcardsFiltradas.filter((f) => f.frontal.toLowerCase().includes(terminoTarjetas) || f.posterior.toLowerCase().includes(terminoTarjetas))
+    : flashcardsFiltradas;
 
   if (mostrandoLista) {
     return (
@@ -3045,7 +3073,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
           );
         })}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-          <NuevaFlashcard onAdd={onAdd} etiqueta="Nuevo mazo" />
+          <NuevaFlashcard onAdd={onAdd} textoBoton="Nuevo mazo" />
           <ImportarFlashcards onAddBulk={onAddBulk} />
         </div>
       </div>
@@ -3064,9 +3092,30 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
       <SectionTitle
         title="Flashcards"
         subtitle={mazoActivo
-          ? `"${mazoActivo}" — ${flashcardsDelMazo.length} tarjeta${flashcardsDelMazo.length === 1 ? "" : "s"}`
-          : `Tu mazo privado — ${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"}`}
+          ? `"${mazoActivo}" — ${flashcardsFiltradas.length} tarjeta${flashcardsFiltradas.length === 1 ? "" : "s"}${etiquetaActiva ? ` con la etiqueta "${etiquetaActiva}"` : ""}`
+          : `Tu mazo privado — ${flashcardsFiltradas.length} tarjeta${flashcardsFiltradas.length === 1 ? "" : "s"}${etiquetaActiva ? ` con la etiqueta "${etiquetaActiva}"` : ""}`}
       />
+      {etiquetasDelMazo.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 16 }}>
+          <button
+            type="button"
+            onClick={() => setEtiquetaActiva(null)}
+            style={{ ...styles.chipEtiqueta, ...(etiquetaActiva === null ? styles.chipEtiquetaActiva : {}) }}
+          >
+            Todas
+          </button>
+          {etiquetasDelMazo.map((e) => (
+            <button
+              key={e}
+              type="button"
+              onClick={() => setEtiquetaActiva(etiquetaActiva === e ? null : e)}
+              style={{ ...styles.chipEtiqueta, ...(etiquetaActiva === e ? styles.chipEtiquetaActiva : {}) }}
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+      )}
       {resumen && (
         <Card style={{ marginBottom: 16, textAlign: "center", borderColor: CORRECTO }}>
           <p style={{ fontSize: 15, color: "#1E1C18", margin: 0 }}>
@@ -3077,7 +3126,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
       <Card style={{ textAlign: "center", padding: "28px 20px" }}>
         {pendientes.length === 0 ? (
           <p style={{ fontSize: 15, color: "#1E1C18", margin: 0 }}>
-            No te toca repasar ninguna tarjeta{mazoActivo ? ` de "${mazoActivo}"` : ""} hoy. ¡Vuelve mañana!
+            No te toca repasar ninguna tarjeta{etiquetaActiva ? ` de "${etiquetaActiva}"` : mazoActivo ? ` de "${mazoActivo}"` : ""} hoy. ¡Vuelve mañana!
           </p>
         ) : (
           <>
@@ -3108,7 +3157,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
 
       <div style={{ marginTop: 32 }}>
         <button type="button" onClick={() => setVerTarjetas((v) => !v)} style={{ ...styles.linkBtn, display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
-          {verTarjetas ? <ChevronDown size={15} /> : <ChevronRight size={15} />} Ver, añadir y editar tarjetas ({flashcardsDelMazo.length})
+          {verTarjetas ? <ChevronDown size={15} /> : <ChevronRight size={15} />} Ver, añadir y editar tarjetas ({flashcardsFiltradas.length})
         </button>
         {verTarjetas && (
           <div style={{ marginTop: 12 }}>
@@ -3272,11 +3321,12 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onR
 // `mazoFijo` (solo en el listado raíz) pide el nombre del mazo nuevo que
 // se va a crear — no hay forma de añadir una tarjeta a "otro mazo más" ni
 // de elegir entre varios existentes, cada tarjeta va a un único mazo.
-function NuevaFlashcard({ onAdd, mazoFijo, etiqueta }) {
+function NuevaFlashcard({ onAdd, mazoFijo, textoBoton }) {
   const [abierto, setAbierto] = useState(false);
   const [mazo, setMazo] = useState("");
   const [frontal, setFrontal] = useState("");
   const [posterior, setPosterior] = useState("");
+  const [etiquetas, setEtiquetas] = useState("");
   const [guardando, setGuardando] = useState(false);
   const frontalRef = useRef(null);
   const destino = mazoFijo || mazo.trim();
@@ -3284,9 +3334,11 @@ function NuevaFlashcard({ onAdd, mazoFijo, etiqueta }) {
   const guardar = async () => {
     if (!frontal.trim() || !posterior.trim() || !destino) return;
     setGuardando(true);
-    const ok = await onAdd({ mazo: destino, frontal: frontal.trim(), posterior: posterior.trim() });
+    const ok = await onAdd({ mazo: destino, frontal: frontal.trim(), posterior: posterior.trim(), etiquetas: parsearEtiquetas(etiquetas) });
     setGuardando(false);
     if (!ok) return;
+    // Las etiquetas NO se limpian: así pones "porcentajes" una vez y metes
+    // diez tarjetas seguidas con ella sin volver a escribirla.
     setFrontal("");
     setPosterior("");
     if (mazoFijo) {
@@ -3300,7 +3352,7 @@ function NuevaFlashcard({ onAdd, mazoFijo, etiqueta }) {
   if (!abierto) {
     return (
       <button type="button" onClick={() => setAbierto(true)} style={styles.btnSecondary}>
-        <Plus size={14} style={{ marginRight: 4 }} /> {etiqueta || "Añadir tarjeta"}
+        <Plus size={14} style={{ marginRight: 4 }} /> {textoBoton || "Añadir tarjeta"}
       </button>
     );
   }
@@ -3317,9 +3369,11 @@ function NuevaFlashcard({ onAdd, mazoFijo, etiqueta }) {
       <textarea ref={frontalRef} value={frontal} onChange={(e) => setFrontal(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
       <FieldLabel style={{ marginTop: 12 }}>Posterior</FieldLabel>
       <textarea value={posterior} onChange={(e) => setPosterior(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
+      <FieldLabel style={{ marginTop: 12 }}>Etiquetas (opcional, separadas por comas)</FieldLabel>
+      <input value={etiquetas} onChange={(e) => setEtiquetas(e.target.value)} placeholder='Ej. "porcentajes, DSM-5"' style={styles.input} />
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
         <button type="button" onClick={guardar} disabled={guardando || !frontal.trim() || !posterior.trim() || !destino} style={{ ...styles.btnPrimary, flex: 1, opacity: guardando ? 0.6 : 1 }}>{guardando ? "Añadiendo..." : "Añadir tarjeta"}</button>
-        <button type="button" onClick={() => { setFrontal(""); setPosterior(""); setMazo(""); setAbierto(false); }} style={styles.btnSecondary}>{mazoFijo ? "Cerrar" : "Cancelar"}</button>
+        <button type="button" onClick={() => { setFrontal(""); setPosterior(""); setMazo(""); setEtiquetas(""); setAbierto(false); }} style={styles.btnSecondary}>{mazoFijo ? "Cerrar" : "Cancelar"}</button>
       </div>
     </Card>
   );
@@ -3329,6 +3383,7 @@ function ImportarFlashcards({ onAddBulk, mazoFijo }) {
   const [abierto, setAbierto] = useState(false);
   const [mazo, setMazo] = useState("");
   const [texto, setTexto] = useState("");
+  const [etiquetas, setEtiquetas] = useState("");
   const [importando, setImportando] = useState(false);
   const [resultado, setResultado] = useState(null);
   const destino = mazoFijo || mazo.trim();
@@ -3355,7 +3410,7 @@ function ImportarFlashcards({ onAddBulk, mazoFijo }) {
   const importar = async () => {
     if (tarjetas.length === 0 || !destino) return;
     setImportando(true);
-    const n = await onAddBulk(destino, tarjetas);
+    const n = await onAddBulk(destino, tarjetas, parsearEtiquetas(etiquetas));
     setImportando(false);
     setResultado(n);
     if (n > 0) setTexto("");
@@ -3391,6 +3446,8 @@ function ImportarFlashcards({ onAddBulk, mazoFijo }) {
         {tarjetas.length} tarjeta{tarjetas.length === 1 ? "" : "s"} detectada{tarjetas.length === 1 ? "" : "s"}
         {texto.trim() && tarjetas.length === 0 ? " — revisa el separador de cada línea." : "."}
       </p>
+      <FieldLabel style={{ marginTop: 12 }}>Etiquetas para todas (opcional, separadas por comas)</FieldLabel>
+      <input value={etiquetas} onChange={(e) => setEtiquetas(e.target.value)} placeholder='Ej. "porcentajes, DSM-5"' style={styles.input} />
       {resultado !== null && (
         <p style={{ fontSize: 13, color: resultado > 0 ? CORRECTO : ACENTO, margin: "4px 0 0" }}>
           {resultado > 0 ? `¡Importadas ${resultado} tarjetas!` : "No se pudo importar. Inténtalo de nuevo."}
@@ -3412,6 +3469,7 @@ function FlashcardEditableCard({ f, onUpdate, onDelete, mazos }) {
   const [moviendo, setMoviendo] = useState(false);
   const [frontal, setFrontal] = useState(f.frontal);
   const [posterior, setPosterior] = useState(f.posterior);
+  const [etiquetas, setEtiquetas] = useState((f.etiquetas || []).join(", "));
   const [saving, setSaving] = useState(false);
   const [borrando, setBorrando] = useState(false);
   const [confirmarBorrar, setConfirmarBorrar] = useState(false);
@@ -3421,7 +3479,7 @@ function FlashcardEditableCard({ f, onUpdate, onDelete, mazos }) {
   const guardar = async () => {
     if (!frontal.trim() || !posterior.trim()) return;
     setSaving(true);
-    const ok = await onUpdate(f.id, { frontal: frontal.trim(), posterior: posterior.trim() });
+    const ok = await onUpdate(f.id, { frontal: frontal.trim(), posterior: posterior.trim(), etiquetas: parsearEtiquetas(etiquetas) });
     setSaving(false);
     if (ok) setEditing(false);
   };
@@ -3464,9 +3522,11 @@ function FlashcardEditableCard({ f, onUpdate, onDelete, mazos }) {
         <textarea value={frontal} onChange={(e) => setFrontal(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
         <FieldLabel style={{ marginTop: 12 }}>Posterior</FieldLabel>
         <textarea value={posterior} onChange={(e) => setPosterior(e.target.value)} style={{ ...styles.input, minHeight: 60 }} />
+        <FieldLabel style={{ marginTop: 12 }}>Etiquetas (separadas por comas)</FieldLabel>
+        <input value={etiquetas} onChange={(e) => setEtiquetas(e.target.value)} placeholder='Ej. "porcentajes, DSM-5"' style={styles.input} />
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
           <button type="button" onClick={guardar} disabled={saving} style={{ ...styles.btnPrimary, flex: 1 }}>{saving ? "Guardando..." : "Guardar cambios"}</button>
-          <button type="button" onClick={() => { setFrontal(f.frontal); setPosterior(f.posterior); setEditing(false); }} style={styles.btnSecondary}>Cancelar</button>
+          <button type="button" onClick={() => { setFrontal(f.frontal); setPosterior(f.posterior); setEtiquetas((f.etiquetas || []).join(", ")); setEditing(false); }} style={styles.btnSecondary}>Cancelar</button>
         </div>
       </Card>
     );
@@ -3478,6 +3538,11 @@ function FlashcardEditableCard({ f, onUpdate, onDelete, mazos }) {
         <div style={{ textAlign: "left", flex: 1 }}>
           <div style={{ fontSize: 11, color: "#8A5A9E", marginBottom: 4 }}>{f.mazo}</div>
           <div style={{ fontSize: 14, color: "#1E1C18", lineHeight: 1.4 }}>{f.frontal}</div>
+          {(f.etiquetas || []).length > 0 && (
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+              {f.etiquetas.map((e) => <span key={e} style={styles.etiquetaTarjeta}>{e}</span>)}
+            </div>
+          )}
         </div>
         {open ? <ChevronDown size={16} color="#9B9689" /> : <ChevronRight size={16} color="#9B9689" />}
       </button>
@@ -3806,6 +3871,9 @@ const styles = {
   btnSecondary: { background: "transparent", color: TINTA, border: `1.5px solid ${TINTA}`, borderRadius: 12, padding: "12px 18px", fontSize: 16, cursor: "pointer", display: "inline-flex", alignItems: "center" },
   iconBtn: { background: "none", border: "none", cursor: "pointer", padding: 6 },
   chip: { border: "1.5px solid", borderRadius: 22, padding: "9px 18px", fontSize: 16, cursor: "pointer" },
+  chipEtiqueta: { border: `1.5px solid ${RAYA}`, borderRadius: 20, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, background: "#fff", color: TINTA_SUAVE, cursor: "pointer" },
+  chipEtiquetaActiva: { background: TINTA, borderColor: TINTA, color: "#fff" },
+  etiquetaTarjeta: { border: `1px solid ${RAYA}`, borderRadius: 20, padding: "2px 9px", fontSize: 11, fontWeight: 600, color: TINTA_SUAVE, background: "#F2EFE7" },
   option: { display: "block", width: "100%", textAlign: "left", padding: "16px 18px", borderRadius: 14, border: `1.5px solid ${RAYA}`, marginBottom: 10, fontSize: 18, cursor: "pointer", color: TINTA, background: "#F6F4EC" },
   runHeader: { display: "flex", justifyContent: "space-between", alignItems: "center" },
   progressTrack: { height: 4, background: RAYA, borderRadius: 2, marginTop: 10 },
