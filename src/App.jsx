@@ -113,6 +113,37 @@ async function obtenerPreguntas() {
     throw err;
   }
 }
+// Una autoevaluación a medias se guarda en el móvil para poder retomarla.
+// Antes vivía solo en memoria: bloquear la pantalla o que Safari descartara
+// la pestaña se llevaba por delante una tirada de 30 preguntas.
+//
+// Se guardan ids, no las preguntas enteras, y se reconstruyen contra el banco
+// al volver: ocupa una fracción y nunca se queda con una copia vieja del
+// texto de una pregunta que se haya corregido mientras tanto.
+const MAX_EDAD_TIRADA_MS = 7 * 24 * 60 * 60 * 1000;
+const claveTirada = (nombre) => `pir-tirada-${nombre}`;
+
+function leerTiradaGuardada(nombre) {
+  try {
+    const crudo = localStorage.getItem(claveTirada(nombre));
+    if (!crudo) return null;
+    const datos = JSON.parse(crudo);
+    if (!datos || !Array.isArray(datos.poolIds) || datos.poolIds.length === 0) return null;
+    if (Date.now() - (datos.guardadoEn || 0) > MAX_EDAD_TIRADA_MS) return null;
+    return datos;
+  } catch {
+    return null;
+  }
+}
+
+function guardarTirada(nombre, datos) {
+  try { localStorage.setItem(claveTirada(nombre), JSON.stringify(datos)); } catch {}
+}
+
+function borrarTirada(nombre) {
+  try { localStorage.removeItem(claveTirada(nombre)); } catch {}
+}
+
 function lunesDeLaSemana(fecha) {
   const d = new Date(fecha);
   const dia = d.getDay();
@@ -1464,6 +1495,79 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
     return () => clearInterval(timer);
   }, [state]);
 
+  // Lo guardado al abrir la pestaña. Se lee una sola vez: mientras haya una
+  // tirada en marcha, la fuente de verdad es el estado de React.
+  const [tiradaGuardada, setTiradaGuardada] = useState(() => leerTiradaGuardada(user.name));
+
+  // El banco puede no estar cargado aún al montar, así que la reconstrucción
+  // se hace aquí y no al leer. Si alguna pregunta ya no existe (se corrigió
+  // el banco entre medias) se descarta la tirada entera: rellenar huecos
+  // descuadraría los índices y las respuestas ya dadas.
+  const tiradaLista = useMemo(() => {
+    if (!tiradaGuardada || questions.length === 0) return null;
+    const porId = new Map(questions.map((q) => [q.id, q]));
+    const pool = tiradaGuardada.poolIds.map((id) => porId.get(id));
+    if (pool.some((q) => !q)) return null;
+    const idsOriginal = tiradaGuardada.poolOriginalIds || tiradaGuardada.poolIds;
+    const poolOriginal = idsOriginal.map((id) => porId.get(id));
+    if (poolOriginal.some((q) => !q)) return null;
+    if (!(tiradaGuardada.idx >= 0 && tiradaGuardada.idx < pool.length)) return null;
+    const rehidratar = (a) => ({ ...a, pregunta: porId.get(a.qId) });
+    const answers = (tiradaGuardada.answers || []).map(rehidratar);
+    if (answers.some((a) => !a.pregunta)) return null;
+    const resultados = {};
+    (tiradaGuardada.resultados || []).forEach((a) => {
+      const pregunta = porId.get(a.qId);
+      if (pregunta) resultados[a.qId] = { ...a, pregunta };
+    });
+    return { ...tiradaGuardada, pool, poolOriginal, answers, resultados };
+  }, [tiradaGuardada, questions]);
+
+  const continuarTirada = () => {
+    if (!tiradaLista) return;
+    setPool(tiradaLista.pool); setPoolOriginal(tiradaLista.poolOriginal);
+    setIdx(tiradaLista.idx); setAnswers(tiradaLista.answers); setResultados(tiradaLista.resultados);
+    setPrimerIntento(tiradaLista.primerIntento || null); setPreguntaAbierta(null);
+    setRonda(tiradaLista.ronda || 1); setSeconds(tiradaLista.seconds || 0);
+    setSelected(tiradaLista.selected === undefined ? null : tiradaLista.selected);
+    setRevealed(!!tiradaLista.revealed);
+    setRelampago(!!tiradaLista.relampago);
+    setRachaViva(tiradaLista.rachaViva || 0);
+    setRecordPrevio(tiradaLista.recordPrevio || 0);
+    setState("running");
+  };
+
+  const descartarTirada = () => {
+    borrarTirada(user.name);
+    setTiradaGuardada(null);
+  };
+
+  // El cronómetro queda fuera de las dependencias a propósito: si no,
+  // escribiría en el disco una vez por segundo. Se guarda con cada respuesta,
+  // así que al retomar se pierden como mucho los segundos de la pregunta en
+  // curso.
+  useEffect(() => {
+    if (state !== "running" || pool.length === 0) return;
+    const poolIds = pool.map((q) => q.id);
+    const mismos = poolOriginal.length === pool.length && poolOriginal.every((q, i) => q.id === poolIds[i]);
+    guardarTirada(user.name, {
+      guardadoEn: Date.now(),
+      poolIds,
+      poolOriginalIds: mismos ? null : poolOriginal.map((q) => q.id),
+      idx, ronda, seconds, relampago, rachaViva, recordPrevio,
+      selected, revealed,
+      primerIntento,
+      answers: answers.map((a) => ({ qId: a.qId, selected: a.selected, correct: a.correct })),
+      resultados: Object.values(resultados).map((a) => ({ qId: a.qId, selected: a.selected, correct: a.correct })),
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, idx, ronda, answers, resultados, selected, revealed, rachaViva, pool, poolOriginal]);
+
+  // Al terminar ya no hay nada que retomar.
+  useEffect(() => {
+    if (state === "done") { borrarTirada(user.name); setTiradaGuardada(null); }
+  }, [state, user.name]);
+
   const start = () => {
     if (filtradas.length === 0) return;
     const cantidad = Math.max(1, Math.min(numPreguntas || 1, filtradas.length));
@@ -1472,6 +1576,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
     setIdx(0); setAnswers([]); setSelected(null); setRevealed(false); setSeconds(0);
     setRonda(1); setResultados({}); setPrimerIntento(null); setPreguntaAbierta(null);
     setRelampago(false); setRachaViva(0);
+    setTiradaGuardada(null);
     setState("running");
   };
 
@@ -1484,6 +1589,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
     setRonda(1); setResultados({}); setPrimerIntento(null); setPreguntaAbierta(null);
     setRelampago(true); setRachaViva(0);
     setRecordPrevio((miRacha && miRacha.racha_record) || 0);
+    setTiradaGuardada(null);
     setState("running");
   };
 
@@ -1575,6 +1681,26 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
     return (
       <div>
         <SectionTitle title="Autoevaluaciones" subtitle="Elige de dónde salen las preguntas y cuántas quieres." />
+        {tiradaLista && (
+          <Card style={{ marginBottom: 16, border: `1.5px solid ${ACENTO}` }}>
+            <p style={{ margin: 0, fontSize: 15, color: TINTA, fontWeight: 600 }}>
+              Tienes una autoevaluación a medias
+            </p>
+            <p style={{ margin: "6px 0 0", fontSize: 13, color: TINTA_SUAVE }}>
+              {tiradaLista.relampago
+                ? `Modo relámpago · ${tiradaLista.answers.length} respondidas`
+                : `Pregunta ${tiradaLista.idx + 1} de ${tiradaLista.pool.length}`}
+            </p>
+            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+              <button type="button" onClick={continuarTirada} style={{ ...styles.btnPrimary, flex: 1, justifyContent: "center", margin: 0 }}>
+                Continuar
+              </button>
+              <button type="button" onClick={descartarTirada} style={{ ...styles.btnSecondary, justifyContent: "center", margin: 0 }}>
+                Descartar
+              </button>
+            </div>
+          </Card>
+        )}
         <Card>
           <FieldLabel>Qué preguntas</FieldLabel>
           <div style={styles.tabsOrigen}>
