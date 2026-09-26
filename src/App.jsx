@@ -9,7 +9,6 @@ import {
 import { supabase } from "./supabaseClient";
 import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
 import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, sinFila, filasPendientes, CONFLICTO } from "./colaPendientes";
-import { TEMARIO } from "./temario";
 
 const ADMIN_NAME = "pabloadmin";
 const META_DIARIA_RACHA = 10;
@@ -214,7 +213,6 @@ export default function AcademiaPIR() {
   const [user, setUser] = useState(null);
   const [section, setSection] = useState("simulacros");
   const [questions, setQuestions] = useState([]);
-  const [ranking, setRanking] = useState([]);
   const [rachas, setRachas] = useState([]);
   const [fallos, setFallos] = useState([]);
   const [preguntasProgreso, setPreguntasProgreso] = useState([]);
@@ -244,15 +242,12 @@ export default function AcademiaPIR() {
     // la anterior, y con datos móviles eso son cuatro idas y vueltas
     // encadenadas antes de poder pintar nada.
     const cargarDatosApp = async () => {
-      const [qData, rRes, rachasRes, flashcardsRes] = await Promise.all([
+      const [qData, rachasRes, flashcardsRes] = await Promise.all([
         obtenerPreguntas(),
-        supabase.from("ranking").select("*").order("pct", { ascending: false }).limit(100),
         supabase.from("rachas").select("*"),
         supabase.from("flashcards").select("*"),
       ]);
-      if (rRes.error) throw rRes.error;
       setQuestions(qData || []);
-      setRanking(rRes.data || []);
       setRachas(rachasRes.data || []);
       setFlashcards(flashcardsRes.data || []);
     };
@@ -275,7 +270,7 @@ export default function AcademiaPIR() {
     })();
 
     // Si la carga inicial ocurrió sin sesión (primer acceso en un navegador
-    // nuevo), preguntas/ranking/rachas/flashcards se piden como "anon" y
+    // nuevo), preguntas/rachas/flashcards se piden como "anon" y
     // vuelven vacíos en cuanto RLS exige autenticación. En cuanto el login o
     // el registro concede una sesión, se recargan ya autenticados.
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -511,19 +506,6 @@ export default function AcademiaPIR() {
     const { error } = await supabase.from("preguntas").delete().eq("id", id);
     if (!error) { setQuestions((prev) => prev.filter((p) => p.id !== id)); borrarPreguntasCache(); }
     return !error;
-  };
-
-  const submitScore = async (entry) => {
-    const { data, error } = await supabase
-      .from("ranking")
-      .insert([{
-        name: entry.name, score: entry.score, total: entry.total,
-        pct: entry.pct, seconds: entry.seconds
-      }])
-      .select();
-    if (!error && data && data[0]) {
-      setRanking((prev) => [...prev, data[0]].sort((a, b) => b.pct - a.pct).slice(0, 100));
-    }
   };
 
   const registrarAcierto = async (correcto) => {
@@ -903,7 +885,6 @@ export default function AcademiaPIR() {
             <Simulacros
               questions={questions}
               user={user}
-              onFinish={submitScore}
               onStreakAnswer={registrarAcierto}
               onProgresoDiario={registrarProgresoDiario}
               onFallo={registrarFallo}
@@ -1491,7 +1472,7 @@ function Nav({ section, setSection, alerta }) {
   );
 }
 
-function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiario, onFallo, onRespuestaPregunta, favoritos, onToggleFavorito, miRacha, preguntasProgreso, fallos }) {
+function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo, onRespuestaPregunta, favoritos, onToggleFavorito, miRacha, preguntasProgreso, fallos }) {
   const [incluirInventadas, setIncluirInventadas] = useState(false);
   const base = useMemo(() => (incluirInventadas ? questions : questions.filter((q) => !q.inventada)), [questions, incluirInventadas]);
   const cursos = useMemo(() => {
@@ -1556,7 +1537,6 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
   const [selected, setSelected] = useState(null);
   const [revealed, setRevealed] = useState(false);
   const [seconds, setSeconds] = useState(0);
-  const [submitting, setSubmitting] = useState(false);
   const [relampago, setRelampago] = useState(false);
   const [rachaViva, setRachaViva] = useState(0);
   // El récord se congela al empezar la tirada: `miRacha.racha_record` se
@@ -1690,7 +1670,6 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
   };
 
   const next = async () => {
-    if (submitting) return;
     const current = pool[idx];
     const correct = selected === current.correcta;
     const nextAnswers = [...answers, { qId: current.id, pregunta: current, selected, correct }];
@@ -1705,13 +1684,7 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
         setPoolOriginal(nextAnswers.map((a) => a.pregunta));
         const correctCount = nextAnswers.filter((a) => a.correct).length;
         const total = nextAnswers.length;
-        const pct = total > 0 ? Math.round((correctCount / total) * 100) : 0;
         setPrimerIntento({ correctCount, total, completo });
-        setSubmitting(true);
-        try {
-          await onFinish({ name: user.name, score: correctCount, total, pct, seconds, date: new Date().toISOString() });
-        } catch {}
-        setSubmitting(false);
         setState("done");
         return;
       }
@@ -2110,123 +2083,6 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos,
         </button>
       )}
     </div>
-  );
-}
-
-function GenerarPreguntasIA({ user, onGuardar }) {
-  const [curso, setCurso] = useState("");
-  const [tema, setTema] = useState("");
-  const [instruccion, setInstruccion] = useState("");
-  const [cantidad, setCantidad] = useState(3);
-  const [cargando, setCargando] = useState(false);
-  const [error, setError] = useState(null);
-  const [generadas, setGeneradas] = useState([]);
-  const [guardadas, setGuardadas] = useState({});
-  const [restantesHoy, setRestantesHoy] = useState(null);
-
-  const temasDelCurso = TEMARIO.find((c) => c.curso === curso)?.temas || [];
-
-  const generar = async () => {
-    const texto = instruccion.trim();
-    if ((!texto && !tema) || cargando) return;
-    setCargando(true);
-    setError(null);
-    setGeneradas([]);
-    setGuardadas({});
-    try {
-      const resp = await fetch("/api/generar-preguntas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nombre: user.name, instruccion: texto, cantidad, curso, tema }),
-      });
-      const datos = await resp.json();
-      if (!resp.ok) throw new Error(datos.error || "No se pudieron generar las preguntas.");
-      setGeneradas(datos.preguntas.map((p) => ({ ...p, inventada: true })));
-      if (typeof datos.restantesHoy === "number") setRestantesHoy(datos.restantesHoy);
-    } catch (err) {
-      setError(err.message || "No se pudieron generar las preguntas.");
-    } finally {
-      setCargando(false);
-    }
-  };
-
-  const guardar = async (i) => {
-    if (!onGuardar) return;
-    const ok = await onGuardar(generadas[i]);
-    if (ok) setGuardadas((prev) => ({ ...prev, [i]: true }));
-  };
-
-  const guardarTodas = async () => {
-    for (let i = 0; i < generadas.length; i++) {
-      if (!guardadas[i]) await guardar(i);
-    }
-  };
-
-  return (
-    <Card style={{ marginBottom: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-        <Sparkles size={16} color="#8A5A9E" />
-        <span style={{ fontSize: 15, color: "#1E1C18", fontFamily: "var(--font-display)" }}>Pídele preguntas a la IA</span>
-      </div>
-      <p style={{ fontSize: 12.5, color: "#9B9689", marginTop: 0, marginBottom: 12 }}>
-        {restantesHoy === null ? `Hasta 10 preguntas personalizadas al día.` : `Te quedan ${restantesHoy} pregunta${restantesHoy === 1 ? "" : "s"} personalizada${restantesHoy === 1 ? "" : "s"} hoy.`}
-      </p>
-      <FieldLabel>Curso (opcional, para basarse en el temario real)</FieldLabel>
-      <select value={curso} onChange={(e) => { setCurso(e.target.value); setTema(""); }} style={styles.select}>
-        <option value="">Sin curso concreto</option>
-        {TEMARIO.map((c) => (<option key={c.curso} value={c.curso}>{c.curso}</option>))}
-      </select>
-      {curso && (
-        <>
-          <FieldLabel style={{ marginTop: 12 }}>Tema</FieldLabel>
-          <select value={tema} onChange={(e) => setTema(e.target.value)} style={styles.select}>
-            <option value="">Elige un tema</option>
-            {temasDelCurso.map((t) => (<option key={t.nombre} value={t.nombre}>{t.nombre}</option>))}
-          </select>
-        </>
-      )}
-      <FieldLabel style={{ marginTop: 12 }}>{tema ? "Algo más concreto (opcional)" : "¿Sobre qué quieres las preguntas?"}</FieldLabel>
-      <textarea
-        value={instruccion}
-        onChange={(e) => setInstruccion(e.target.value)}
-        placeholder={tema ? 'Ej: "céntrate en el diagnóstico diferencial"' : 'Ej: "3 preguntas sobre autores de psicología clínica"'}
-        style={{ ...styles.input, minHeight: 60 }}
-      />
-      <FieldLabel style={{ marginTop: 12 }}>Cuántas (máx. 10)</FieldLabel>
-      <input
-        type="number"
-        min={1}
-        max={10}
-        value={cantidad}
-        onChange={(e) => {
-          const v = parseInt(e.target.value, 10);
-          setCantidad(Number.isNaN(v) ? "" : v);
-        }}
-        onBlur={() => setCantidad((v) => Math.max(1, Math.min(10, v || 1)))}
-        style={{ ...styles.input, maxWidth: 100 }}
-      />
-      <button type="button" onClick={generar} disabled={cargando} style={{ ...styles.btnPrimary, width: "100%", marginTop: 14, opacity: cargando ? 0.6 : 1 }}>
-        {cargando ? <Loader2 className="animate-spin" size={15} /> : "Generar"}
-      </button>
-      {error && <p style={{ color: "#A6362B", fontSize: 13, marginTop: 10 }}>{error}</p>}
-
-      {generadas.length > 0 && (
-        <div style={{ marginTop: 18 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <FieldLabel style={{ margin: 0 }}>{onGuardar ? "Responde y guarda las que quieras" : "Responde para practicar"}</FieldLabel>
-            {onGuardar && <button type="button" onClick={guardarTodas} style={styles.btnSecondary}>Guardar todas</button>}
-          </div>
-          {generadas.map((p, i) => (
-            <PreguntaGeneradaCard
-              key={i}
-              p={p}
-              guardada={!!guardadas[i]}
-              onGuardar={onGuardar ? () => guardar(i) : null}
-            />
-          ))}
-        </div>
-      )}
-    </Card>
   );
 }
 
