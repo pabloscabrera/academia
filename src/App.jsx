@@ -331,27 +331,33 @@ export default function AcademiaPIR() {
     return { error: null };
   };
 
-  const handleSignup = async (username, password) => {
+  // El alta no la hace el navegador: la pide a api/registro.js, que es quien
+  // comprueba el código de invitación y crea la cuenta con la service_role
+  // key. Validar el código aquí no serviría de nada, porque este fichero se
+  // descarga entero en el navegador de quien entre.
+  const handleSignup = async (username, password, codigo) => {
     const errorUsuario = validarUsuario(username);
     if (errorUsuario) return { error: errorUsuario };
     if (!password || password.length < 6) return { error: "La contraseña debe tener al menos 6 caracteres." };
+    if (!codigo || !codigo.trim()) return { error: "Escribe el código de invitación." };
     const limpio = username.trim();
-    const { error } = await supabase.auth.signUp({
-      email: emailDeUsuario(limpio),
-      password,
-      options: { data: { username: limpio } },
-    });
-    if (error) {
-      if (/registered|exists/i.test(error.message || "")) return { error: "Ese nombre de usuario ya está en uso. Elige otro." };
-      // Con el alta pública desactivada en Supabase (Authentication →
-      // Sign In / Providers → "Allow new users to sign up"), signUp
-      // responde "Signups not allowed for this instance". Sin esto el
-      // usuario vería ese texto en inglés y no sabría qué hacer.
-      if (/signups? not allowed|disabled/i.test(error.message || "")) {
-        return { error: "El registro está cerrado. Pídele a Pablo que te cree la cuenta." };
-      }
-      return { error: error.message || "No se pudo crear la cuenta." };
+    let respuesta;
+    try {
+      respuesta = await fetch("/api/registro", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usuario: limpio, password, codigo: codigo.trim() }),
+      });
+    } catch {
+      return { error: "No se pudo conectar con el servidor. Inténtalo de nuevo." };
     }
+    let datos = null;
+    try { datos = await respuesta.json(); } catch {}
+    if (!respuesta.ok) return { error: (datos && datos.error) || "No se pudo crear la cuenta." };
+    // La cuenta ya existe pero sin sesión (la creó el servidor), así que
+    // entramos directamente. Si por lo que sea fallara, AuthScreen enseña el
+    // "Cuenta creada, ya puedes entrar" de siempre.
+    await supabase.auth.signInWithPassword({ email: emailDeUsuario(limpio), password });
     return { error: null };
   };
 
@@ -804,8 +810,21 @@ export default function AcademiaPIR() {
   );
 }
 
+// El enlace de invitación puede llevar el código puesto (…/?c=CODIGO), para
+// no tener que dictarlo aparte. Solo rellena el campo: quien valida sigue
+// siendo el servidor.
+function codigoDelEnlace() {
+  try {
+    const p = new URLSearchParams(window.location.search);
+    return (p.get("c") || p.get("codigo") || "").trim();
+  } catch {
+    return "";
+  }
+}
+
 function AuthScreen({ onLogin, onSignup }) {
-  const [modo, setModo] = useState("login");
+  const [codigo, setCodigo] = useState(codigoDelEnlace);
+  const [modo, setModo] = useState(() => (codigoDelEnlace() ? "signup" : "login"));
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
@@ -823,7 +842,7 @@ function AuthScreen({ onLogin, onSignup }) {
       return;
     }
     setCargando(true);
-    const resultado = modo === "login" ? await onLogin(username, password) : await onSignup(username, password);
+    const resultado = modo === "login" ? await onLogin(username, password) : await onSignup(username, password, codigo);
     setCargando(false);
     if (resultado.error) {
       setError(resultado.error);
@@ -897,15 +916,32 @@ function AuthScreen({ onLogin, onSignup }) {
               style={{ ...inputPortada, marginBottom: modo === "signup" ? 14 : 0 }}
             />
             {modo === "signup" && (
-              <input
-                value={password2}
-                onChange={(e) => setPassword2(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && submit()}
-                placeholder="Repite la contraseña"
-                type="password"
-                className="portada-input"
-                style={inputPortada}
-              />
+              <>
+                <input
+                  value={password2}
+                  onChange={(e) => setPassword2(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && submit()}
+                  placeholder="Repite la contraseña"
+                  type="password"
+                  className="portada-input"
+                  style={{ ...inputPortada, marginBottom: 14 }}
+                />
+                <input
+                  value={codigo}
+                  onChange={(e) => setCodigo(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && submit()}
+                  placeholder="Código de invitación"
+                  className="portada-input"
+                  style={inputPortada}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                />
+                <p style={{ fontSize: 13, color: PORTADA_PLACEHOLDER, margin: "10px 2px 0", lineHeight: 1.45 }}>
+                  {codigoDelEnlace()
+                    ? "Código cogido del enlace de invitación."
+                    : "Sin código no se puede crear la cuenta. Pídeselo a Pablo."}
+                </p>
+              </>
             )}
             {error && <p style={{ color: ACENTO, fontSize: 14, marginTop: 12 }}>{error}</p>}
             <div style={{ position: "relative", borderRadius: 14, padding: 1.5, overflow: "hidden", marginTop: 18, background: "#4a3a1c" }}>
