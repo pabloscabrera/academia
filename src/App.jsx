@@ -751,6 +751,7 @@ export default function AcademiaPIR() {
               miRacha={rachas.find((r) => r.name === user.name)}
               questions={questions}
               fallos={fallos}
+              preguntasProgreso={preguntasProgreso}
               favoritos={favoritos}
               onToggleFavorito={toggleFavorito}
               onGirarRuleta={girarRuleta}
@@ -2709,7 +2710,147 @@ function RuletaDiaria({ questions, miRacha, onGirarRuleta }) {
   );
 }
 
-function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorito, onGirarRuleta }) {
+// "Dónde fallas": el % de acierto por examen y por tema, para saber qué
+// repasar sin ir a ciegas. No hace falta nada nuevo en Supabase — sale de
+// cruzar lo que ya se guarda: `preguntas_progreso.veces` (intentos por
+// pregunta) menos `fallos.veces` (fallos por pregunta) = aciertos.
+//
+// Ojo con lo que NO puede saber: antes de existir preguntas_progreso solo
+// se guardaban los fallos, así que las que acertaste a la primera en aquella
+// época no constan como hechas (el aviso del pie lo dice). Y las preguntas
+// del backfill (fallos antiguos) arrancan con intentos = fallos, o sea 0% de
+// acierto, que es justo lo que consta de ellas.
+const TEMA_PLACEHOLDER = /^pregunta\s*\d+$/i;
+const MAX_FILAS_TEMA = 15;
+
+function agruparAciertos(preguntas, clave, progresoPorId, fallosPorId) {
+  const grupos = new Map();
+  preguntas.forEach((q) => {
+    const nombre = clave(q);
+    if (!nombre) return;
+    if (!grupos.has(nombre)) grupos.set(nombre, { nombre, total: 0, hechas: 0, intentos: 0, aciertos: 0 });
+    const g = grupos.get(nombre);
+    g.total += 1;
+    const intentos = (progresoPorId[q.id] && progresoPorId[q.id].veces) || 0;
+    if (intentos > 0) {
+      const fallidas = (fallosPorId[q.id] && fallosPorId[q.id].veces) || 0;
+      g.hechas += 1;
+      g.intentos += intentos;
+      g.aciertos += Math.max(0, intentos - fallidas);
+    }
+  });
+  return [...grupos.values()].map((g) => ({ ...g, pct: g.intentos > 0 ? Math.round((g.aciertos / g.intentos) * 100) : null }));
+}
+
+function FilaAcierto({ g }) {
+  // La barra ya dice cuánto; el color solo se usa para señalar lo flojo (no
+  // para repintar un degradado sobre algo que la longitud ya cuenta), y el
+  // número va siempre en tinta, nunca en el color de la barra.
+  const flojo = g.pct < 60;
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 5 }}>
+        <span style={{ fontSize: 14, color: TINTA, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {g.nombre}
+        </span>
+        <span style={{ fontSize: 13.5, color: TINTA, fontWeight: 700, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>
+          {g.pct}%
+        </span>
+      </div>
+      <div
+        style={{ height: 8, borderRadius: 4, background: "#F2EFE7", overflow: "hidden" }}
+        title={`${g.aciertos} aciertos de ${g.intentos} respuestas`}
+      >
+        <div style={{ width: `${Math.max(g.pct, 2)}%`, height: "100%", borderRadius: 4, background: flojo ? ACENTO : TINTA_SUAVE }} />
+      </div>
+      <div style={{ fontSize: 11.5, color: TINTA_TENUE, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
+        {g.aciertos} de {g.intentos} respuestas · {g.hechas}/{g.total} preguntas empezadas
+      </div>
+    </div>
+  );
+}
+
+function DondeFallas({ questions, fallos, preguntasProgreso }) {
+  const [modo, setModo] = useState("curso"); // curso | tema
+
+  const { filas, resumen, sinEmpezar } = useMemo(() => {
+    const progresoPorId = {};
+    (preguntasProgreso || []).forEach((p) => { progresoPorId[p.pregunta_id] = p; });
+    const fallosPorId = {};
+    (fallos || []).forEach((f) => { fallosPorId[f.pregunta_id] = f; });
+    const reales = questions.filter((q) => !q.inventada);
+
+    const porCurso = agruparAciertos(reales, (q) => q.curso, progresoPorId, fallosPorId);
+    const totales = porCurso.reduce(
+      (acc, g) => ({ total: acc.total + g.total, hechas: acc.hechas + g.hechas, intentos: acc.intentos + g.intentos, aciertos: acc.aciertos + g.aciertos }),
+      { total: 0, hechas: 0, intentos: 0, aciertos: 0 }
+    );
+
+    const grupos = modo === "curso"
+      ? porCurso
+      : agruparAciertos(reales, (q) => (q.tema && !TEMA_PLACEHOLDER.test(q.tema.trim()) ? q.tema.trim() : null), progresoPorId, fallosPorId);
+
+    // Solo tiene sentido ordenar "de peor a mejor" lo que has tocado; lo que
+    // no has empezado no es un mal resultado, es que no hay dato.
+    const conDatos = grupos.filter((g) => g.pct !== null).sort((a, b) => a.pct - b.pct || b.intentos - a.intentos);
+
+    return {
+      filas: modo === "tema" ? conDatos.slice(0, MAX_FILAS_TEMA) : conDatos,
+      resumen: { ...totales, pct: totales.intentos > 0 ? Math.round((totales.aciertos / totales.intentos) * 100) : null },
+      sinEmpezar: grupos.length - conDatos.length,
+    };
+  }, [questions, fallos, preguntasProgreso, modo]);
+
+  return (
+    <div>
+      <SectionTitle
+        title="Dónde fallas"
+        subtitle={resumen.pct === null
+          ? "Cuando respondas unas cuantas preguntas, aquí verás en qué bloques flojeas."
+          : `${resumen.pct}% de aciertos · ${resumen.hechas} de ${resumen.total} preguntas empezadas`}
+      />
+      <Card>
+        <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+          <button type="button" onClick={() => setModo("curso")} style={{ ...styles.tabOrigenBtn, ...(modo === "curso" ? styles.tabOrigenActivo : {}) }}>
+            Por examen
+          </button>
+          <button type="button" onClick={() => setModo("tema")} style={{ ...styles.tabOrigenBtn, ...(modo === "tema" ? styles.tabOrigenActivo : {}) }}>
+            Por tema
+          </button>
+        </div>
+        {filas.length === 0 ? (
+          <p style={{ fontSize: 13.5, color: TINTA_SUAVE, margin: 0, lineHeight: 1.5 }}>
+            {modo === "tema"
+              ? "Todavía no hay datos por tema. Los exámenes oficiales que transcribimos no traían el tema de cada pregunta, así que aquí solo salen las de los simulacros."
+              : "Todavía no has respondido ninguna pregunta."}
+          </p>
+        ) : (
+          <>
+            <p style={{ fontSize: 12.5, color: TINTA_SUAVE, margin: "0 0 14px" }}>
+              De peor a mejor. Empieza por arriba.
+            </p>
+            {filas.map((g) => <FilaAcierto key={g.nombre} g={g} />)}
+            {modo === "tema" && sinEmpezar > 0 && (
+              <p style={{ fontSize: 11.5, color: TINTA_TENUE, margin: "10px 0 0" }}>
+                Se muestran los {filas.length} peores. Te quedan {sinEmpezar} temas sin empezar.
+              </p>
+            )}
+            {modo === "curso" && sinEmpezar > 0 && (
+              <p style={{ fontSize: 11.5, color: TINTA_TENUE, margin: "10px 0 0" }}>
+                {sinEmpezar} examen{sinEmpezar === 1 ? "" : "es"} sin empezar todavía.
+              </p>
+            )}
+          </>
+        )}
+      </Card>
+      <p style={{ fontSize: 11.5, color: TINTA_TENUE, margin: "8px 2px 0", lineHeight: 1.5 }}>
+        Cuenta desde que existe el contador por pregunta. Lo que acertaste antes de eso no dejó rastro y figura como no empezado hasta que lo repitas.
+      </p>
+    </div>
+  );
+}
+
+function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorito, onGirarRuleta, preguntasProgreso }) {
   const [verTodosFallos, setVerTodosFallos] = useState(false);
   const [abiertaId, setAbiertaId] = useState(null);
 
@@ -2739,6 +2880,10 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
   return (
     <div>
       <SectionTitle title="Mi perfil" subtitle={user.name} />
+
+      <div style={{ marginBottom: 32 }}>
+        <DondeFallas questions={questions} fallos={fallos} preguntasProgreso={preguntasProgreso} />
+      </div>
 
       <div style={{ marginTop: 8 }}>
         <SectionTitle
