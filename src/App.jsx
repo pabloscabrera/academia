@@ -236,20 +236,21 @@ export default function AcademiaPIR() {
   useEffect(() => { savePersonal("pir-ajustes", ajustes); }, [ajustes]);
 
   useEffect(() => {
+    // Las cuatro van a la vez. En fila india cada una esperaba a que volviera
+    // la anterior, y con datos móviles eso son cuatro idas y vueltas
+    // encadenadas antes de poder pintar nada.
     const cargarDatosApp = async () => {
-      const qData = await obtenerPreguntas();
-      const { data: rData, error: rErr } = await supabase
-        .from("ranking")
-        .select("*")
-        .order("pct", { ascending: false })
-        .limit(100);
-      if (rErr) throw rErr;
-      const { data: rachasData } = await supabase.from("rachas").select("*");
-      const { data: flashcardsData } = await supabase.from("flashcards").select("*");
+      const [qData, rRes, rachasRes, flashcardsRes] = await Promise.all([
+        obtenerPreguntas(),
+        supabase.from("ranking").select("*").order("pct", { ascending: false }).limit(100),
+        supabase.from("rachas").select("*"),
+        supabase.from("flashcards").select("*"),
+      ]);
+      if (rRes.error) throw rRes.error;
       setQuestions(qData || []);
-      setRanking(rData || []);
-      setRachas(rachasData || []);
-      setFlashcards(flashcardsData || []);
+      setRanking(rRes.data || []);
+      setRachas(rachasRes.data || []);
+      setFlashcards(flashcardsRes.data || []);
     };
 
     let sesionAlCargar = false;
@@ -341,16 +342,19 @@ export default function AcademiaPIR() {
     if (!user) return;
     let activo = true;
     (async () => {
-      const { data: fData } = await supabase.from("fallos").select("*").eq("name", user.name);
-      const { data: favData } = await supabase.from("favoritos").select("*").eq("name", user.name);
-      const { data: progresoData } = await supabase.from("flashcards_progreso").select("*").eq("name", user.name);
-      const { data: preguntasProgresoData, error: preguntasProgresoError } = await supabase.from("preguntas_progreso").select("*").eq("name", user.name);
-      if (preguntasProgresoError) console.error("No se pudo cargar preguntas_progreso:", preguntasProgresoError.message);
+      // Igual que arriba: las cuatro son independientes entre sí.
+      const [fRes, favRes, progresoRes, preguntasProgresoRes] = await Promise.all([
+        supabase.from("fallos").select("*").eq("name", user.name),
+        supabase.from("favoritos").select("*").eq("name", user.name),
+        supabase.from("flashcards_progreso").select("*").eq("name", user.name),
+        supabase.from("preguntas_progreso").select("*").eq("name", user.name),
+      ]);
+      if (preguntasProgresoRes.error) console.error("No se pudo cargar preguntas_progreso:", preguntasProgresoRes.error.message);
       if (activo) {
-        setFallos(fData || []);
-        setFavoritos(favData || []);
-        setFlashcardsProgreso(progresoData || []);
-        setPreguntasProgreso(preguntasProgresoData || []);
+        setFallos(fRes.data || []);
+        setFavoritos(favRes.data || []);
+        setFlashcardsProgreso(progresoRes.data || []);
+        setPreguntasProgreso(preguntasProgresoRes.data || []);
       }
     })();
     return () => { activo = false; };
@@ -1924,6 +1928,8 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
   );
 }
 
+const TANDA_BANCO = 40;
+
 function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos, onToggleFavorito, preguntasProgreso }) {
   const [origen, setOrigen] = useState("reales"); // "reales" | "pendientes"
   const [showForm, setShowForm] = useState(false);
@@ -1947,8 +1953,13 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos,
   );
 
   const porOrigen = origen === "pendientes" ? pendientes : preguntasReales;
+  // Pintar las ~2100 tarjetas de golpe congelaba el móvil cada vez que se
+  // abría el banco. Se pinta a tandas; el buscador sigue mirando la lista
+  // entera, así que no se esconde nada, solo se dibuja menos.
+  const [visibles, setVisibles] = useState(TANDA_BANCO);
   const cursos = useMemo(() => [...new Set(porOrigen.map((q) => q.curso))], [porOrigen]);
   const termino = busqueda.trim().toLowerCase();
+  useEffect(() => { setVisibles(TANDA_BANCO); }, [origen, termino]);
   const filtered = termino
     ? porOrigen.filter((q) =>
         q.pregunta.toLowerCase().includes(termino) ||
@@ -2012,9 +2023,18 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos,
       {termino && filtered.length === 0 && (
         <p style={{ fontSize: 13.5, color: "#9B9689", padding: "8px 0" }}>Ninguna pregunta contiene "{busqueda.trim()}".</p>
       )}
-      {filtered.map((q) => (
+      {filtered.slice(0, visibles).map((q) => (
         <PreguntaCard key={q.id} q={q} isAdmin={user.isAdmin} onUpdate={onUpdate} onDelete={onDelete} favoritos={favoritos} onToggleFavorito={onToggleFavorito} progreso={progresoPorId[q.id]} />
       ))}
+      {filtered.length > visibles && (
+        <button
+          type="button"
+          onClick={() => setVisibles((v) => v + TANDA_BANCO)}
+          style={{ ...styles.btnSecondary, width: "100%", justifyContent: "center", marginTop: 12 }}
+        >
+          Ver más ({filtered.length - visibles} restantes)
+        </button>
+      )}
     </div>
   );
 }
