@@ -54,8 +54,13 @@ export default async function handler(req, res) {
     .split(",")
     .map((c) => c.trim())
     .filter(Boolean);
-  if (!serviceKey || codigosValidos.length === 0) {
-    res.status(500).json({ error: "El registro no está configurado en el servidor. Avisa a Pablo." });
+  // Decimos cuál de las dos falta: con un mensaje genérico no hay forma de
+  // saber si el problema es la clave, el código o que faltó el redeploy.
+  const faltan = [];
+  if (!serviceKey) faltan.push("SUPABASE_SERVICE_ROLE_KEY");
+  if (codigosValidos.length === 0) faltan.push("CODIGO_INVITACION");
+  if (faltan.length > 0) {
+    res.status(500).json({ error: `Falta configurar ${faltan.join(" y ")} en el servidor. Avisa a Pablo.` });
     return;
   }
 
