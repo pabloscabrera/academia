@@ -815,6 +815,8 @@ export default function AcademiaPIR() {
               favoritos={favoritos}
               onToggleFavorito={toggleFavorito}
               miRacha={rachas.find((r) => r.name === user.name)}
+              preguntasProgreso={preguntasProgreso}
+              fallos={fallos}
             />
           )}
           {section === "duelo" && (
@@ -1380,7 +1382,7 @@ function Nav({ section, setSection, alerta }) {
   );
 }
 
-function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiario, onFallo, onRespuestaPregunta, favoritos, onToggleFavorito, miRacha }) {
+function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiario, onFallo, onRespuestaPregunta, favoritos, onToggleFavorito, miRacha, preguntasProgreso, fallos }) {
   const [incluirInventadas, setIncluirInventadas] = useState(false);
   const base = useMemo(() => (incluirInventadas ? questions : questions.filter((q) => !q.inventada)), [questions, incluirInventadas]);
   const cursos = useMemo(() => {
@@ -1389,7 +1391,49 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
     return ["Todos", ...examenes];
   }, [base]);
   const [curso, setCurso] = useState("Todos");
-  const disponibles = useMemo(() => (curso === "Todos" ? base.length : base.filter((q) => q.curso === curso).length), [curso, base]);
+
+  // De dónde salen las preguntas. Hasta ahora solo se podía tirar al azar de
+  // un examen, así que saber por "Dónde fallas" que vas flojo en un tema no
+  // servía para practicarlo.
+  const [origen, setOrigen] = useState("todas");
+  const [tema, setTema] = useState("Todos");
+
+  const acertadaPorId = useMemo(() => {
+    const m = {};
+    (preguntasProgreso || []).forEach((p) => { if (p.acertada) m[p.pregunta_id] = true; });
+    return m;
+  }, [preguntasProgreso]);
+  const falladaPorId = useMemo(() => {
+    const m = {};
+    (fallos || []).forEach((f) => { if ((f.veces || 0) > 0) m[f.pregunta_id] = true; });
+    return m;
+  }, [fallos]);
+
+  const temas = useMemo(() => {
+    const nombres = [...new Set(
+      base.map((q) => (q.tema || "").trim())
+          .filter((t) => t && !TEMA_PLACEHOLDER.test(t))
+    )].sort((a, b) => a.localeCompare(b, "es"));
+    return ["Todos", ...nombres];
+  }, [base]);
+
+  // Un tema puede no existir en el examen elegido (y al revés): en cuanto la
+  // combinación se queda sin preguntas, el contador lo canta y el botón se
+  // desactiva, en vez de empezar una tirada vacía.
+  const filtradas = useMemo(() => base.filter((q) => {
+    if (curso !== "Todos" && q.curso !== curso) return false;
+    if (tema !== "Todos" && (q.tema || "").trim() !== tema) return false;
+    if (origen === "sinacertar" && acertadaPorId[q.id]) return false;
+    if (origen === "fallos" && !falladaPorId[q.id]) return false;
+    return true;
+  }), [base, curso, tema, origen, acertadaPorId, falladaPorId]);
+  const disponibles = filtradas.length;
+
+  // Si al cambiar de filtro quedan menos preguntas de las pedidas, se ajusta
+  // sola en vez de esperar a que el usuario vuelva al campo.
+  useEffect(() => {
+    setNumPreguntas((v) => (typeof v === "number" && v > disponibles ? Math.max(1, disponibles) : v));
+  }, [disponibles]);
   const [numPreguntas, setNumPreguntas] = useState(10);
   const [state, setState] = useState("config");
   const [pool, setPool] = useState([]);
@@ -1421,9 +1465,9 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
   }, [state]);
 
   const start = () => {
-    const filtered = curso === "Todos" ? base : base.filter((q) => q.curso === curso);
-    const cantidad = Math.max(1, Math.min(numPreguntas || 1, filtered.length));
-    const shuffled = [...filtered].sort(() => Math.random() - 0.5).slice(0, cantidad);
+    if (filtradas.length === 0) return;
+    const cantidad = Math.max(1, Math.min(numPreguntas || 1, filtradas.length));
+    const shuffled = [...filtradas].sort(() => Math.random() - 0.5).slice(0, cantidad);
     setPool(shuffled); setPoolOriginal(shuffled);
     setIdx(0); setAnswers([]); setSelected(null); setRevealed(false); setSeconds(0);
     setRonda(1); setResultados({}); setPrimerIntento(null); setPreguntaAbierta(null);
@@ -1530,11 +1574,39 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
   if (state === "config") {
     return (
       <div>
-        <SectionTitle title="Autoevaluaciones" subtitle="Elige examen y cuántas preguntas quieres." />
+        <SectionTitle title="Autoevaluaciones" subtitle="Elige de dónde salen las preguntas y cuántas quieres." />
         <Card>
-          <FieldLabel>Exámenes</FieldLabel>
+          <FieldLabel>Qué preguntas</FieldLabel>
+          <div style={styles.tabsOrigen}>
+            {[
+              { id: "todas", texto: "Todas" },
+              { id: "sinacertar", texto: "Sin acertar" },
+              { id: "fallos", texto: "Falladas" },
+            ].map((o) => (
+              <button
+                key={o.id}
+                type="button"
+                onClick={() => setOrigen(o.id)}
+                style={{ ...styles.tabOrigenBtn, ...(origen === o.id ? styles.tabOrigenActivo : {}) }}
+              >
+                {o.texto}
+              </button>
+            ))}
+          </div>
+          <p style={{ fontSize: 12.5, color: TINTA_TENUE, margin: "0 0 16px", lineHeight: 1.5 }}>
+            {origen === "sinacertar"
+              ? "Las que nunca has llegado a acertar, incluidas las que no has visto todavía."
+              : origen === "fallos"
+              ? "Solo las que has fallado alguna vez, las hayas acertado después o no."
+              : "Todo el banco del examen y el tema que elijas debajo."}
+          </p>
+          <FieldLabel>Examen</FieldLabel>
           <select value={curso} onChange={(e) => setCurso(e.target.value)} style={styles.select}>
             {cursos.map((c) => (<option key={c} value={c}>{c}</option>))}
+          </select>
+          <FieldLabel style={{ marginTop: 16 }}>Tema</FieldLabel>
+          <select value={tema} onChange={(e) => setTema(e.target.value)} style={styles.select}>
+            {temas.map((t) => (<option key={t} value={t}>{t}</option>))}
           </select>
           <FieldLabel style={{ marginTop: 16 }}>Cantidad de preguntas (disponibles: {disponibles})</FieldLabel>
           <input
@@ -1553,7 +1625,19 @@ function Simulacros({ questions, user, onFinish, onStreakAnswer, onProgresoDiari
             <input type="checkbox" checked={incluirInventadas} onChange={(e) => setIncluirInventadas(e.target.checked)} />
             Incluir preguntas inventadas por IA
           </label>
-          <button type="button" onClick={start} style={{ ...styles.btnPrimary, width: "100%", marginTop: 22 }}>Empezar autoevaluación</button>
+          {disponibles === 0 && (
+            <p style={{ fontSize: 13, color: ACENTO, margin: "16px 0 0", lineHeight: 1.5 }}>
+              No queda ninguna pregunta con esos filtros. Prueba con otro examen o tema, o vuelve a "Todas".
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={start}
+            disabled={disponibles === 0}
+            style={{ ...styles.btnPrimary, width: "100%", marginTop: 22, opacity: disponibles === 0 ? 0.5 : 1 }}
+          >
+            Empezar autoevaluación
+          </button>
           <button
             type="button"
             onClick={startRelampago}
