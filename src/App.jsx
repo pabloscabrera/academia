@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
+  CloudOff,
   Compass, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
   Plus, Check, X, Loader2, User, LogOut, Flag, Pencil, Trash2,
    Zap, Heart, Swords, Sword, Flame, Sparkles, Star, Award, Target, Settings,
@@ -7,6 +8,7 @@ import {
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
+import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, sinFila, filasPendientes, CONFLICTO } from "./colaPendientes";
 import { TEMARIO } from "./temario";
 
 const ADMIN_NAME = "pabloadmin";
@@ -232,6 +234,8 @@ export default function AcademiaPIR() {
   const [mostrarAjustes, setMostrarAjustes] = useState(false);
   const [insigniaDesbloqueada, setInsigniaDesbloqueada] = useState(null);
   const [enLinea, setEnLinea] = useState(0);
+  // Lo respondido sin cobertura, esperando a que vuelva la red.
+  const [pendientes, setPendientes] = useState(colaVacia);
 
   useEffect(() => { savePersonal("pir-ajustes", ajustes); }, [ajustes]);
 
@@ -341,6 +345,40 @@ export default function AcademiaPIR() {
   useEffect(() => {
     if (!user) return;
     let activo = true;
+
+    // Lo pendiente de subir se superpone a lo que venga del servidor: si se
+    // recargó la app sin red, allí todavía no consta nada de esas respuestas
+    // y la pantalla debe seguir contándolas.
+    const mezclar = (filas, pendientesTabla, campo) => {
+      const pend = Object.values(pendientesTabla || {});
+      if (pend.length === 0) return filas;
+      const claves = new Set(pend.map((f) => f[campo]));
+      return [...filas.filter((f) => !claves.has(f[campo])), ...pend];
+    };
+
+    const sincronizar = async () => {
+      let cola = leerCola(user.name);
+      if (contarCola(cola) === 0) return;
+      for (const { tabla, claveFila, fila } of filasPendientes(cola)) {
+        let subida = true;
+        try {
+          const { data, error } = await supabase.from(tabla).upsert(fila, { onConflict: CONFLICTO[tabla] }).select();
+          if (error) throw error;
+          if (activo && data && data[0]) aplicarFilaServidor(tabla, data[0]);
+        } catch (err) {
+          // Sigue sin red: lo que quede espera al próximo intento.
+          if (esFalloDeRed(err)) { subida = false; }
+          // El servidor la rechaza (permisos, datos): insistir no va a
+          // arreglarlo y dejarla ahí bloquearía la cola para siempre.
+          else console.error("No se pudo subir un pendiente de " + tabla + ":", err);
+        }
+        if (!subida) break;
+        cola = sinFila(cola, tabla, claveFila);
+        escribirCola(user.name, cola);
+      }
+      if (activo) setPendientes(cola);
+    };
+
     (async () => {
       // Igual que arriba: las cuatro son independientes entre sí.
       const [fRes, favRes, progresoRes, preguntasProgresoRes] = await Promise.all([
@@ -350,14 +388,22 @@ export default function AcademiaPIR() {
         supabase.from("preguntas_progreso").select("*").eq("name", user.name),
       ]);
       if (preguntasProgresoRes.error) console.error("No se pudo cargar preguntas_progreso:", preguntasProgresoRes.error.message);
-      if (activo) {
-        setFallos(fRes.data || []);
-        setFavoritos(favRes.data || []);
-        setFlashcardsProgreso(progresoRes.data || []);
-        setPreguntasProgreso(preguntasProgresoRes.data || []);
-      }
+      if (!activo) return;
+      const cola = leerCola(user.name);
+      setPendientes(cola);
+      setFallos(mezclar(fRes.data || [], cola.fallos, "pregunta_id"));
+      setFavoritos(favRes.data || []);
+      setFlashcardsProgreso(mezclar(progresoRes.data || [], cola.flashcards_progreso, "flashcard_id"));
+      setPreguntasProgreso(mezclar(preguntasProgresoRes.data || [], cola.preguntas_progreso, "pregunta_id"));
+      if (cola.rachas) setRachas((prev) => [...prev.filter((r) => r.name !== cola.rachas.name), cola.rachas]);
+      // Se sincroniza aquí y no en su propio efecto para que no compita con
+      // la carga de arriba: subir primero y que luego la carga pisara el
+      // resultado con lo que el servidor tenía antes sería una carrera.
+      await sincronizar();
     })();
-    return () => { activo = false; };
+
+    window.addEventListener("online", sincronizar);
+    return () => { activo = false; window.removeEventListener("online", sincronizar); };
   }, [user && user.name]);
 
   const unirseAlDueloEnEspera = () => {
@@ -487,16 +533,15 @@ export default function AcademiaPIR() {
     const nuevoVivo = correcto ? vivoPrevio + 1 : 0;
     const nuevoRecord = Math.max(recordPrevio, nuevoVivo);
     try {
-      const { data, error } = await supabase
-        .from("rachas")
-        .upsert({ name: user.name, racha_actual: nuevoVivo, racha_record: nuevoRecord }, { onConflict: "name" })
-        .select();
-      if (error) { console.error("No se pudo guardar la racha:", error.message); return; }
-      if (data && data[0]) {
-        setRachas((prev) => [...prev.filter((r) => r.name !== user.name), data[0]]);
-      }
+      const cambios = { name: user.name, racha_actual: nuevoVivo, racha_record: nuevoRecord };
+      const { data, error } = await supabase.from("rachas").upsert(cambios, { onConflict: "name" }).select();
+      if (error) throw error;
+      if (data && data[0]) setRachas((prev) => [...prev.filter((r) => r.name !== user.name), data[0]]);
     } catch (err) {
-      console.error("No se pudo guardar la racha:", err);
+      if (!esFalloDeRed(err)) { console.error("No se pudo guardar la racha:", err); return; }
+      const fila = { ...(actual || {}), name: user.name, racha_actual: nuevoVivo, racha_record: nuevoRecord };
+      setRachas((prev) => [...prev.filter((r) => r.name !== user.name), fila]);
+      encolar("rachas", "rachas", fila);
     }
   };
 
@@ -563,12 +608,16 @@ export default function AcademiaPIR() {
 
     try {
       const { data, error } = await supabase.from("rachas").upsert(payload, { onConflict: "name" }).select();
-      if (error) { console.error("No se pudo guardar el progreso:", error.message); return; }
-      if (data && data[0]) {
-        setRachas((prev) => [...prev.filter((r) => r.name !== user.name), data[0]]);
-      }
+      if (error) throw error;
+      if (data && data[0]) setRachas((prev) => [...prev.filter((r) => r.name !== user.name), data[0]]);
     } catch (err) {
-      console.error("No se pudo guardar el progreso:", err);
+      if (!esFalloDeRed(err)) { console.error("No se pudo guardar el progreso:", err); return; }
+      // La fila encolada lleva la fila entera ya calculada, no el trozo que
+      // se manda normalmente: al subirla debe quedar completa aunque sea lo
+      // único que llegue.
+      const fila = { ...(actual || {}), ...payload };
+      setRachas((prev) => [...prev.filter((r) => r.name !== user.name), fila]);
+      encolar("rachas", "rachas", fila);
     }
   };
 
@@ -589,20 +638,35 @@ export default function AcademiaPIR() {
     }
   };
 
+  const encolar = (tabla, claveFila, fila) => {
+    setPendientes((prev) => {
+      const siguiente = conFila(prev, tabla, claveFila, fila);
+      escribirCola(user.name, siguiente);
+      return siguiente;
+    });
+  };
+
+  const aplicarFilaServidor = (tabla, fila) => {
+    if (tabla === "fallos") setFallos((p) => [...p.filter((f) => f.pregunta_id !== fila.pregunta_id), fila]);
+    else if (tabla === "preguntas_progreso") setPreguntasProgreso((p) => [...p.filter((x) => x.pregunta_id !== fila.pregunta_id), fila]);
+    else if (tabla === "flashcards_progreso") setFlashcardsProgreso((p) => [...p.filter((x) => x.flashcard_id !== fila.flashcard_id), fila]);
+    else if (tabla === "rachas") setRachas((p) => [...p.filter((r) => r.name !== fila.name), fila]);
+  };
+
   const registrarFallo = async (pregunta) => {
     if (!pregunta || !pregunta.id) return;
     const previa = fallos.find((f) => f.pregunta_id === pregunta.id);
     const nuevasVeces = (previa ? previa.veces : 0) + 1;
+    const fila = { name: user.name, pregunta_id: pregunta.id, veces: nuevasVeces, updated_at: new Date().toISOString() };
     try {
-      const { data, error } = await supabase
-        .from("fallos")
-        .upsert({ name: user.name, pregunta_id: pregunta.id, veces: nuevasVeces, updated_at: new Date().toISOString() }, { onConflict: "name,pregunta_id" })
-        .select();
-      if (!error && data && data[0]) {
-        setFallos((prev) => [...prev.filter((f) => f.pregunta_id !== pregunta.id), data[0]]);
-      }
+      const { data, error } = await supabase.from("fallos").upsert(fila, { onConflict: "name,pregunta_id" }).select();
+      if (error) throw error;
+      if (data && data[0]) setFallos((prev) => [...prev.filter((f) => f.pregunta_id !== pregunta.id), data[0]]);
     } catch (err) {
-      console.error("No se pudo guardar el fallo:", err);
+      if (!esFalloDeRed(err)) { console.error("No se pudo guardar el fallo:", err); return; }
+      // Sin red: la app sigue contando bien y la fila se sube al reconectar.
+      setFallos((prev) => [...prev.filter((f) => f.pregunta_id !== pregunta.id), fila]);
+      encolar("fallos", pregunta.id, fila);
     }
   };
 
@@ -611,17 +675,15 @@ export default function AcademiaPIR() {
     const previa = preguntasProgreso.find((p) => p.pregunta_id === pregunta.id);
     const nuevasVeces = (previa ? previa.veces : 0) + 1;
     const acertada = (previa && previa.acertada) || !!correcta;
+    const fila = { name: user.name, pregunta_id: pregunta.id, veces: nuevasVeces, acertada, updated_at: new Date().toISOString() };
     try {
-      const { data, error } = await supabase
-        .from("preguntas_progreso")
-        .upsert({ name: user.name, pregunta_id: pregunta.id, veces: nuevasVeces, acertada, updated_at: new Date().toISOString() }, { onConflict: "name,pregunta_id" })
-        .select();
-      if (error) console.error("No se pudo guardar el progreso de la pregunta:", error.message);
-      if (!error && data && data[0]) {
-        setPreguntasProgreso((prev) => [...prev.filter((p) => p.pregunta_id !== pregunta.id), data[0]]);
-      }
+      const { data, error } = await supabase.from("preguntas_progreso").upsert(fila, { onConflict: "name,pregunta_id" }).select();
+      if (error) throw error;
+      if (data && data[0]) setPreguntasProgreso((prev) => [...prev.filter((p) => p.pregunta_id !== pregunta.id), data[0]]);
     } catch (err) {
-      console.error("No se pudo guardar el progreso de la pregunta:", err);
+      if (!esFalloDeRed(err)) { console.error("No se pudo guardar el progreso de la pregunta:", err); return; }
+      setPreguntasProgreso((prev) => [...prev.filter((p) => p.pregunta_id !== pregunta.id), fila]);
+      encolar("preguntas_progreso", pregunta.id, fila);
     }
   };
 
@@ -644,16 +706,15 @@ export default function AcademiaPIR() {
     if (!flashcardId || !user) return;
     const previo = flashcardsProgreso.find((p) => p.flashcard_id === flashcardId);
     const nuevo = calcularSM2(previo, calidad);
+    const fila = { name: user.name, flashcard_id: flashcardId, ...nuevo };
     try {
-      const { data, error } = await supabase
-        .from("flashcards_progreso")
-        .upsert({ name: user.name, flashcard_id: flashcardId, ...nuevo }, { onConflict: "name,flashcard_id" })
-        .select();
-      if (!error && data && data[0]) {
-        setFlashcardsProgreso((prev) => [...prev.filter((p) => p.flashcard_id !== flashcardId), data[0]]);
-      }
+      const { data, error } = await supabase.from("flashcards_progreso").upsert(fila, { onConflict: "name,flashcard_id" }).select();
+      if (error) throw error;
+      if (data && data[0]) setFlashcardsProgreso((prev) => [...prev.filter((p) => p.flashcard_id !== flashcardId), data[0]]);
     } catch (err) {
-      console.error("No se pudo guardar el repaso de la flashcard:", err);
+      if (!esFalloDeRed(err)) { console.error("No se pudo guardar el repaso de la flashcard:", err); return; }
+      setFlashcardsProgreso((prev) => [...prev.filter((p) => p.flashcard_id !== flashcardId), fila]);
+      encolar("flashcards_progreso", flashcardId, fila);
     }
   };
 
@@ -784,7 +845,7 @@ export default function AcademiaPIR() {
           user={user} onLogout={handleLogout} miRacha={rachas.find((r) => r.name === user.name)} onAjustes={() => setMostrarAjustes(true)}
           questions={questions} onAddQuestion={addQuestion} onUpdateQuestion={updateQuestion} onDeleteQuestion={deleteQuestion}
           favoritos={favoritos} onToggleFavorito={toggleFavorito} rachas={rachas} onGirarRuleta={girarRuleta}
-          enLinea={enLinea} preguntasProgreso={preguntasProgreso}
+          enLinea={enLinea} preguntasProgreso={preguntasProgreso} pendientes={contarCola(pendientes)}
         />
         <Nav section={section} setSection={setSection} alerta={!!dueloEsperando} />
         {dueloEsperando && section !== "duelo" && (
@@ -1241,7 +1302,7 @@ const FRASES_MOTIVADORAS = [
 function Header({
   user, onLogout, miRacha, onAjustes,
   questions, onAddQuestion, onUpdateQuestion, onDeleteQuestion, favoritos, onToggleFavorito,
-  rachas, onGirarRuleta, enLinea, preguntasProgreso,
+  rachas, onGirarRuleta, enLinea, preguntasProgreso, pendientes,
 }) {
   const [mostrarLogros, setMostrarLogros] = useState(false);
   const [mostrarRanking, setMostrarRanking] = useState(false);
@@ -1289,6 +1350,19 @@ function Header({
           <ListChecks size={12} />
           {(miRacha && miRacha.total_respondidas) || 0}
         </span>
+        {pendientes > 0 && (
+          <span
+            title="Respondidas sin conexión. Se subirán solas en cuanto vuelva la red."
+            style={{
+              display: "flex", alignItems: "center", gap: 5, marginLeft: 6,
+              padding: "3px 9px", borderRadius: 999, border: `1px solid ${AVISO}`,
+              fontSize: 12, color: AVISO, fontWeight: 600,
+            }}
+          >
+            <CloudOff size={12} />
+            {pendientes} sin guardar
+          </span>
+        )}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <span style={{ fontSize: 13, color: TINTA_SUAVE, display: "flex", alignItems: "center", gap: 4 }}>
