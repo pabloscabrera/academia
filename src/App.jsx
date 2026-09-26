@@ -6,6 +6,7 @@ import {
    Medal, Gem, Crown, Search, Layers, Lightbulb, Users, Eye, FolderInput
 } from "lucide-react";
 import { supabase } from "./supabaseClient";
+import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
 import { TEMARIO } from "./temario";
 
 const ADMIN_NAME = "pabloadmin";
@@ -81,6 +82,36 @@ async function fetchTodasPreguntas() {
     desde += TAM_PAGINA;
   }
   return todas;
+}
+
+// Un día antes de volver a fiarse del recuento. Con menos se gana poco (el
+// banco cambia cuando se transcribe un examen nuevo, no a diario) y con más
+// una corrección de texto tardaría demasiado en llegar a quien ya la tiene
+// descargada.
+const MAX_EDAD_CACHE_MS = 24 * 60 * 60 * 1000;
+
+// Devuelve el banco entero, bajándolo solo si hace falta.
+async function obtenerPreguntas() {
+  const cache = await leerPreguntasCache();
+  if (cache) {
+    // Una consulta de solo recuento (head: true) no trae ni una fila: unos
+    // bytes frente a los megas del banco completo.
+    const { count, error } = await supabase
+      .from("preguntas")
+      .select("id", { count: "exact", head: true });
+    // Sin red, la copia de ayer vale más que una pantalla vacía.
+    if (error) return cache.preguntas;
+    const fresca = Date.now() - cache.guardadoEn < MAX_EDAD_CACHE_MS;
+    if (fresca && count === cache.preguntas.length) return cache.preguntas;
+  }
+  try {
+    const todas = await fetchTodasPreguntas();
+    guardarPreguntasCache(todas);
+    return todas;
+  } catch (err) {
+    if (cache) return cache.preguntas;
+    throw err;
+  }
 }
 function lunesDeLaSemana(fecha) {
   const d = new Date(fecha);
@@ -175,7 +206,7 @@ export default function AcademiaPIR() {
 
   useEffect(() => {
     const cargarDatosApp = async () => {
-      const qData = await fetchTodasPreguntas();
+      const qData = await obtenerPreguntas();
       const { data: rData, error: rErr } = await supabase
         .from("ranking")
         .select("*")
@@ -374,7 +405,8 @@ export default function AcademiaPIR() {
         inventada: !!q.inventada,
       }])
       .select();
-    if (!error && data && data[0]) setQuestions((prev) => [...prev, data[0]]);
+    // La copia local del banco deja de ser fiel en cuanto el admin lo toca.
+    if (!error && data && data[0]) { setQuestions((prev) => [...prev, data[0]]); borrarPreguntasCache(); }
     return !error;
   };
 
@@ -389,13 +421,14 @@ export default function AcademiaPIR() {
       .select();
     if (!error && data && data[0]) {
       setQuestions((prev) => prev.map((p) => (p.id === id ? data[0] : p)));
+      borrarPreguntasCache();
     }
     return !error;
   };
 
   const deleteQuestion = async (id) => {
     const { error } = await supabase.from("preguntas").delete().eq("id", id);
-    if (!error) setQuestions((prev) => prev.filter((p) => p.id !== id));
+    if (!error) { setQuestions((prev) => prev.filter((p) => p.id !== id)); borrarPreguntasCache(); }
     return !error;
   };
 
