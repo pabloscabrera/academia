@@ -894,13 +894,23 @@ function AuthScreen({ onLogin, onSignup }) {
       <FondoPortada />
       <style>{`
         .portada-input::placeholder { color: ${PORTADA_PLACEHOLDER}; }
-        @keyframes portadaGirarBorde { to { transform: rotate(360deg); } }
-        .portada-btn-glow {
-          position: absolute; inset: -60%; opacity: .6;
-          background: conic-gradient(from 0deg, transparent 0deg, transparent 285deg, #7a6530 305deg, #E9C878 322deg, #7a6530 338deg, transparent 360deg);
-          animation: portadaGirarBorde 7s linear infinite;
+        /* Un destello que cruza el botón cada pocos segundos, en vez del aro
+           de luz que daba vueltas sin parar: dura poco más de un segundo y
+           el resto del tiempo no hay nada moviéndose. Va por encima del
+           botón (z-index 2), no detrás, para que se vea sobre el dorado. */
+        @keyframes portadaDestello {
+          0%, 62% { transform: translateX(-170%) skewX(-16deg); opacity: 0; }
+          67% { opacity: 1; }
+          86% { transform: translateX(320%) skewX(-16deg); opacity: 0; }
+          100% { transform: translateX(320%) skewX(-16deg); opacity: 0; }
         }
-        @media (prefers-reduced-motion: reduce) { .portada-btn-glow { animation: none; } }
+        .portada-btn-destello {
+          position: absolute; top: 0; bottom: 0; left: 0; width: 38%;
+          z-index: 2; pointer-events: none; border-radius: 12.5px;
+          background: linear-gradient(100deg, transparent 0%, rgba(255,248,226,.92) 50%, transparent 100%);
+          animation: portadaDestello 4.5s ease-in-out infinite;
+        }
+        @media (prefers-reduced-motion: reduce) { .portada-btn-destello { animation: none; opacity: 0; } }
       `}</style>
       <div style={{ maxWidth: 480, width: "100%", padding: "0 24px", textAlign: "center", position: "relative", zIndex: 1 }}>
         <div style={{ marginBottom: 34 }}>
@@ -916,7 +926,6 @@ function AuthScreen({ onLogin, onSignup }) {
               Cuenta creada. Ya puedes entrar con tu usuario y contraseña.
             </p>
             <div style={{ position: "relative", borderRadius: 14, padding: 1.5, overflow: "hidden", marginTop: 18, background: "#4a3a1c" }}>
-              <div className="portada-btn-glow" />
               <button
                 type="button"
                 onClick={() => { setPassword(""); setPassword2(""); cambiarModo("login"); }}
@@ -924,6 +933,7 @@ function AuthScreen({ onLogin, onSignup }) {
               >
                 Ir a entrar
               </button>
+              <span className="portada-btn-destello" />
             </div>
           </Card>
         ) : (
@@ -978,10 +988,10 @@ function AuthScreen({ onLogin, onSignup }) {
             )}
             {error && <p style={{ color: ACENTO, fontSize: 14, marginTop: 12 }}>{error}</p>}
             <div style={{ position: "relative", borderRadius: 14, padding: 1.5, overflow: "hidden", marginTop: 18, background: "#4a3a1c" }}>
-              <div className="portada-btn-glow" />
               <button type="button" onClick={submit} disabled={cargando} style={{ ...btnPortada, opacity: cargando ? 0.6 : 1 }}>
                 {cargando ? <Loader2 className="animate-spin" size={18} /> : modo === "login" ? "Entrar" : "Crear cuenta"}
               </button>
+              <span className="portada-btn-destello" />
             </div>
           </Card>
         )}
