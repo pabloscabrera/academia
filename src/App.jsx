@@ -343,6 +343,13 @@ export default function AcademiaPIR() {
     });
     if (error) {
       if (/registered|exists/i.test(error.message || "")) return { error: "Ese nombre de usuario ya está en uso. Elige otro." };
+      // Con el alta pública desactivada en Supabase (Authentication →
+      // Sign In / Providers → "Allow new users to sign up"), signUp
+      // responde "Signups not allowed for this instance". Sin esto el
+      // usuario vería ese texto en inglés y no sabría qué hacer.
+      if (/signups? not allowed|disabled/i.test(error.message || "")) {
+        return { error: "El registro está cerrado. Pídele a Pablo que te cree la cuenta." };
+      }
       return { error: error.message || "No se pudo crear la cuenta." };
     }
     return { error: null };
