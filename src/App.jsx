@@ -10,7 +10,7 @@ import { supabase } from "./supabaseClient";
 import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
 import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, sinFila, filasPendientes, CONFLICTO } from "./colaPendientes";
 import {
-  esExamen, TEMA_PLACEHOLDER, temasDisponibles, filtrarPreguntas, indicePorId,
+  esExamen, TEMA_PLACEHOLDER, temasDisponibles, filtrarPreguntas, indicePorId, aplicarFiltroPedido,
   MAX_EDAD_TIRADA_MS, reconstruirTirada, agruparAciertos,
   calcularSM2, ordenarPorPrioridad, parsearEtiquetas, lunesDeLaSemana,
 } from "./logica";
@@ -200,6 +200,8 @@ export default function AcademiaPIR() {
   const [enLinea, setEnLinea] = useState(0);
   // Lo respondido sin cobertura, esperando a que vuelva la red.
   const [pendientes, setPendientes] = useState(colaVacia);
+  // Lo que "Dónde fallas" le pide a Autoevaluaciones al pulsar "Practicar".
+  const [filtroPedido, setFiltroPedido] = useState(null);
 
   useEffect(() => { savePersonal("pir-ajustes", ajustes); }, [ajustes]);
 
@@ -845,6 +847,7 @@ export default function AcademiaPIR() {
               favoritos={favoritos}
               onToggleFavorito={toggleFavorito}
               onGirarRuleta={girarRuleta}
+              onPracticar={(filtro) => { setFiltroPedido(filtro); setSection("simulacros"); }}
             />
           )}
           {section === "simulacros" && (
@@ -860,6 +863,8 @@ export default function AcademiaPIR() {
               miRacha={rachas.find((r) => r.name === user.name)}
               preguntasProgreso={preguntasProgreso}
               fallos={fallos}
+              filtroPedido={filtroPedido}
+              onFiltroAplicado={() => setFiltroPedido(null)}
             />
           )}
           {section === "duelo" && (
@@ -1438,7 +1443,7 @@ function Nav({ section, setSection, alerta }) {
   );
 }
 
-function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo, onRespuestaPregunta, favoritos, onToggleFavorito, miRacha, preguntasProgreso, fallos }) {
+function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo, onRespuestaPregunta, favoritos, onToggleFavorito, miRacha, preguntasProgreso, fallos, filtroPedido, onFiltroAplicado }) {
   const [incluirInventadas, setIncluirInventadas] = useState(false);
   const base = useMemo(() => (incluirInventadas ? questions : questions.filter((q) => !q.inventada)), [questions, incluirInventadas]);
   const cursos = useMemo(() => {
@@ -1473,6 +1478,18 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
     [base, curso, tema, origen, acertadaPorId, falladaPorId]
   );
   const disponibles = filtradas.length;
+
+  // "Practicar" desde "Dónde fallas" llega como un filtro ya elegido. Se
+  // aplica una vez y se avisa al raíz para que lo suelte: si no, volver a
+  // esta pestaña lo reimpondría encima de lo que hubieras cambiado a mano.
+  useEffect(() => {
+    if (!filtroPedido || state !== "config") return;
+    const aplicado = aplicarFiltroPedido(filtroPedido, { cursos, temas });
+    setCurso(aplicado.curso);
+    setTema(aplicado.tema);
+    setOrigen(aplicado.origen);
+    if (onFiltroAplicado) onFiltroAplicado();
+  }, [filtroPedido, state, cursos, temas]);
 
   // Si al cambiar de filtro quedan menos preguntas de las pedidas, se ajusta
   // sola en vez de esperar a que el usuario vuelva al campo.
@@ -2909,7 +2926,7 @@ function RuletaDiaria({ questions, miRacha, onGirarRuleta }) {
 const MAX_FILAS_TEMA = 15;
 
 
-function FilaAcierto({ g }) {
+function FilaAcierto({ g, onPracticar }) {
   // La barra ya dice cuánto; el color solo se usa para señalar lo flojo (no
   // para repintar un degradado sobre algo que la longitud ya cuenta), y el
   // número va siempre en tinta, nunca en el color de la barra.
@@ -2930,14 +2947,28 @@ function FilaAcierto({ g }) {
       >
         <div style={{ width: `${Math.max(g.pct, 2)}%`, height: "100%", borderRadius: 4, background: flojo ? ACENTO : TINTA_SUAVE }} />
       </div>
-      <div style={{ fontSize: 11.5, color: TINTA_TENUE, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
-        {g.aciertos} de {g.intentos} respuestas · {g.hechas}/{g.total} preguntas empezadas
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginTop: 4 }}>
+        <span style={{ fontSize: 11.5, color: TINTA_TENUE, fontVariantNumeric: "tabular-nums" }}>
+          {g.aciertos} de {g.intentos} respuestas · {g.hechas}/{g.total} preguntas empezadas
+        </span>
+        {onPracticar && (
+          <button
+            type="button"
+            onClick={() => onPracticar(g.nombre)}
+            style={{
+              flexShrink: 0, background: "none", border: "none", padding: 0, cursor: "pointer",
+              fontSize: 12, fontWeight: 600, color: ACENTO, fontFamily: "inherit", textDecoration: "underline",
+            }}
+          >
+            Practicar
+          </button>
+        )}
       </div>
     </div>
   );
 }
 
-function DondeFallas({ questions, fallos, preguntasProgreso }) {
+function DondeFallas({ questions, fallos, preguntasProgreso, onPracticar }) {
   const [modo, setModo] = useState("curso"); // curso | tema
 
   const { filas, resumen, sinEmpezar } = useMemo(() => {
@@ -2996,7 +3027,13 @@ function DondeFallas({ questions, fallos, preguntasProgreso }) {
             <p style={{ fontSize: 12.5, color: TINTA_SUAVE, margin: "0 0 14px" }}>
               De peor a mejor. Empieza por arriba.
             </p>
-            {filas.map((g) => <FilaAcierto key={g.nombre} g={g} />)}
+            {filas.map((g) => (
+              <FilaAcierto
+                key={g.nombre}
+                g={g}
+                onPracticar={onPracticar && ((nombre) => onPracticar(modo === "tema" ? { tema: nombre } : { curso: nombre }))}
+              />
+            ))}
             {modo === "tema" && sinEmpezar > 0 && (
               <p style={{ fontSize: 11.5, color: TINTA_TENUE, margin: "10px 0 0" }}>
                 Se muestran los {filas.length} peores. Te quedan {sinEmpezar} temas sin empezar.
@@ -3017,7 +3054,7 @@ function DondeFallas({ questions, fallos, preguntasProgreso }) {
   );
 }
 
-function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorito, onGirarRuleta, preguntasProgreso }) {
+function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorito, onGirarRuleta, preguntasProgreso, onPracticar }) {
   const [verTodosFallos, setVerTodosFallos] = useState(false);
   const [abiertaId, setAbiertaId] = useState(null);
 
@@ -3049,7 +3086,7 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
       <SectionTitle title="Mi perfil" subtitle={user.name} />
 
       <div style={{ marginBottom: 32 }}>
-        <DondeFallas questions={questions} fallos={fallos} preguntasProgreso={preguntasProgreso} />
+        <DondeFallas questions={questions} fallos={fallos} preguntasProgreso={preguntasProgreso} onPracticar={onPracticar} />
       </div>
 
       <div style={{ marginTop: 8 }}>

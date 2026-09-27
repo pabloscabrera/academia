@@ -54,6 +54,21 @@ export function indicePorId(filas, campo, condicion) {
   return m;
 }
 
+// "Practicar" desde "Dónde fallas" llega con un examen o un tema ya elegido.
+// Pero esa pantalla agrupa por el `curso` y el `tema` en crudo, y los
+// desplegables de aquí no los listan todos: el de exámenes deja fuera las
+// etiquetas que no son una edición ("Psicopatología"), y el de temas depende
+// de si están incluidas las preguntas inventadas. Un valor que no esté en su
+// lista dejaría el desplegable en blanco, así que se cae a "Todos".
+export function aplicarFiltroPedido(filtro, { cursos, temas }) {
+  const elegido = (valor, lista) => (valor && lista.includes(valor) ? valor : "Todos");
+  return {
+    curso: elegido(filtro && filtro.curso, cursos),
+    tema: elegido(filtro && filtro.tema, temas),
+    origen: (filtro && filtro.origen) || "todas",
+  };
+}
+
 // ---------- Retomar una autoevaluación a medias ----------
 
 export const MAX_EDAD_TIRADA_MS = 7 * 24 * 60 * 60 * 1000;

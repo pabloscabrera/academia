@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
   esExamen, esTemaReal, temasDisponibles, filtrarPreguntas, indicePorId,
   reconstruirTirada, agruparAciertos, calcularSM2, ordenarPorPrioridad,
-  parsearEtiquetas, lunesDeLaSemana,
+  parsearEtiquetas, lunesDeLaSemana, aplicarFiltroPedido,
 } from "../src/logica.js";
 
 test("esExamen distingue una edición de examen de una asignatura suelta", () => {
@@ -191,4 +191,32 @@ test("con el banco aún cargando no se decide nada", () => {
 test("un índice fuera de rango descarta la tirada en vez de reventar", () => {
   assert.equal(reconstruirTirada({ ...guardada, idx: 9 }, preguntas), null);
   assert.equal(reconstruirTirada({ ...guardada, idx: -1 }, preguntas), null);
+});
+
+// ---- "Practicar" desde "Dónde fallas" ----
+
+test("practicar un tema lo deja elegido en la autoevaluación", () => {
+  const listas = { cursos: ["Todos", "PIR 22", "PIR 20"], temas: ["Todos", "Ansiedad", "Psicometría"] };
+  assert.deepEqual(
+    aplicarFiltroPedido({ tema: "Psicometría" }, listas),
+    { curso: "Todos", tema: "Psicometría", origen: "todas" }
+  );
+  assert.deepEqual(
+    aplicarFiltroPedido({ curso: "PIR 22" }, listas),
+    { curso: "PIR 22", tema: "Todos", origen: "todas" }
+  );
+});
+
+test("un examen o tema que no está en su desplegable cae a 'Todos'", () => {
+  const listas = { cursos: ["Todos", "PIR 22"], temas: ["Todos", "Ansiedad"] };
+  // "Psicopatología" es una etiqueta de curso que el desplegable de exámenes
+  // no lista, y el tema puede venir de una pregunta inventada.
+  assert.deepEqual(
+    aplicarFiltroPedido({ curso: "Psicopatología" }, listas),
+    { curso: "Todos", tema: "Todos", origen: "todas" }
+  );
+  assert.deepEqual(
+    aplicarFiltroPedido({ tema: "Tema raro" }, listas).tema, "Todos"
+  );
+  assert.deepEqual(aplicarFiltroPedido(null, listas), { curso: "Todos", tema: "Todos", origen: "todas" });
 });
