@@ -9,6 +9,11 @@ import {
 import { supabase } from "./supabaseClient";
 import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
 import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, sinFila, filasPendientes, CONFLICTO } from "./colaPendientes";
+import {
+  esExamen, TEMA_PLACEHOLDER, temasDisponibles, filtrarPreguntas, indicePorId,
+  MAX_EDAD_TIRADA_MS, reconstruirTirada, agruparAciertos,
+  calcularSM2, ordenarPorPrioridad, parsearEtiquetas, lunesDeLaSemana,
+} from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
 const META_DIARIA_RACHA = 10;
@@ -64,9 +69,6 @@ function insigniaActual(totalCorrectas) {
 function siguienteInsignia(totalCorrectas) {
   return INSIGNIAS.find((ins) => totalCorrectas < ins.umbral) || null;
 }
-function esExamen(curso) {
-  return typeof curso === "string" && /^pir\b/i.test(curso.trim());
-}
 async function fetchTodasPreguntas() {
   const TAM_PAGINA = 1000;
   let desde = 0;
@@ -121,7 +123,6 @@ async function obtenerPreguntas() {
 // Se guardan ids, no las preguntas enteras, y se reconstruyen contra el banco
 // al volver: ocupa una fracción y nunca se queda con una copia vieja del
 // texto de una pregunta que se haya corregido mientras tanto.
-const MAX_EDAD_TIRADA_MS = 7 * 24 * 60 * 60 * 1000;
 const claveTirada = (nombre) => `pir-tirada-${nombre}`;
 
 function leerTiradaGuardada(nombre) {
@@ -145,43 +146,8 @@ function borrarTirada(nombre) {
   try { localStorage.removeItem(claveTirada(nombre)); } catch {}
 }
 
-function lunesDeLaSemana(fecha) {
-  const d = new Date(fecha);
-  const dia = d.getDay();
-  const diff = (dia === 0 ? -6 : 1) - dia;
-  d.setDate(d.getDate() + diff);
-  return d.toISOString().slice(0, 10);
-}
 const CURSOS_RULETA_COLORES = ["#2E7D6B", "#C89B3C", "#A6362B", "#5EC9C0", "#8A5A9E", "#3B6FA0"];
 
-// Repetición espaciada estilo Anki (algoritmo SM-2). calidad: 0 = Muy difícil
-// (fallo, se reinicia), 3 = Difícil, 4 = Fácil, 5 = Muy fácil.
-function calcularSM2(progresoPrevio, calidad) {
-  let ease = (progresoPrevio && progresoPrevio.ease_factor) || 2.5;
-  let repeticiones = (progresoPrevio && progresoPrevio.repeticiones) || 0;
-  let intervalo = (progresoPrevio && progresoPrevio.intervalo_dias) || 0;
-
-  if (calidad < 3) {
-    repeticiones = 0;
-    intervalo = 1;
-  } else {
-    repeticiones += 1;
-    if (repeticiones === 1) intervalo = 1;
-    else if (repeticiones === 2) intervalo = 6;
-    else intervalo = Math.round(intervalo * ease);
-  }
-  ease = Math.max(1.3, ease + (0.1 - (5 - calidad) * (0.08 + (5 - calidad) * 0.02)));
-
-  const hoy = new Date();
-  const proxima = new Date(hoy.getTime() + intervalo * 86400000);
-  return {
-    ease_factor: Math.round(ease * 100) / 100,
-    intervalo_dias: intervalo,
-    repeticiones,
-    proxima_revision: proxima.toISOString().slice(0, 10),
-    ultima_revision: hoy.toISOString(),
-  };
-}
 
 async function loadPersonal(key, fallback) {
   try {
@@ -1488,35 +1454,24 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
   const [origen, setOrigen] = useState("todas");
   const [tema, setTema] = useState("Todos");
 
-  const acertadaPorId = useMemo(() => {
-    const m = {};
-    (preguntasProgreso || []).forEach((p) => { if (p.acertada) m[p.pregunta_id] = true; });
-    return m;
-  }, [preguntasProgreso]);
-  const falladaPorId = useMemo(() => {
-    const m = {};
-    (fallos || []).forEach((f) => { if ((f.veces || 0) > 0) m[f.pregunta_id] = true; });
-    return m;
-  }, [fallos]);
+  const acertadaPorId = useMemo(
+    () => indicePorId(preguntasProgreso, "pregunta_id", (p) => p.acertada),
+    [preguntasProgreso]
+  );
+  const falladaPorId = useMemo(
+    () => indicePorId(fallos, "pregunta_id", (f) => (f.veces || 0) > 0),
+    [fallos]
+  );
 
-  const temas = useMemo(() => {
-    const nombres = [...new Set(
-      base.map((q) => (q.tema || "").trim())
-          .filter((t) => t && !TEMA_PLACEHOLDER.test(t))
-    )].sort((a, b) => a.localeCompare(b, "es"));
-    return ["Todos", ...nombres];
-  }, [base]);
+  const temas = useMemo(() => ["Todos", ...temasDisponibles(base)], [base]);
 
   // Un tema puede no existir en el examen elegido (y al revés): en cuanto la
   // combinación se queda sin preguntas, el contador lo canta y el botón se
   // desactiva, en vez de empezar una tirada vacía.
-  const filtradas = useMemo(() => base.filter((q) => {
-    if (curso !== "Todos" && q.curso !== curso) return false;
-    if (tema !== "Todos" && (q.tema || "").trim() !== tema) return false;
-    if (origen === "sinacertar" && acertadaPorId[q.id]) return false;
-    if (origen === "fallos" && !falladaPorId[q.id]) return false;
-    return true;
-  }), [base, curso, tema, origen, acertadaPorId, falladaPorId]);
+  const filtradas = useMemo(
+    () => filtrarPreguntas(base, { curso, tema, origen }, acertadaPorId, falladaPorId),
+    [base, curso, tema, origen, acertadaPorId, falladaPorId]
+  );
   const disponibles = filtradas.length;
 
   // Si al cambiar de filtro quedan menos preguntas de las pedidas, se ajusta
@@ -1561,25 +1516,10 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
   // se hace aquí y no al leer. Si alguna pregunta ya no existe (se corrigió
   // el banco entre medias) se descarta la tirada entera: rellenar huecos
   // descuadraría los índices y las respuestas ya dadas.
-  const tiradaLista = useMemo(() => {
-    if (!tiradaGuardada || questions.length === 0) return null;
-    const porId = new Map(questions.map((q) => [q.id, q]));
-    const pool = tiradaGuardada.poolIds.map((id) => porId.get(id));
-    if (pool.some((q) => !q)) return null;
-    const idsOriginal = tiradaGuardada.poolOriginalIds || tiradaGuardada.poolIds;
-    const poolOriginal = idsOriginal.map((id) => porId.get(id));
-    if (poolOriginal.some((q) => !q)) return null;
-    if (!(tiradaGuardada.idx >= 0 && tiradaGuardada.idx < pool.length)) return null;
-    const rehidratar = (a) => ({ ...a, pregunta: porId.get(a.qId) });
-    const answers = (tiradaGuardada.answers || []).map(rehidratar);
-    if (answers.some((a) => !a.pregunta)) return null;
-    const resultados = {};
-    (tiradaGuardada.resultados || []).forEach((a) => {
-      const pregunta = porId.get(a.qId);
-      if (pregunta) resultados[a.qId] = { ...a, pregunta };
-    });
-    return { ...tiradaGuardada, pool, poolOriginal, answers, resultados };
-  }, [tiradaGuardada, questions]);
+  const tiradaLista = useMemo(
+    () => reconstruirTirada(tiradaGuardada, questions),
+    [tiradaGuardada, questions]
+  );
 
   const continuarTirada = () => {
     if (!tiradaLista) return;
@@ -2966,27 +2906,8 @@ function RuletaDiaria({ questions, miRacha, onGirarRuleta }) {
 // época no constan como hechas (el aviso del pie lo dice). Y las preguntas
 // del backfill (fallos antiguos) arrancan con intentos = fallos, o sea 0% de
 // acierto, que es justo lo que consta de ellas.
-const TEMA_PLACEHOLDER = /^pregunta\s*\d+$/i;
 const MAX_FILAS_TEMA = 15;
 
-function agruparAciertos(preguntas, clave, progresoPorId, fallosPorId) {
-  const grupos = new Map();
-  preguntas.forEach((q) => {
-    const nombre = clave(q);
-    if (!nombre) return;
-    if (!grupos.has(nombre)) grupos.set(nombre, { nombre, total: 0, hechas: 0, intentos: 0, aciertos: 0 });
-    const g = grupos.get(nombre);
-    g.total += 1;
-    const intentos = (progresoPorId[q.id] && progresoPorId[q.id].veces) || 0;
-    if (intentos > 0) {
-      const fallidas = (fallosPorId[q.id] && fallosPorId[q.id].veces) || 0;
-      g.hechas += 1;
-      g.intentos += intentos;
-      g.aciertos += Math.max(0, intentos - fallidas);
-    }
-  });
-  return [...grupos.values()].map((g) => ({ ...g, pct: g.intentos > 0 ? Math.round((g.aciertos / g.intentos) * 100) : null }));
-}
 
 function FilaAcierto({ g }) {
   // La barra ya dice cuánto; el color solo se usa para señalar lo flojo (no
@@ -3220,9 +3141,6 @@ const TAM_SESION_FLASHCARDS = 20;
 // Las etiquetas se escriben como texto libre separado por comas y se guardan
 // en flashcards.etiquetas (text[]): se recortan, se quitan las vacías y se
 // deduplican, para que "Porcentajes, dsm , Porcentajes" no cree tres.
-const parsearEtiquetas = (texto) => [
-  ...new Set((texto || "").split(",").map((e) => e.trim()).filter(Boolean)),
-];
 const CALIFICACIONES_FLASHCARD = [
   { calidad: 0, label: "Muy difícil", bg: ACENTO_SUAVE, color: ACENTO, borde: ACENTO },
   { calidad: 3, label: "Difícil", bg: AVISO_SUAVE, color: AVISO, borde: AVISO },
@@ -3343,28 +3261,10 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
   const [verTarjetas, setVerTarjetas] = useState(false);
   const [busquedaTarjetas, setBusquedaTarjetas] = useState("");
 
-  // Orden "inteligente" según el feedback de dificultad dado hasta ahora:
-  // primero las que se marcaron Muy difícil (se reinician, repeticiones=0),
-  // luego el resto de pendientes por antigüedad de vencimiento, y al final
-  // las que nunca se han visto.
-  const ordenarPorPrioridad = (lista) => {
-    const conPrioridad = lista.map((f) => {
-      const p = progresoPorId[f.grupo_id || f.id];
-      if (!p) return { f, prioridad: 2, orden: Math.random() };
-      if (p.repeticiones === 0) return { f, prioridad: 0, orden: p.ultima_revision || "" };
-      return { f, prioridad: 1, orden: p.proxima_revision || "" };
-    });
-    conPrioridad.sort((a, b) => {
-      if (a.prioridad !== b.prioridad) return a.prioridad - b.prioridad;
-      if (a.prioridad === 2) return a.orden - b.orden;
-      return String(a.orden).localeCompare(String(b.orden));
-    });
-    return conPrioridad.map((x) => x.f);
-  };
 
   const empezar = () => {
     const cantidad = Math.max(1, Math.min(numTarjetas || 1, pendientes.length));
-    setSesion(ordenarPorPrioridad(pendientes).slice(0, cantidad));
+    setSesion(ordenarPorPrioridad(pendientes, progresoPorId).slice(0, cantidad));
     setIdx(0);
     setRevelada(false);
     setResumen(null);

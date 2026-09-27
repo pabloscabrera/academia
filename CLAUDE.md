@@ -8,7 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run build` — production build
 - `npm run preview` — preview a production build locally
 
-There is no lint or test setup in this repo (no test framework, no ESLint config).
+- `npm test` — la batería de pruebas (`node --test`, sin dependencias: el ejecutor viene con Node). No hay ESLint.
+
+**Las pruebas solo alcanzan `src/logica.js`, `src/colaPendientes.js` y `src/cachePreguntas.js`**, no `App.jsx`: un `.jsx` no se puede importar desde Node sin montar un transpilador. De ahí la regla: **si una función es pura — datos entran, datos salen, sin React ni Supabase ni navegador — va a `src/logica.js` y se prueba; si no, se queda en `App.jsx`.** Lo que dependa del entorno se recibe por argumento (`hoy` en `calcularSM2`, `ahora` en `reconstruirTirada`, `azar` en `ordenarPorPrioridad`) justamente para poder fijarlo en una prueba. Antes de esto, cada comprobación era una copia del código en un borrador que se tiraba al terminar: servía para pensar, no para enterarse de si un cambio de mañana rompe lo de hoy. La primera pasada ya encontró un fallo real: `esExamen` usaba `/^pir\b/i` y `\b` se apoya en `[A-Za-z0-9_]`, así que una tilde cuenta como separador y "Pirámide de Maslow" pasaba por edición de examen; ahora es `/^pir(?:[\s\d]|$)/i`.
 
 ## Architecture
 
