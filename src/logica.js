@@ -188,3 +188,31 @@ export function lunesDeLaSemana(fecha) {
   d.setDate(d.getDate() + diff);
   return d.toISOString().slice(0, 10);
 }
+
+// ---------- Red ----------
+
+// Una petición a un servidor inalcanzable no falla: se queda colgada. Sin
+// esto, la carga inicial dejaba la app en la ruedecita para siempre, sin
+// decir nada, que por fuera es idéntico a "la app no abre".
+export const ESPERA_MAX_CARGA_MS = 12000;
+
+export function conTiempoLimite(promesa, ms, mensaje) {
+  let reloj;
+  const limite = new Promise((_, rechazar) => {
+    reloj = setTimeout(() => rechazar(new Error(mensaje)), ms);
+  });
+  return Promise.race([promesa, limite]).finally(() => clearTimeout(reloj));
+}
+
+// Lo que se le enseña al usuario. El mensaje técnico de supabase-js ("Failed
+// to fetch") no le dice nada a nadie.
+export function mensajeDeCarga(error) {
+  const texto = (error && error.message) || "";
+  if (/tardando|timeout|failed to fetch|networkerror|load failed/i.test(texto)) {
+    return "No se pudo contactar con el servidor. Comprueba tu conexión a internet y vuelve a intentarlo. Si sigue igual, avisa a Pablo.";
+  }
+  if (/api key|apikey|jwt|unauthorized|401/i.test(texto)) {
+    return "El servidor ha rechazado la conexión. Esto lo tiene que mirar Pablo.";
+  }
+  return texto || "No se pudo cargar la aplicación.";
+}

@@ -4,6 +4,7 @@ import {
   esExamen, esTemaReal, temasDisponibles, filtrarPreguntas, indicePorId,
   reconstruirTirada, agruparAciertos, calcularSM2, ordenarPorPrioridad,
   parsearEtiquetas, lunesDeLaSemana, aplicarFiltroPedido,
+  conTiempoLimite, mensajeDeCarga,
 } from "../src/logica.js";
 
 test("esExamen distingue una edición de examen de una asignatura suelta", () => {
@@ -219,4 +220,26 @@ test("un examen o tema que no está en su desplegable cae a 'Todos'", () => {
     aplicarFiltroPedido({ tema: "Tema raro" }, listas).tema, "Todos"
   );
   assert.deepEqual(aplicarFiltroPedido(null, listas), { curso: "Todos", tema: "Todos", origen: "todas" });
+});
+
+// ---- Que no se quede colgada ----
+
+test("una petición que no vuelve se corta y da un mensaje", async () => {
+  const colgada = new Promise(() => {}); // nunca resuelve, como un servidor inalcanzable
+  await assert.rejects(
+    conTiempoLimite(colgada, 30, "El servidor está tardando demasiado."),
+    /tardando demasiado/
+  );
+});
+
+test("si responde a tiempo, el límite no estorba", async () => {
+  const rapida = new Promise((r) => setTimeout(() => r("datos"), 5));
+  assert.equal(await conTiempoLimite(rapida, 200, "tarde"), "datos");
+});
+
+test("el error que ve el usuario está en castellano y dice qué hacer", () => {
+  assert.match(mensajeDeCarga(new Error("Failed to fetch")), /conexión a internet/);
+  assert.match(mensajeDeCarga(new Error("El servidor está tardando demasiado.")), /conexión a internet/);
+  assert.match(mensajeDeCarga({ message: "Invalid API key" }), /rechazado la conexión/);
+  assert.equal(mensajeDeCarga(null), "No se pudo cargar la aplicación.");
 });

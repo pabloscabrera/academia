@@ -13,6 +13,7 @@ import {
   esExamen, TEMA_PLACEHOLDER, temasDisponibles, filtrarPreguntas, indicePorId, aplicarFiltroPedido,
   MAX_EDAD_TIRADA_MS, reconstruirTirada, agruparAciertos,
   calcularSM2, ordenarPorPrioridad, parsearEtiquetas, lunesDeLaSemana,
+  ESPERA_MAX_CARGA_MS, conTiempoLimite, mensajeDeCarga,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -225,14 +226,18 @@ export default function AcademiaPIR() {
 
     (async () => {
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
+        // Con el servidor inalcanzable estas llamadas no fallan: se quedan
+        // colgadas, y la app se quedaba en la ruedecita para siempre.
+        const { data: sessionData } = await conTiempoLimite(
+          supabase.auth.getSession(), ESPERA_MAX_CARGA_MS, "El servidor está tardando demasiado."
+        );
         sesionAlCargar = !!(sessionData && sessionData.session);
         setUser(usuarioFromSession(sessionData && sessionData.session));
-        await cargarDatosApp();
+        await conTiempoLimite(cargarDatosApp(), ESPERA_MAX_CARGA_MS, "El servidor está tardando demasiado.");
         cargado = true;
         setReady(true);
       } catch (err) {
-        setLoadError(err && err.message ? err.message : String(err));
+        setLoadError(mensajeDeCarga(err));
         setReady(true);
       }
     })();
@@ -772,6 +777,13 @@ export default function AcademiaPIR() {
       <div style={{ padding: 24 }}>
         <h2 style={{ fontFamily: "var(--font-display)", color: "#A6362B" }}>No se pudo conectar</h2>
         <p style={{ color: "#6E6A61", fontSize: 14, lineHeight: 1.5 }}>{loadError}</p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          style={{ ...styles.btnPrimary, marginTop: 18 }}
+        >
+          Reintentar
+        </button>
       </div>
     );
   } else if (!user) {
