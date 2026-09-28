@@ -12,6 +12,7 @@ import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, s
 import {
   esExamen, TEMA_PLACEHOLDER, temasDisponibles, filtrarPreguntas, indicePorId, aplicarFiltroPedido,
   estadisticasFlashcards, agruparEstadisticas, DIAS_MADURA,
+  retencionGlobal, retencionPorSemana, retencionPorIntervalo, RETENCION_OBJETIVO,
   MAX_EDAD_TIRADA_MS, reconstruirTirada, agruparAciertos,
   calcularSM2, ordenarPorPrioridad, parsearEtiquetas, lunesDeLaSemana,
   ESPERA_MAX_CARGA_MS, conTiempoLimite, mensajeDeCarga,
@@ -184,6 +185,7 @@ export default function AcademiaPIR() {
   const [rachas, setRachas] = useState([]);
   const [fallos, setFallos] = useState([]);
   const [preguntasProgreso, setPreguntasProgreso] = useState([]);
+  const [repasosFlashcards, setRepasosFlashcards] = useState([]);
   const [favoritos, setFavoritos] = useState([]);
   const [flashcards, setFlashcards] = useState([]);
   const [flashcardsProgreso, setFlashcardsProgreso] = useState([]);
@@ -350,11 +352,15 @@ export default function AcademiaPIR() {
 
     (async () => {
       // Igual que arriba: las cuatro son independientes entre sí.
-      const [fRes, favRes, progresoRes, preguntasProgresoRes] = await Promise.all([
+      // 90 días: es lo que cubre la pantalla de estadísticas. Traerlo todo
+      // crecería sin techo y no se usa para nada.
+      const desde = new Date(Date.now() - 90 * 86400000).toISOString();
+      const [fRes, favRes, progresoRes, preguntasProgresoRes, repasosRes] = await Promise.all([
         supabase.from("fallos").select("*").eq("name", user.name),
         supabase.from("favoritos").select("*").eq("name", user.name),
         supabase.from("flashcards_progreso").select("*").eq("name", user.name),
         supabase.from("preguntas_progreso").select("*").eq("name", user.name),
+        supabase.from("flashcards_repasos").select("acierto, intervalo_antes, creado_en").eq("name", user.name).gte("creado_en", desde),
       ]);
       if (preguntasProgresoRes.error) console.error("No se pudo cargar preguntas_progreso:", preguntasProgresoRes.error.message);
       if (!activo) return;
@@ -364,6 +370,9 @@ export default function AcademiaPIR() {
       setFavoritos(favRes.data || []);
       setFlashcardsProgreso(mezclar(progresoRes.data || [], cola.flashcards_progreso, "flashcard_id"));
       setPreguntasProgreso(mezclar(preguntasProgresoRes.data || [], cola.preguntas_progreso, "pregunta_id"));
+      // La tabla de repasos puede no existir todavía (hay que ejecutar
+      // supabase-flashcards-repasos.sql): sin ella, sin curva, y ya está.
+      setRepasosFlashcards([...(repasosRes.data || []), ...Object.values(cola.flashcards_repasos || {})]);
       if (cola.rachas) setRachas((prev) => [...prev.filter((r) => r.name !== cola.rachas.name), cola.rachas]);
       // Se sincroniza aquí y no en su propio efecto para que no compita con
       // la carga de arriba: subir primero y que luego la carga pisara el
@@ -685,6 +694,26 @@ export default function AcademiaPIR() {
     const previo = flashcardsProgreso.find((p) => p.flashcard_id === flashcardId);
     const nuevo = calcularSM2(previo, calidad);
     const fila = { name: user.name, flashcard_id: flashcardId, ...nuevo };
+
+    // Una fila por repaso, para poder dibujar la retención. El progreso de la
+    // tarjeta se sobrescribe; esto no, se acumula.
+    const anotacion = {
+      id: (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : String(Date.now()) + Math.random(),
+      name: user.name,
+      flashcard_id: flashcardId,
+      calidad,
+      acierto: calidad >= 3,
+      intervalo_antes: (previo && previo.intervalo_dias) || 0,
+      creado_en: new Date().toISOString(),
+    };
+    setRepasosFlashcards((prev) => [...prev, anotacion]);
+    supabase.from("flashcards_repasos").insert([anotacion]).then(({ error }) => {
+      if (!error) return;
+      if (esFalloDeRed(error)) encolar("flashcards_repasos", anotacion.id, anotacion);
+      // Si la tabla aún no existe, no se encola: reintentarlo fallaría igual.
+      else console.error("No se pudo anotar el repaso:", error.message);
+    });
+
     try {
       const { data, error } = await supabase.from("flashcards_progreso").upsert(fila, { onConflict: "name,flashcard_id" }).select();
       if (error) throw error;
@@ -863,6 +892,7 @@ export default function AcademiaPIR() {
               user={user}
               flashcards={flashcards}
               progreso={flashcardsProgreso}
+              repasos={repasosFlashcards}
               onRepaso={registrarRepasoFlashcard}
               onUpdate={updateFlashcard}
               onAdd={addFlashcard}
@@ -3231,7 +3261,7 @@ const CALIFICACIONES_FLASHCARD = [
 //  - Cómo lo llevas: ¿cuánto he consolidado de verdad, no cuánto he visto?
 //  - Por mazo / por tema: ¿dónde se me está yendo el esfuerzo?
 //  - Las que se atragantan: ¿qué tarjetas hay que reescribir en vez de repetir?
-function EstadisticasFlashcards({ tarjetas, progresoPorId, hoy, mazos }) {
+function EstadisticasFlashcards({ tarjetas, progresoPorId, hoy, repasos }) {
   const e = useMemo(() => estadisticasFlashcards(tarjetas, progresoPorId, hoy), [tarjetas, progresoPorId, hoy]);
   const porMazo = useMemo(
     () => agruparEstadisticas(tarjetas, progresoPorId, (f) => [f.mazo || "General"], hoy),
@@ -3275,6 +3305,8 @@ function EstadisticasFlashcards({ tarjetas, progresoPorId, hoy, mazos }) {
         <Cifra valor={e.atascadas.length} texto="se te atragantan" aviso={e.atascadas.length > 0 ? "míralas abajo" : null} />
         <Cifra valor={e.repasadasHoy} texto="repasadas hoy" />
       </div>
+
+      <Retencion repasos={repasos} hoy={hoy} />
 
       <Card style={{ marginBottom: 16 }}>
         <FieldLabel>Lo que viene</FieldLabel>
@@ -3357,6 +3389,119 @@ function EstadisticasFlashcards({ tarjetas, progresoPorId, hoy, mazos }) {
   );
 }
 
+// Retención: de lo que repasas, cuánto aciertas. Necesita la tabla
+// `flashcards_repasos` (supabase-flashcards-repasos.sql); mientras no haya
+// repasos anotados, lo dice en vez de dibujar una línea inventada.
+function Retencion({ repasos, hoy }) {
+  const global = useMemo(() => retencionGlobal(repasos), [repasos]);
+  const semanas = useMemo(() => retencionPorSemana(repasos, hoy), [repasos, hoy]);
+  const tramos = useMemo(() => retencionPorIntervalo(repasos), [repasos]);
+
+  if (!global) {
+    return (
+      <Card style={{ marginBottom: 16 }}>
+        <FieldLabel>Tu retención</FieldLabel>
+        <p style={{ fontSize: 13.5, color: TINTA_SUAVE, margin: "6px 0 0", lineHeight: 1.6 }}>
+          Todavía no hay repasos anotados. Esto empieza a contar desde ahora: repasa unas cuantas tarjetas
+          y aquí aparecerá qué porcentaje aciertas, cómo va semana a semana, y si se te olvidan al
+          espaciarlas demasiado.
+        </p>
+      </Card>
+    );
+  }
+
+  const lectura =
+    global.pct >= RETENCION_OBJETIVO + 6
+      ? "Muy alta. Te las sabes de sobra cuando te salen, así que probablemente estás repasando más de lo necesario."
+      : global.pct >= RETENCION_OBJETIVO - 5
+      ? `En el punto. Se busca rondar el ${RETENCION_OBJETIVO}%: ni olvidar demasiado ni repasar de más.`
+      : `Por debajo del ${RETENCION_OBJETIVO}% que se busca. Se te están olvidando: mira abajo a qué distancia empiezan a fallar.`;
+
+  // Solo las semanas con repasos entran en la línea. Unir por encima de una
+  // semana vacía dibujaría un dato que no existe.
+  const ANCHO = 300, ALTO = 104, MARGEN = 6;
+  const x = (i) => MARGEN + (i * (ANCHO - MARGEN * 2)) / Math.max(1, semanas.length - 1);
+  const y = (pct) => MARGEN + ((100 - pct) / 100) * (ALTO - MARGEN * 2);
+  const tramosLinea = [];
+  let actual = [];
+  semanas.forEach((sem, i) => {
+    if (sem.pct === null) { if (actual.length) tramosLinea.push(actual); actual = []; return; }
+    actual.push({ x: x(i), y: y(sem.pct) });
+  });
+  if (actual.length) tramosLinea.push(actual);
+  const conDatos = semanas.filter((sem) => sem.pct !== null);
+  const maxTramo = Math.max(1, ...tramos.map((t) => t.repasos));
+
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <FieldLabel>Tu retención</FieldLabel>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, margin: "4px 0 2px" }}>
+        <span style={{ fontSize: 34, fontWeight: 700, color: TINTA, fontFamily: "var(--font-display)", lineHeight: 1 }}>
+          {global.pct}%
+        </span>
+        <span style={{ fontSize: 13, color: TINTA_SUAVE }}>
+          {global.aciertos} de {global.repasos} repasos
+        </span>
+      </div>
+      <p style={{ fontSize: 12.5, color: TINTA_TENUE, margin: "0 0 18px", lineHeight: 1.5 }}>{lectura}</p>
+
+      {conDatos.length >= 2 && (
+        <>
+          <svg viewBox={`0 0 ${ANCHO} ${ALTO}`} width="100%" height={ALTO} style={{ display: "block", overflow: "visible" }}>
+            <line x1={MARGEN} y1={y(RETENCION_OBJETIVO)} x2={ANCHO - MARGEN} y2={y(RETENCION_OBJETIVO)} stroke={RAYA} strokeWidth="1" />
+            <text x={ANCHO - MARGEN} y={y(RETENCION_OBJETIVO) - 5} textAnchor="end" fontSize="9.5" fill={TINTA_TENUE}>
+              objetivo {RETENCION_OBJETIVO}%
+            </text>
+            {tramosLinea.map((t, i) => (
+              <polyline key={i} points={t.map((pt) => `${pt.x},${pt.y}`).join(" ")}
+                        fill="none" stroke={TINTA} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            ))}
+            {tramosLinea.flat().map((pt, i) => (
+              <circle key={i} cx={pt.x} cy={pt.y} r="3.5" fill={TINTA} stroke="#F6F4EC" strokeWidth="2" />
+            ))}
+          </svg>
+          <div style={{ display: "flex", marginTop: 6 }}>
+            {semanas.map((sem) => (
+              <span key={sem.semana} title={`Semana del ${sem.semana}: ${sem.repasos} repasos`}
+                    style={{ flex: 1, textAlign: "center", fontSize: 10, color: TINTA_TENUE, fontVariantNumeric: "tabular-nums" }}>
+                {sem.pct === null ? "—" : sem.pct}
+              </span>
+            ))}
+          </div>
+          <p style={{ fontSize: 11.5, color: TINTA_TENUE, margin: "4px 0 20px" }}>
+            Últimas {semanas.length} semanas, la de hoy a la derecha. Un guion es una semana sin repasar.
+          </p>
+        </>
+      )}
+
+      <FieldLabel style={{ marginTop: 4 }}>A cuánta distancia aguantas</FieldLabel>
+      <p style={{ fontSize: 12.5, color: TINTA_TENUE, margin: "0 0 14px", lineHeight: 1.5 }}>
+        Qué porcentaje aciertas según el tiempo que llevabas sin ver la tarjeta. Si cae mucho en los tramos
+        largos, no es que estudies poco: es que se te están espaciando más de lo que aguantas.
+      </p>
+      {tramos.map((t) => (
+        <div key={t.texto} style={{ marginBottom: 11 }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 4 }}>
+            <span style={{ fontSize: 13.5, color: TINTA }}>{t.texto}</span>
+            <span style={{ fontSize: 13, color: TINTA, fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+              {t.pct === null ? "sin datos" : t.pct + "%"}
+            </span>
+          </div>
+          <div style={{ height: 7, borderRadius: 4, background: "#F2EFE7", overflow: "hidden" }}>
+            {t.pct !== null && (
+              <div style={{ width: `${Math.max(t.pct, 2)}%`, height: "100%", borderRadius: 4,
+                            background: t.pct < RETENCION_OBJETIVO - 10 ? ACENTO : TINTA_SUAVE }} />
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: TINTA_TENUE, marginTop: 3, fontVariantNumeric: "tabular-nums" }}>
+            {t.repasos} repaso{t.repasos === 1 ? "" : "s"}
+          </div>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
 function Cifra({ valor, texto, aviso }) {
   return (
     <Card style={{ padding: "16px 18px" }}>
@@ -3409,7 +3554,7 @@ function GrupoEstadistica({ titulo, filas }) {
   );
 }
 
-function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo }) {
+function Flashcards({ user, flashcards, progreso, repasos, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo }) {
   const hoy = new Date().toISOString().slice(0, 10);
   const progresoPorId = useMemo(() => {
     const m = {};
@@ -3699,7 +3844,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
         </div>
       )}
       {vista === "estadisticas" ? (
-        <EstadisticasFlashcards tarjetas={flashcardsFiltradas} progresoPorId={progresoPorId} hoy={hoy} />
+        <EstadisticasFlashcards tarjetas={flashcardsFiltradas} progresoPorId={progresoPorId} hoy={hoy} repasos={repasos} />
       ) : (
        <>
       {resumen && (
