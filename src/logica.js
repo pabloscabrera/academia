@@ -405,3 +405,96 @@ export function repasosPorDia(repasos, hoy, dias = 14) {
   }
   return salida;
 }
+
+// ---------- Mezclar temas dentro de la sesión ----------
+//
+// Repasar agrupado por tema se siente más fácil y retiene peor: el cerebro
+// coge carrerilla con el contexto y deja de recuperar de verdad. Alternar
+// cuesta más durante la sesión y se recuerda mejor después.
+//
+// No se baraja del todo: eso tiraría por la borda el orden por urgencia. Se
+// mira solo unas pocas posiciones por delante (`ventana`) buscando una
+// tarjeta de otro tema; si no la hay cerca, manda la urgencia.
+export function mezclarTemas(lista, claveDe, ventana = 5) {
+  const pendientes = [...lista];
+  const salida = [];
+  let anterior = null;
+  while (pendientes.length > 0) {
+    let elegido = 0;
+    if (anterior !== null) {
+      const limite = Math.min(ventana, pendientes.length);
+      for (let i = 0; i < limite; i++) {
+        if (claveDe(pendientes[i]) !== anterior) { elegido = i; break; }
+      }
+    }
+    const [carta] = pendientes.splice(elegido, 1);
+    salida.push(carta);
+    anterior = claveDe(carta);
+  }
+  return salida;
+}
+
+// El tema de una tarjeta a efectos de mezclar: su primera etiqueta, y si no
+// tiene, su mazo. Sin esto, un mazo de un solo tema no se mezclaría nunca.
+export const temaDeTarjeta = (f) =>
+  ((f.etiquetas && f.etiquetas[0]) || f.mazo || "General");
+
+// ---------- Repartir los picos de carga ----------
+//
+// Que un jueves caigan 90 tarjetas no es un problema del algoritmo, es que
+// se acumularon. Adelantar unas cuantas hoy lo deshace. Repasar antes de
+// tiempo recorta un poco el espaciado, así que solo se propone cuando el
+// pico es de verdad, no por tres tarjetas de más.
+export const PICO_MINIMO = 25;
+
+export function sugerirAdelanto(prevision, margen = 1.6) {
+  if (!prevision || prevision.length < 3) return null;
+  const futuros = prevision.slice(1);
+  const conCarga = futuros.filter((d) => d.cuantas > 0);
+  if (conCarga.length === 0) return null;
+
+  const media = conCarga.reduce((a, d) => a + d.cuantas, 0) / conCarga.length;
+  const pico = futuros.reduce((max, d) => (d.cuantas > max.cuantas ? d : max), futuros[0]);
+  if (pico.cuantas < PICO_MINIMO || pico.cuantas < media * margen) return null;
+
+  // Se propone bajar el pico hasta la media, sin pasarse: adelantar media
+  // sesión de golpe cansa más de lo que ahorra.
+  const aAdelantar = Math.min(Math.round(pico.cuantas - media), 25);
+  if (aAdelantar < 5) return null;
+  return { fecha: pico.fecha, cuantas: pico.cuantas, adelantar: aAdelantar, quedarian: pico.cuantas - aAdelantar };
+}
+
+// ---------- Llegar a una fecha con todo consolidado ----------
+//
+// Una tarjeta no se consolida el día que la empiezas: el algoritmo la va
+// espaciando 1, 6, ~15 días… así que desde que la ves por primera vez hasta
+// que aguanta tres semanas pasa aproximadamente un mes. Eso marca una fecha
+// tope para EMPEZAR tarjetas nuevas, que es el dato que nadie calcula y el
+// que de verdad aprieta.
+export const DIAS_PARA_CONSOLIDAR = 30;
+
+const diasEntre = (desde, hasta) =>
+  Math.round((new Date(hasta + "T00:00:00Z") - new Date(desde + "T00:00:00Z")) / 86400000);
+
+export function planHastaObjetivo(stats, hoy, fechaObjetivo) {
+  if (!fechaObjetivo) return null;
+  const dias = diasEntre(hoy, fechaObjetivo);
+  if (dias < 0) return { dias, pasada: true };
+
+  const sinConsolidar = stats.nueva + stats.reaprendiendo + stats.joven;
+  // Último día con sentido para estrenar una tarjeta y que llegue madura.
+  const diasParaEstrenar = dias - DIAS_PARA_CONSOLIDAR;
+  const nuevasPorDia = diasParaEstrenar > 0 ? Math.ceil(stats.nueva / diasParaEstrenar) : null;
+
+  return {
+    dias,
+    pasada: false,
+    sinConsolidar,
+    nuevas: stats.nueva,
+    diasParaEstrenar,
+    // null = ya no da tiempo a estrenar nada nuevo y que cuaje; a partir de
+    // ahí lo que toca es consolidar lo empezado, no abrir frentes.
+    nuevasPorDia,
+    llegasConLoEmpezado: dias >= DIAS_PARA_CONSOLIDAR,
+  };
+}

@@ -12,6 +12,7 @@ import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, s
 import {
   esExamen, TEMA_PLACEHOLDER, temasDisponibles, filtrarPreguntas, indicePorId, aplicarFiltroPedido,
   estadisticasFlashcards, agruparEstadisticas, DIAS_MADURA,
+  mezclarTemas, temaDeTarjeta, sugerirAdelanto, planHastaObjetivo, DIAS_PARA_CONSOLIDAR,
   retencionGlobal, retencionPorSemana, retencionPorIntervalo, RETENCION_OBJETIVO,
   MAX_EDAD_TIRADA_MS, reconstruirTirada, agruparAciertos,
   calcularSM2, ordenarPorPrioridad, parsearEtiquetas, lunesDeLaSemana,
@@ -44,7 +45,7 @@ const PORTADA_TEXTO = "#F0E9D8";
 const PORTADA_PLACEHOLDER = "#8A7F68";
 const PORTADA_BORDE = "rgba(217,169,77,.22)";
 
-const AJUSTES_DEFECTO = { escala: 1, fondo: "#EEECE4", fuente: "fraunces" };
+const AJUSTES_DEFECTO = { escala: 1, fondo: "#EEECE4", fuente: "fraunces", fechaObjetivo: "" };
 const ESCALAS = [
   { id: "pequena", label: "A", escala: 0.9, tamPreview: 13 },
   { id: "normal", label: "A", escala: 1, tamPreview: 16 },
@@ -893,6 +894,7 @@ export default function AcademiaPIR() {
               flashcards={flashcards}
               progreso={flashcardsProgreso}
               repasos={repasosFlashcards}
+              fechaObjetivo={ajustes.fechaObjetivo}
               onRepaso={registrarRepasoFlashcard}
               onUpdate={updateFlashcard}
               onAdd={addFlashcard}
@@ -1183,6 +1185,18 @@ function AjustesPanel({ ajustes, setAjustes, onClose }) {
           <span style={{ fontSize: 17, fontFamily: "var(--font-display)", color: "#1E1C18" }}>Ajustes</span>
           <button type="button" onClick={onClose} style={styles.iconBtn}><X size={18} color="#6E6A61" /></button>
         </div>
+
+        <FieldLabel>Fecha para llegar preparado</FieldLabel>
+        <p style={{ fontSize: 12, color: TINTA_TENUE, margin: "0 0 8px", lineHeight: 1.45 }}>
+          Ponla antes del examen si quieres llegar con margen. Las estadísticas de flashcards calculan
+          desde aquí cuántas tarjetas nuevas te da tiempo a estrenar.
+        </p>
+        <input
+          type="date"
+          value={ajustes.fechaObjetivo || ""}
+          onChange={(e) => setAjustes({ ...ajustes, fechaObjetivo: e.target.value })}
+          style={{ ...styles.input, marginBottom: 22 }}
+        />
 
         <FieldLabel>Tamaño de letra</FieldLabel>
         <div style={{ display: "flex", gap: 8, marginBottom: 22 }}>
@@ -3261,7 +3275,18 @@ const CALIFICACIONES_FLASHCARD = [
 //  - Cómo lo llevas: ¿cuánto he consolidado de verdad, no cuánto he visto?
 //  - Por mazo / por tema: ¿dónde se me está yendo el esfuerzo?
 //  - Las que se atragantan: ¿qué tarjetas hay que reescribir en vez de repetir?
-function EstadisticasFlashcards({ tarjetas, progresoPorId, hoy, repasos }) {
+// "el jueves 9" en vez de "2026-10-09": la fecha suelta no dice nada.
+function diaLargo(iso) {
+  try {
+    const d = new Date(iso + "T00:00:00Z");
+    const texto = d.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", timeZone: "UTC" });
+    return "El " + texto;
+  } catch {
+    return "El " + iso;
+  }
+}
+
+function EstadisticasFlashcards({ tarjetas, progresoPorId, hoy, repasos, fechaObjetivo }) {
   const e = useMemo(() => estadisticasFlashcards(tarjetas, progresoPorId, hoy), [tarjetas, progresoPorId, hoy]);
   const porMazo = useMemo(
     () => agruparEstadisticas(tarjetas, progresoPorId, (f) => [f.mazo || "General"], hoy),
@@ -3305,6 +3330,8 @@ function EstadisticasFlashcards({ tarjetas, progresoPorId, hoy, repasos }) {
         <Cifra valor={e.atascadas.length} texto="se te atragantan" aviso={e.atascadas.length > 0 ? "míralas abajo" : null} />
         <Cifra valor={e.repasadasHoy} texto="repasadas hoy" />
       </div>
+
+      <PlanObjetivo stats={e} hoy={hoy} fechaObjetivo={fechaObjetivo} />
 
       <Retencion repasos={repasos} hoy={hoy} />
 
@@ -3392,6 +3419,69 @@ function EstadisticasFlashcards({ tarjetas, progresoPorId, hoy, repasos }) {
 // Retención: de lo que repasas, cuánto aciertas. Necesita la tabla
 // `flashcards_repasos` (supabase-flashcards-repasos.sql); mientras no haya
 // repasos anotados, lo dice en vez de dibujar una línea inventada.
+// Cuenta atrás hasta la fecha que te hayas puesto. El dato que casi nadie
+// calcula: no basta con que queden días, una tarjeta tarda un mes desde que
+// la estrenas hasta que aguanta sola. Eso marca una fecha tope para empezar
+// tarjetas nuevas, bastante anterior a la del examen.
+function PlanObjetivo({ stats, hoy, fechaObjetivo }) {
+  const plan = useMemo(() => planHastaObjetivo(stats, hoy, fechaObjetivo), [stats, hoy, fechaObjetivo]);
+  if (!plan) {
+    return (
+      <Card style={{ marginBottom: 16 }}>
+        <FieldLabel>Tu fecha</FieldLabel>
+        <p style={{ fontSize: 13.5, color: TINTA_SUAVE, margin: "6px 0 0", lineHeight: 1.6 }}>
+          Pon una fecha en Ajustes (el engranaje de arriba) y aquí te digo cuántas tarjetas nuevas te da
+          tiempo a estrenar para llegar con todo consolidado.
+        </p>
+      </Card>
+    );
+  }
+  if (plan.pasada) {
+    return (
+      <Card style={{ marginBottom: 16 }}>
+        <FieldLabel>Tu fecha</FieldLabel>
+        <p style={{ fontSize: 13.5, color: TINTA_SUAVE, margin: "6px 0 0" }}>
+          Esa fecha ya pasó. Cambia la de Ajustes si quieres seguir usando esto.
+        </p>
+      </Card>
+    );
+  }
+
+  const seAcaba = plan.diasParaEstrenar <= 0;
+  return (
+    <Card style={{ marginBottom: 16, border: `1.5px solid ${seAcaba ? AVISO : RAYA}` }}>
+      <FieldLabel>Tu fecha</FieldLabel>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10, margin: "4px 0 10px" }}>
+        <span style={{ fontSize: 34, fontWeight: 700, color: TINTA, fontFamily: "var(--font-display)", lineHeight: 1 }}>
+          {plan.dias}
+        </span>
+        <span style={{ fontSize: 13.5, color: TINTA_SUAVE }}>
+          día{plan.dias === 1 ? "" : "s"} · te quedan {plan.sinConsolidar} tarjeta{plan.sinConsolidar === 1 ? "" : "s"} por consolidar
+        </span>
+      </div>
+      {seAcaba ? (
+        <p style={{ fontSize: 13.5, color: TINTA, margin: 0, lineHeight: 1.6 }}>
+          Ya no da tiempo a que cuaje una tarjeta nueva: hacen falta unos {DIAS_PARA_CONSOLIDAR} días desde
+          que la estrenas hasta que aguanta sola. A partir de aquí rinde más rematar lo empezado que abrir
+          frentes nuevos.
+        </p>
+      ) : (
+        <p style={{ fontSize: 13.5, color: TINTA, margin: 0, lineHeight: 1.6 }}>
+          {plan.nuevas > 0 ? (
+            <>
+              Te quedan <strong>{plan.nuevas}</strong> sin estrenar y <strong>{plan.diasParaEstrenar} días</strong> para
+              hacerlo: <strong>{plan.nuevasPorDia === 1 ? "una al día" : `unas ${plan.nuevasPorDia} al día`}</strong>. Después de esa fecha, lo que estrenes
+              ya no llega consolidado.
+            </>
+          ) : (
+            <>Ya has estrenado todas. Lo que queda es mantenerlas hasta el día.</>
+          )}
+        </p>
+      )}
+    </Card>
+  );
+}
+
 function Retencion({ repasos, hoy }) {
   const global = useMemo(() => retencionGlobal(repasos), [repasos]);
   const semanas = useMemo(() => retencionPorSemana(repasos, hoy), [repasos, hoy]);
@@ -3554,7 +3644,7 @@ function GrupoEstadistica({ titulo, filas }) {
   );
 }
 
-function Flashcards({ user, flashcards, progreso, repasos, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo }) {
+function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo }) {
   const hoy = new Date().toISOString().slice(0, 10);
   const progresoPorId = useMemo(() => {
     const m = {};
@@ -3669,9 +3759,32 @@ function Flashcards({ user, flashcards, progreso, repasos, onRepaso, onUpdate, o
   const [busquedaTarjetas, setBusquedaTarjetas] = useState("");
 
 
+  // Primero la urgencia decide QUÉ entra; después se alterna el tema dentro
+  // de lo elegido. Agrupar por tema se siente más fácil y retiene peor.
+  // Si en los próximos días hay un pico de carga, se ofrece deshacerlo
+  // adelantando parte hoy. Solo cuando el pico es de verdad: ver
+  // sugerirAdelanto.
+  const adelanto = useMemo(() => {
+    const e = estadisticasFlashcards(flashcardsFiltradas, progresoPorId, hoy);
+    const s = sugerirAdelanto(e.prevision);
+    if (!s) return null;
+    const candidatas = flashcardsFiltradas.filter((f) => {
+      const p = progresoPorId[f.grupo_id || f.id];
+      return p && p.proxima_revision === s.fecha;
+    });
+    return candidatas.length > 0 ? { ...s, candidatas } : null;
+  }, [flashcardsFiltradas, progresoPorId, hoy]);
+
+  const empezarCon = (lista) => {
+    setSesion(mezclarTemas(lista, temaDeTarjeta));
+    setIdx(0);
+    setRevelada(false);
+    setResumen(null);
+  };
+
   const empezar = () => {
     const cantidad = Math.max(1, Math.min(numTarjetas || 1, pendientes.length));
-    setSesion(ordenarPorPrioridad(pendientes, progresoPorId).slice(0, cantidad));
+    setSesion(mezclarTemas(ordenarPorPrioridad(pendientes, progresoPorId).slice(0, cantidad), temaDeTarjeta));
     setIdx(0);
     setRevelada(false);
     setResumen(null);
@@ -3844,7 +3957,7 @@ function Flashcards({ user, flashcards, progreso, repasos, onRepaso, onUpdate, o
         </div>
       )}
       {vista === "estadisticas" ? (
-        <EstadisticasFlashcards tarjetas={flashcardsFiltradas} progresoPorId={progresoPorId} hoy={hoy} repasos={repasos} />
+        <EstadisticasFlashcards tarjetas={flashcardsFiltradas} progresoPorId={progresoPorId} hoy={hoy} repasos={repasos} fechaObjetivo={fechaObjetivo} />
       ) : (
        <>
       {resumen && (
@@ -3885,6 +3998,25 @@ function Flashcards({ user, flashcards, progreso, repasos, onRepaso, onUpdate, o
           </>
         )}
       </Card>
+      {adelanto && (
+        <Card style={{ marginTop: 12, border: `1.5px solid ${AVISO}` }}>
+          <p style={{ margin: 0, fontSize: 14.5, color: TINTA, lineHeight: 1.55 }}>
+            <strong>{diaLargo(adelanto.fecha)}</strong> te caen {adelanto.cuantas} tarjetas.
+            Adelanta {adelanto.adelantar} hoy y ese día se te quedan en {adelanto.quedarian}.
+          </p>
+          <p style={{ margin: "8px 0 0", fontSize: 12, color: TINTA_TENUE, lineHeight: 1.5 }}>
+            Repasarlas antes de tiempo recorta un poco su espaciado. Compensa cuando el montón es grande:
+            lo que de verdad se olvida es lo que acabas no repasando.
+          </p>
+          <button
+            type="button"
+            onClick={() => empezarCon(ordenarPorPrioridad(adelanto.candidatas, progresoPorId).slice(0, adelanto.adelantar))}
+            style={{ ...styles.btnSecondary, marginTop: 14, justifyContent: "center", borderColor: AVISO, color: AVISO }}
+          >
+            Adelantar {adelanto.adelantar}
+          </button>
+        </Card>
+      )}
 
       <div style={{ marginTop: 32 }}>
         <button type="button" onClick={() => setVerTarjetas((v) => !v)} style={{ ...styles.linkBtn, display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
