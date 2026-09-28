@@ -406,9 +406,19 @@ export default function AcademiaPIR() {
     const errorUsuario = validarUsuario(username);
     if (errorUsuario) return { error: errorUsuario };
     if (!password) return { error: "Escribe tu contraseña." };
-    const { error } = await supabase.auth.signInWithPassword({ email: emailDeUsuario(username), password });
-    if (error) return { error: "Usuario o contraseña incorrectos." };
-    return { error: null };
+    try {
+      // Sin límite de tiempo, un servidor que no contesta deja el botón
+      // girando para siempre: por fuera es "le doy a entrar y no pasa nada".
+      const { error } = await conTiempoLimite(
+        supabase.auth.signInWithPassword({ email: emailDeUsuario(username), password }),
+        ESPERA_MAX_CARGA_MS,
+        "El servidor está tardando demasiado."
+      );
+      if (error) return { error: "Usuario o contraseña incorrectos." };
+      return { error: null };
+    } catch (err) {
+      return { error: mensajeDeCarga(err) };
+    }
   };
 
   // El alta no la hace el navegador: la pide a api/registro.js, que es quien
@@ -423,13 +433,17 @@ export default function AcademiaPIR() {
     const limpio = username.trim();
     let respuesta;
     try {
-      respuesta = await fetch("/api/registro", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ usuario: limpio, password, codigo: codigo.trim() }),
-      });
-    } catch {
-      return { error: "No se pudo conectar con el servidor. Inténtalo de nuevo." };
+      respuesta = await conTiempoLimite(
+        fetch("/api/registro", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ usuario: limpio, password, codigo: codigo.trim() }),
+        }),
+        ESPERA_MAX_CARGA_MS,
+        "El servidor está tardando demasiado."
+      );
+    } catch (err) {
+      return { error: mensajeDeCarga(err) };
     }
     let datos = null;
     try { datos = await respuesta.json(); } catch {}
@@ -437,7 +451,15 @@ export default function AcademiaPIR() {
     // La cuenta ya existe pero sin sesión (la creó el servidor), así que
     // entramos directamente. Si por lo que sea fallara, AuthScreen enseña el
     // "Cuenta creada, ya puedes entrar" de siempre.
-    await supabase.auth.signInWithPassword({ email: emailDeUsuario(limpio), password });
+    try {
+      await conTiempoLimite(
+        supabase.auth.signInWithPassword({ email: emailDeUsuario(limpio), password }),
+        ESPERA_MAX_CARGA_MS,
+        "El servidor está tardando demasiado."
+      );
+    } catch {
+      // La cuenta ya existe; AuthScreen enseña "Cuenta creada, ya puedes entrar".
+    }
     return { error: null };
   };
 
