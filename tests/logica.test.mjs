@@ -92,22 +92,50 @@ test("nunca salen aciertos negativos aunque haya más fallos que intentos", () =
   assert.equal(grupos[0].pct, 0);
 });
 
-test("SM-2: un fallo reinicia y un acierto encadena 1, 6 y luego por el factor", () => {
-  const hoy = new Date("2026-01-10T12:00:00Z");
-  const primera = calcularSM2(null, 5, hoy);
-  assert.equal(primera.repeticiones, 1);
-  assert.equal(primera.intervalo_dias, 1);
-  assert.equal(primera.proxima_revision, "2026-01-11");
+test("los cuatro botones dan cuatro días distintos, que es su razón de ser", () => {
+  const hoy = new Date("2026-10-01T12:00:00Z");
+  const asentada = { ease_factor: 2.5, repeticiones: 5, intervalo_dias: 30 };
+  const dias = [0, 3, 4, 5].map((q) => calcularSM2(asentada, q, hoy).intervalo_dias);
+  assert.equal(new Set(dias).size, 4, `los cuatro deben diferir, salieron ${dias.join(", ")}`);
+  const [muyDificil, dificil, facil, muyFacil] = dias;
+  assert.equal(muyDificil, 1, "fallar la devuelve a mañana");
+  assert.ok(dificil < facil, "Difícil tiene que traerla antes que Fácil");
+  assert.ok(muyFacil > facil, "Muy fácil tiene que ahorrarte repasos");
+});
 
-  const segunda = calcularSM2(primera, 5, hoy);
-  assert.equal(segunda.intervalo_dias, 6);
-
+test("fallar reinicia las repeticiones, acertar las encadena", () => {
+  const hoy = new Date("2026-10-01T12:00:00Z");
+  const primera = calcularSM2(null, 4, hoy);
+  assert.deepEqual({ r: primera.repeticiones, i: primera.intervalo_dias }, { r: 1, i: 1 });
+  const segunda = calcularSM2(primera, 4, hoy);
+  assert.deepEqual({ r: segunda.repeticiones, i: segunda.intervalo_dias }, { r: 2, i: 6 });
   const tercera = calcularSM2(segunda, 4, hoy);
   assert.equal(tercera.intervalo_dias, Math.round(6 * segunda.ease_factor));
-
   const fallada = calcularSM2(tercera, 0, hoy);
-  assert.equal(fallada.repeticiones, 0, "un 'Muy difícil' vuelve a empezar");
-  assert.equal(fallada.intervalo_dias, 1);
+  assert.deepEqual({ r: fallada.repeticiones, i: fallada.intervalo_dias }, { r: 0, i: 1 });
+});
+
+test("una nueva marcada Muy fácil se salta el primer día", () => {
+  const hoy = new Date("2026-10-01T12:00:00Z");
+  assert.equal(calcularSM2(null, 5, hoy).intervalo_dias, 4, "repetir mañana lo que te sabes es tiempo tirado");
+  assert.equal(calcularSM2(null, 4, hoy).intervalo_dias, 1);
+});
+
+test("acertarla nunca deja el intervalo igual", () => {
+  const hoy = new Date("2026-10-01T12:00:00Z");
+  // Con x1.2 sobre 1 día, redondear daría 1 otra vez y se quedaría en bucle.
+  const corta = { ease_factor: 1.3, repeticiones: 4, intervalo_dias: 1 };
+  assert.ok(calcularSM2(corta, 3, hoy).intervalo_dias > 1);
+});
+
+test("de un mal día se puede volver: la facilidad se recupera", () => {
+  const hoy = new Date("2026-10-01T12:00:00Z");
+  let p = null;
+  for (let i = 0; i < 5; i++) p = calcularSM2(p, 0, hoy);
+  const hundida = p.ease_factor;
+  assert.ok(hundida > 1.3, "cinco fallos no pueden dejarla clavada en el suelo para siempre");
+  for (let i = 0; i < 4; i++) p = calcularSM2(p, 5, hoy);
+  assert.ok(p.ease_factor > hundida, "acertarla varias veces la devuelve arriba");
 });
 
 test("SM-2: el factor de facilidad nunca baja de 1.3", () => {

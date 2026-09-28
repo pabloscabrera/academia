@@ -125,27 +125,58 @@ export function agruparAciertos(preguntas, clave, progresoPorId, fallosPorId) {
 
 // ---------- Flashcards ----------
 
-// Repetición espaciada estilo Anki (SM-2). calidad: 0 = Muy difícil (fallo,
-// se reinicia), 3 = Difícil, 4 = Fácil, 5 = Muy fácil.
+// Repetición espaciada. calidad: 0 = Muy difícil (fallo, se reinicia),
+// 3 = Difícil, 4 = Fácil, 5 = Muy fácil.
+//
+// Arrancó siendo el SM-2 original (1987), y ahí los tres botones que no son
+// "Muy difícil" daban EXACTAMENTE el mismo próximo día: solo cambiaban la
+// facilidad, que tarda varios repasos en notarse. Marcar "Difícil" no te la
+// devolvía antes, que es justo lo que uno espera al pulsarlo.
+//
+// Ahora cada botón tiene su propio multiplicador, como en Anki:
+//   Difícil   -> el intervalo crece poco (x1.2), la vuelves a ver pronto.
+//   Fácil     -> crece por la facilidad de la tarjeta, el caso normal.
+//   Muy fácil -> crece más (x1.3 extra) y se salta días, para no gastar
+//                repasos en lo que ya te sabes.
+const FACTOR_DIFICIL = 1.2;
+const FACTOR_MUY_FACIL = 1.3;
+export const EASE_MINIMO = 1.3;
+
+// Cuánto mueve la facilidad cada botón. El SM-2 original restaba 0.8 al
+// fallar: con dos fallos la tarjeta se quedaba clavada en el suelo de 1.3 y
+// no había forma humana de sacarla de ahí. Estos son los de Anki, que
+// castigan menos y, sobre todo, permiten recuperarse.
+const CAMBIO_EASE = { 0: -0.2, 3: -0.15, 4: 0, 5: 0.15 };
+
 export function calcularSM2(progresoPrevio, calidad, hoy = new Date()) {
-  let ease = (progresoPrevio && progresoPrevio.ease_factor) || 2.5;
+  const easePrevio = (progresoPrevio && progresoPrevio.ease_factor) || 2.5;
   let repeticiones = (progresoPrevio && progresoPrevio.repeticiones) || 0;
   let intervalo = (progresoPrevio && progresoPrevio.intervalo_dias) || 0;
+
+  const ease = Math.max(EASE_MINIMO, Math.round((easePrevio + (CAMBIO_EASE[calidad] ?? 0)) * 100) / 100);
 
   if (calidad < 3) {
     repeticiones = 0;
     intervalo = 1;
   } else {
     repeticiones += 1;
-    if (repeticiones === 1) intervalo = 1;
-    else if (repeticiones === 2) intervalo = 6;
-    else intervalo = Math.round(intervalo * ease);
+    if (repeticiones === 1) {
+      // "Muy fácil" en una tarjeta nueva se salta el primer día: si te la
+      // sabes de sobra, repetirla mañana es tiempo tirado.
+      intervalo = calidad === 5 ? 4 : 1;
+    } else if (repeticiones === 2) {
+      intervalo = calidad === 3 ? 4 : calidad === 5 ? 8 : 6;
+    } else {
+      const multiplicador = calidad === 3 ? FACTOR_DIFICIL : calidad === 5 ? ease * FACTOR_MUY_FACIL : ease;
+      // Siempre al menos un día más que la vez anterior: acertarla no puede
+      // dejarte el intervalo igual (con x1.2 sobre 1 día saldría 1 otra vez).
+      intervalo = Math.max(intervalo + 1, Math.round(intervalo * multiplicador));
+    }
   }
-  ease = Math.max(1.3, ease + (0.1 - (5 - calidad) * (0.08 + (5 - calidad) * 0.02)));
 
   const proxima = new Date(hoy.getTime() + intervalo * 86400000);
   return {
-    ease_factor: Math.round(ease * 100) / 100,
+    ease_factor: ease,
     intervalo_dias: intervalo,
     repeticiones,
     proxima_revision: proxima.toISOString().slice(0, 10),
