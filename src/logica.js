@@ -323,3 +323,85 @@ export function agruparEstadisticas(tarjetas, progresoPorId, claves, hoy) {
       return a.easeMedio - b.easeMedio || b.total - a.total;
     });
 }
+
+// ---------- Retención (necesita `flashcards_repasos`) ----------
+//
+// Retención = de lo que repasas, cuánto aciertas. Un repaso cuenta como
+// acierto si no lo marcaste "Muy difícil" (calidad >= 3), que es justo el
+// punto donde el algoritmo decide si te lo sabías o hay que reiniciar.
+//
+// Anki apunta a ~90%: por debajo estás olvidando demasiado y los intervalos
+// son largos; muy por encima, te sobra repaso y estás perdiendo tiempo.
+export const RETENCION_OBJETIVO = 90;
+
+export function retencionGlobal(repasos) {
+  if (!repasos || repasos.length === 0) return null;
+  const aciertos = repasos.filter((r) => r.acierto).length;
+  return { repasos: repasos.length, aciertos, pct: Math.round((aciertos / repasos.length) * 100) };
+}
+
+const inicioSemana = (iso) => {
+  const d = new Date(iso);
+  const dia = d.getUTCDay();
+  d.setUTCDate(d.getUTCDate() + ((dia === 0 ? -6 : 1) - dia));
+  return d.toISOString().slice(0, 10);
+};
+
+// Una fila por semana, de la más antigua a la más reciente. Las semanas sin
+// un solo repaso salen con `pct: null`: no repasar no es fallar, y pintarlo
+// como un 0% sería mentir sobre cómo lo llevas.
+export function retencionPorSemana(repasos, hoy, semanas = 8) {
+  const lunes = [];
+  const base = inicioSemana(hoy + "T00:00:00Z");
+  for (let i = semanas - 1; i >= 0; i--) {
+    const d = new Date(base + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() - i * 7);
+    lunes.push(d.toISOString().slice(0, 10));
+  }
+  const cubos = {};
+  lunes.forEach((l) => { cubos[l] = { semana: l, repasos: 0, aciertos: 0 }; });
+  (repasos || []).forEach((r) => {
+    const l = inicioSemana(r.creado_en);
+    if (cubos[l]) { cubos[l].repasos += 1; if (r.acierto) cubos[l].aciertos += 1; }
+  });
+  return lunes.map((l) => {
+    const c = cubos[l];
+    return { ...c, pct: c.repasos > 0 ? Math.round((c.aciertos / c.repasos) * 100) : null };
+  });
+}
+
+// El corte por intervalo es el que de verdad acciona algo: si a tres semanas
+// aciertas el 60%, el problema no es que estudies poco, es que el algoritmo
+// te las está espaciando más de lo que aguantas.
+export const TRAMOS_INTERVALO = [
+  { hasta: 1, texto: "1 día" },
+  { hasta: 3, texto: "2-3 días" },
+  { hasta: 7, texto: "4-7 días" },
+  { hasta: 21, texto: "1-3 semanas" },
+  { hasta: Infinity, texto: "más de 3 semanas" },
+];
+
+export function retencionPorIntervalo(repasos) {
+  const cubos = TRAMOS_INTERVALO.map((t) => ({ texto: t.texto, repasos: 0, aciertos: 0 }));
+  (repasos || []).forEach((r) => {
+    const dias = r.intervalo_antes || 0;
+    const i = TRAMOS_INTERVALO.findIndex((t) => dias <= t.hasta);
+    const cubo = cubos[i === -1 ? cubos.length - 1 : i];
+    cubo.repasos += 1;
+    if (r.acierto) cubo.aciertos += 1;
+  });
+  return cubos.map((c) => ({ ...c, pct: c.repasos > 0 ? Math.round((c.aciertos / c.repasos) * 100) : null }));
+}
+
+// Lo que se hizo de verdad cada día, que no es lo mismo que lo que tocaba.
+export function repasosPorDia(repasos, hoy, dias = 14) {
+  const salida = [];
+  for (let i = dias - 1; i >= 0; i--) {
+    const d = new Date(hoy + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() - i);
+    const fecha = d.toISOString().slice(0, 10);
+    const delDia = (repasos || []).filter((r) => String(r.creado_en).slice(0, 10) === fecha);
+    salida.push({ fecha, cuantas: delDia.length });
+  }
+  return salida;
+}

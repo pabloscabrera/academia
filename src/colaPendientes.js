@@ -16,7 +16,7 @@
 const clave = (nombre) => `pir-pendientes-${nombre}`;
 
 export function colaVacia() {
-  return { fallos: {}, preguntas_progreso: {}, flashcards_progreso: {}, rachas: null };
+  return { fallos: {}, preguntas_progreso: {}, flashcards_progreso: {}, flashcards_repasos: {}, rachas: null };
 }
 
 // Un fallo de red, no un rechazo del servidor. Un error de permisos o de
@@ -52,6 +52,7 @@ export function contarCola(cola) {
     Object.keys(cola.fallos || {}).length +
     Object.keys(cola.preguntas_progreso || {}).length +
     Object.keys(cola.flashcards_progreso || {}).length +
+    Object.keys(cola.flashcards_repasos || {}).length +
     (cola.rachas ? 1 : 0)
   );
 }
@@ -73,7 +74,7 @@ export function sinFila(cola, tabla, claveFila) {
 // Todo lo pendiente, en una lista plana para recorrerla al reconectar.
 export function filasPendientes(cola) {
   const salida = [];
-  ["fallos", "preguntas_progreso", "flashcards_progreso"].forEach((tabla) => {
+  ["fallos", "preguntas_progreso", "flashcards_progreso", "flashcards_repasos"].forEach((tabla) => {
     Object.entries(cola[tabla] || {}).forEach(([claveFila, fila]) => {
       salida.push({ tabla, claveFila, fila });
     });
@@ -86,5 +87,8 @@ export const CONFLICTO = {
   fallos: "name,pregunta_id",
   preguntas_progreso: "name,pregunta_id",
   flashcards_progreso: "name,flashcard_id",
+  // Append-only: cada repaso es una fila nueva con su propio id, así que
+  // reintentar la misma no duplica nada.
+  flashcards_repasos: "id",
   rachas: "name",
 };
