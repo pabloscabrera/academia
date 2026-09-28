@@ -1513,23 +1513,6 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
   );
   const disponibles = filtradas.length;
 
-  // "Practicar" desde "Dónde fallas" llega como un filtro ya elegido. Se
-  // aplica una vez y se avisa al raíz para que lo suelte: si no, volver a
-  // esta pestaña lo reimpondría encima de lo que hubieras cambiado a mano.
-  useEffect(() => {
-    if (!filtroPedido || state !== "config") return;
-    const aplicado = aplicarFiltroPedido(filtroPedido, { cursos, temas });
-    setCurso(aplicado.curso);
-    setTema(aplicado.tema);
-    setOrigen(aplicado.origen);
-    if (onFiltroAplicado) onFiltroAplicado();
-  }, [filtroPedido, state, cursos, temas]);
-
-  // Si al cambiar de filtro quedan menos preguntas de las pedidas, se ajusta
-  // sola en vez de esperar a que el usuario vuelva al campo.
-  useEffect(() => {
-    setNumPreguntas((v) => (typeof v === "number" && v > disponibles ? Math.max(1, disponibles) : v));
-  }, [disponibles]);
   const [numPreguntas, setNumPreguntas] = useState(10);
   const [state, setState] = useState("config");
   const [pool, setPool] = useState([]);
@@ -1558,6 +1541,29 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
     }
     return () => clearInterval(timer);
   }, [state]);
+
+  // OJO con el sitio: estos dos efectos leen `state` y `disponibles`, así que
+  // tienen que ir DESPUÉS de los useState. Estaban más arriba, y como el array
+  // de dependencias se evalúa en el momento, `state` se tocaba antes de
+  // existir: ReferenceError al dibujar, árbol desmontado y pantalla vacía.
+
+  // "Practicar" desde "Dónde fallas" llega como un filtro ya elegido. Se
+  // aplica una vez y se avisa al raíz para que lo suelte: si no, volver a
+  // esta pestaña lo reimpondría encima de lo que hubieras cambiado a mano.
+  useEffect(() => {
+    if (!filtroPedido || state !== "config") return;
+    const aplicado = aplicarFiltroPedido(filtroPedido, { cursos, temas });
+    setCurso(aplicado.curso);
+    setTema(aplicado.tema);
+    setOrigen(aplicado.origen);
+    if (onFiltroAplicado) onFiltroAplicado();
+  }, [filtroPedido, state, cursos, temas]);
+
+  // Si al cambiar de filtro quedan menos preguntas de las pedidas, se ajusta
+  // sola en vez de esperar a que el usuario vuelva al campo.
+  useEffect(() => {
+    setNumPreguntas((v) => (typeof v === "number" && v > disponibles ? Math.max(1, disponibles) : v));
+  }, [disponibles]);
 
   // Lo guardado al abrir la pestaña. Se lee una sola vez: mientras haya una
   // tirada en marcha, la fuente de verdad es el estado de React.
