@@ -3,8 +3,8 @@
   "short_name": "AUTOPIR",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1C170F",
-  "theme_color": "#1C170F",
+  "background_color": "#1D4A3C",
+  "theme_color": "#1D4A3C",
   "icons": [
     {
       "src": "/icon-192.png",
