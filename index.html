@@ -29,7 +29,43 @@
     </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="arranque" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #6E6A61; padding: 48px 24px; text-align: center; font-size: 15px; line-height: 1.6;">
+        Cargando AUTOPIR…
+      </div>
+    </div>
+    <script>
+      /* Red de seguridad para la pantalla en blanco.
+
+         El icono de la pantalla de inicio guarda su propia copia de esta
+         página. Tras un despliegue, el fichero de JavaScript cambia de
+         nombre, así que esa copia apunta a algo que ya no existe: la app no
+         arranca y no se ve absolutamente nada, ni un error. Pasó de verdad y
+         costó una tarde averiguarlo.
+
+         Si a los 8 segundos React no ha montado, se fuerza UNA recarga con
+         un parámetro nuevo (que se salta la copia guardada). Si tras esa
+         recarga sigue sin arrancar, se deja un aviso escrito en vez de una
+         pantalla vacía. */
+      window.__autopirArranco = false;
+      setTimeout(function () {
+        if (window.__autopirArranco) return;
+        var caja = document.getElementById("arranque");
+        if (!caja) return;
+        var yaRecargado;
+        try { yaRecargado = sessionStorage.getItem("autopir-recarga"); } catch (e) { yaRecargado = "1"; }
+        if (!yaRecargado) {
+          try { sessionStorage.setItem("autopir-recarga", "1"); } catch (e) {}
+          var sep = window.location.search ? "&" : "?";
+          window.location.replace(window.location.href + sep + "_r=" + Date.now());
+          return;
+        }
+        caja.innerHTML =
+          "<strong style='color:#1E1C18;font-size:17px'>No se pudo cargar la aplicación</strong>" +
+          "<br><br>Si la abriste desde el icono de la pantalla de inicio, bórralo y vuelve a añadirlo desde Safari." +
+          "<br><br>Si no, prueba a recargar dentro de un rato.";
+      }, 8000);
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
