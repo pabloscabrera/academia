@@ -216,3 +216,110 @@ export function mensajeDeCarga(error) {
   }
   return texto || "No se pudo cargar la aplicación.";
 }
+
+// ---------- Estadísticas de flashcards ----------
+//
+// Lo que hay para trabajar es el ESTADO ACTUAL de cada tarjeta
+// (`flashcards_progreso`), no un historial de repasos: no se guarda una fila
+// por repaso, así que no se puede dibujar la curva de retención ni "aciertos
+// por día" de Anki. Lo que sí sale de aquí, y es lo que de verdad decide qué
+// estudiar:
+//
+//   - `ease_factor` es el poso de TODO el feedback de dificultad que has dado
+//     en esa tarjeta (arranca en 2.5, baja mucho con "Muy difícil", sube poco
+//     con "Muy fácil", suelo en 1.3). Es la medida de cuánto se te atraganta.
+//   - `intervalo_dias` dice cuánto has consolidado: ver una tarjeta muchas
+//     veces no es saberla; aguantar 21 días sin verla, sí.
+//   - `proxima_revision` permite avisar de la carga que viene encima.
+
+// Corte de "madura": el mismo que usa Anki. Por debajo, la tarjeta todavía
+// depende de haberla visto hace poco.
+export const DIAS_MADURA = 21;
+// Por debajo de esto, el algoritmo ya ha decidido que esa tarjeta se te
+// resiste: la estás fallando una y otra vez.
+export const EASE_ATASCADA = 1.8;
+
+export function clasificarTarjeta(p) {
+  if (!p || (!p.ultima_revision && !p.repeticiones)) return "nueva";
+  if ((p.repeticiones || 0) === 0) return "reaprendiendo";
+  return (p.intervalo_dias || 0) >= DIAS_MADURA ? "madura" : "joven";
+}
+
+const sumarDias = (iso, n) => {
+  const d = new Date(iso + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+// El resumen de un conjunto de tarjetas: estados, carga que viene, y las que
+// se atragantan.
+export function estadisticasFlashcards(tarjetas, progresoPorId, hoy, diasPrevision = 14) {
+  const conteo = { nueva: 0, reaprendiendo: 0, joven: 0, madura: 0 };
+  let sumaEase = 0, conEase = 0, atrasadas = 0, pendientesHoy = 0, repasadasHoy = 0;
+  const atascadas = [];
+  const porFecha = {};
+
+  tarjetas.forEach((f) => {
+    const p = progresoPorId[f.grupo_id || f.id];
+    conteo[clasificarTarjeta(p)] += 1;
+
+    if (p && p.ease_factor) { sumaEase += p.ease_factor; conEase += 1; }
+    if (p && p.ease_factor && p.ease_factor <= EASE_ATASCADA) {
+      atascadas.push({ tarjeta: f, ease: p.ease_factor, intervalo: p.intervalo_dias || 0 });
+    }
+    if (p && p.ultima_revision && String(p.ultima_revision).slice(0, 10) === hoy) repasadasHoy += 1;
+
+    if (!p || !p.proxima_revision) { pendientesHoy += 1; return; }
+    if (p.proxima_revision < hoy) { atrasadas += 1; pendientesHoy += 1; return; }
+    if (p.proxima_revision === hoy) { pendientesHoy += 1; }
+    porFecha[p.proxima_revision] = (porFecha[p.proxima_revision] || 0) + 1;
+  });
+
+  const prevision = [];
+  for (let i = 0; i < diasPrevision; i++) {
+    const fecha = sumarDias(hoy, i);
+    prevision.push({ fecha, cuantas: (porFecha[fecha] || 0) + (i === 0 ? atrasadas + conteo.nueva : 0) });
+  }
+
+  // Las peores primero, y a igualdad de dificultad la que menos aguanta.
+  atascadas.sort((a, b) => a.ease - b.ease || a.intervalo - b.intervalo);
+
+  const vistas = conteo.reaprendiendo + conteo.joven + conteo.madura;
+  return {
+    total: tarjetas.length,
+    ...conteo,
+    vistas,
+    pendientesHoy,
+    atrasadas,
+    repasadasHoy,
+    easeMedio: conEase > 0 ? Math.round((sumaEase / conEase) * 100) / 100 : null,
+    // Sobre las vistas, no sobre el total: si no, añadir tarjetas nuevas
+    // hundiría el porcentaje y parecería que vas peor por estudiar más.
+    pctMaduras: vistas > 0 ? Math.round((conteo.madura / vistas) * 100) : null,
+    atascadas,
+    prevision,
+  };
+}
+
+// Mismo cálculo troceado por mazo o por etiqueta. `claves(f)` devuelve una
+// lista, porque una tarjeta puede llevar varias etiquetas y cuenta en todas.
+export function agruparEstadisticas(tarjetas, progresoPorId, claves, hoy) {
+  const grupos = new Map();
+  tarjetas.forEach((f) => {
+    claves(f).forEach((nombre) => {
+      if (!nombre) return;
+      if (!grupos.has(nombre)) grupos.set(nombre, []);
+      grupos.get(nombre).push(f);
+    });
+  });
+  return [...grupos.entries()]
+    .map(([nombre, lista]) => ({ nombre, ...estadisticasFlashcards(lista, progresoPorId, hoy, 0) }))
+    // Lo que peor llevas, arriba: primero lo más atragantado (ease bajo), y
+    // entre dos que van igual, lo que tiene más tarjetas en juego.
+    .sort((a, b) => {
+      if (a.easeMedio === null && b.easeMedio === null) return b.total - a.total;
+      if (a.easeMedio === null) return 1;
+      if (b.easeMedio === null) return -1;
+      return a.easeMedio - b.easeMedio || b.total - a.total;
+    });
+}

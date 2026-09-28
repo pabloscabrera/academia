@@ -11,6 +11,7 @@ import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from 
 import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, sinFila, filasPendientes, CONFLICTO } from "./colaPendientes";
 import {
   esExamen, TEMA_PLACEHOLDER, temasDisponibles, filtrarPreguntas, indicePorId, aplicarFiltroPedido,
+  estadisticasFlashcards, agruparEstadisticas, DIAS_MADURA,
   MAX_EDAD_TIRADA_MS, reconstruirTirada, agruparAciertos,
   calcularSM2, ordenarPorPrioridad, parsearEtiquetas, lunesDeLaSemana,
   ESPERA_MAX_CARGA_MS, conTiempoLimite, mensajeDeCarga,
@@ -3225,6 +3226,189 @@ const CALIFICACIONES_FLASHCARD = [
   { calidad: 5, label: "Muy fácil", bg: CORRECTO_SUAVE, color: CORRECTO, borde: CORRECTO },
 ];
 
+// Estadísticas de flashcards. La pregunta que contesta cada bloque:
+//  - Lo que viene: ¿me va a caer un atracón esta semana?
+//  - Cómo lo llevas: ¿cuánto he consolidado de verdad, no cuánto he visto?
+//  - Por mazo / por tema: ¿dónde se me está yendo el esfuerzo?
+//  - Las que se atragantan: ¿qué tarjetas hay que reescribir en vez de repetir?
+function EstadisticasFlashcards({ tarjetas, progresoPorId, hoy, mazos }) {
+  const e = useMemo(() => estadisticasFlashcards(tarjetas, progresoPorId, hoy), [tarjetas, progresoPorId, hoy]);
+  const porMazo = useMemo(
+    () => agruparEstadisticas(tarjetas, progresoPorId, (f) => [f.mazo || "General"], hoy),
+    [tarjetas, progresoPorId, hoy]
+  );
+  const porEtiqueta = useMemo(
+    () => agruparEstadisticas(tarjetas, progresoPorId, (f) => f.etiquetas || [], hoy),
+    [tarjetas, progresoPorId, hoy]
+  );
+
+  if (e.total === 0) {
+    return (
+      <Card style={{ textAlign: "center" }}>
+        <p style={{ margin: 0, fontSize: 15, color: TINTA_SUAVE }}>
+          Aquí no hay tarjetas todavía. En cuanto repases unas cuantas, esto empieza a decir cosas.
+        </p>
+      </Card>
+    );
+  }
+
+  const maxPrevision = Math.max(1, ...e.prevision.map((d) => d.cuantas));
+  const diaCorto = (iso) => {
+    const d = new Date(iso + "T00:00:00Z");
+    return ["D", "L", "M", "X", "J", "V", "S"][d.getUTCDay()];
+  };
+
+  // Rampa de un solo tono, de claro a oscuro: son cuatro estados ordenados
+  // (de recién vista a consolidada), no cuatro categorías sueltas.
+  const ESTADOS = [
+    { clave: "nueva", texto: "Sin empezar", color: "#D9D5C4" },
+    { clave: "reaprendiendo", texto: "Reaprendiendo", color: "#A8A294" },
+    { clave: "joven", texto: "Recientes", color: "#6E6A61" },
+    { clave: "madura", texto: "Consolidadas", color: TINTA },
+  ];
+
+  return (
+    <div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 16 }}>
+        <Cifra valor={e.pendientesHoy} texto="para hoy" aviso={e.atrasadas > 0 ? `${e.atrasadas} atrasada${e.atrasadas === 1 ? "" : "s"}` : null} />
+        <Cifra valor={e.pctMaduras === null ? "—" : e.pctMaduras + "%"} texto="consolidadas" />
+        <Cifra valor={e.atascadas.length} texto="se te atragantan" aviso={e.atascadas.length > 0 ? "míralas abajo" : null} />
+        <Cifra valor={e.repasadasHoy} texto="repasadas hoy" />
+      </div>
+
+      <Card style={{ marginBottom: 16 }}>
+        <FieldLabel>Lo que viene</FieldLabel>
+        <p style={{ fontSize: 12.5, color: TINTA_TENUE, margin: "0 0 16px" }}>
+          Tarjetas que te tocan cada día. Sirve para no comerte un atracón sin verlo venir.
+        </p>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 120 }}>
+          {e.prevision.map((d, i) => (
+            <div key={d.fecha} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+              <span style={{ fontSize: 10.5, color: TINTA_SUAVE, fontVariantNumeric: "tabular-nums", height: 14 }}>
+                {d.cuantas > 0 ? d.cuantas : ""}
+              </span>
+              <div
+                title={`${d.fecha}: ${d.cuantas}`}
+                style={{
+                  width: "100%",
+                  height: Math.max(d.cuantas > 0 ? 4 : 1, Math.round((d.cuantas / maxPrevision) * 82)),
+                  borderRadius: "3px 3px 0 0",
+                  background: i === 0 && e.atrasadas > 0 ? ACENTO : TINTA_SUAVE,
+                }}
+              />
+              <span style={{ fontSize: 10.5, color: TINTA_TENUE }}>{i === 0 ? "hoy" : diaCorto(d.fecha)}</span>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card style={{ marginBottom: 16 }}>
+        <FieldLabel>Cómo lo llevas</FieldLabel>
+        <p style={{ fontSize: 12.5, color: TINTA_TENUE, margin: "0 0 16px" }}>
+          Consolidada es la que aguantas {DIAS_MADURA} días sin volver a verla. Verla muchas veces no cuenta: aguantar, sí.
+        </p>
+        <div style={{ display: "flex", gap: 2, height: 22, marginBottom: 14 }}>
+          {ESTADOS.map((x) => e[x.clave] > 0 && (
+            <div key={x.clave} title={`${x.texto}: ${e[x.clave]}`}
+                 style={{ flex: e[x.clave], background: x.color, borderRadius: 4 }} />
+          ))}
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 18px" }}>
+          {ESTADOS.map((x) => (
+            <span key={x.clave} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, color: TINTA }}>
+              <span style={{ width: 11, height: 11, borderRadius: 3, background: x.color, flexShrink: 0 }} />
+              {x.texto} <strong style={{ fontVariantNumeric: "tabular-nums" }}>{e[x.clave]}</strong>
+            </span>
+          ))}
+        </div>
+      </Card>
+
+      {porMazo.length > 1 && <GrupoEstadistica titulo="Por mazo" filas={porMazo} />}
+      {porEtiqueta.length > 0 && <GrupoEstadistica titulo="Por tema" filas={porEtiqueta} />}
+
+      {e.atascadas.length > 0 && (
+        <Card style={{ marginBottom: 16 }}>
+          <FieldLabel>Las que se te atragantan</FieldLabel>
+          <p style={{ fontSize: 12.5, color: TINTA_TENUE, margin: "0 0 14px" }}>
+            Las has marcado como difíciles tantas veces que el algoritmo ya casi no las separa. Con estas suele
+            rendir más reescribirlas o partirlas en dos que seguir repitiéndolas.
+          </p>
+          {e.atascadas.slice(0, 6).map((a) => (
+            <div key={a.tarjeta.id} style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, padding: "9px 0", borderTop: `1px solid ${RAYA}` }}>
+              <span style={{ fontSize: 13.5, color: TINTA, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {a.tarjeta.frontal}
+              </span>
+              <span style={{ fontSize: 12, color: ACENTO, fontWeight: 600, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
+                vuelve cada {a.intervalo || 1} d{a.intervalo === 1 ? "ía" : "ías"}
+              </span>
+            </div>
+          ))}
+          {e.atascadas.length > 6 && (
+            <p style={{ fontSize: 12, color: TINTA_TENUE, margin: "12px 0 0" }}>Y {e.atascadas.length - 6} más.</p>
+          )}
+        </Card>
+      )}
+
+      <p style={{ fontSize: 11.5, color: TINTA_TENUE, margin: "4px 2px 0", lineHeight: 1.55 }}>
+        Todo esto sale del estado actual de cada tarjeta. No se guarda un registro de cada repaso, así que
+        todavía no se puede dibujar cómo ha ido tu retención semana a semana.
+      </p>
+    </div>
+  );
+}
+
+function Cifra({ valor, texto, aviso }) {
+  return (
+    <Card style={{ padding: "16px 18px" }}>
+      <div style={{ fontSize: 30, fontWeight: 700, color: TINTA, lineHeight: 1.1, fontFamily: "var(--font-display)" }}>{valor}</div>
+      <div style={{ fontSize: 12.5, color: TINTA_SUAVE, marginTop: 3 }}>{texto}</div>
+      {aviso && <div style={{ fontSize: 11.5, color: ACENTO, marginTop: 4, fontWeight: 600 }}>{aviso}</div>}
+    </Card>
+  );
+}
+
+// El porcentaje de consolidadas es lo que se dibuja: más barra, mejor lo
+// llevas. La dificultad va en número al lado — meterla también como barra
+// sería pintar dos cosas distintas con la misma forma.
+function GrupoEstadistica({ titulo, filas }) {
+  const [todas, setTodas] = useState(false);
+  const visibles = todas ? filas : filas.slice(0, 8);
+  return (
+    <Card style={{ marginBottom: 16 }}>
+      <FieldLabel>{titulo}</FieldLabel>
+      <p style={{ fontSize: 12.5, color: TINTA_TENUE, margin: "0 0 14px" }}>De lo que más se te resiste a lo que menos.</p>
+      {visibles.map((g) => {
+        const pct = g.pctMaduras === null ? 0 : g.pctMaduras;
+        const flojo = g.pctMaduras !== null && g.pctMaduras < 30;
+        return (
+          <div key={g.nombre} style={{ marginBottom: 13 }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 10, marginBottom: 5 }}>
+              <span style={{ fontSize: 14, color: TINTA, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.nombre}</span>
+              <span style={{ fontSize: 13, color: TINTA, fontWeight: 700, fontVariantNumeric: "tabular-nums", flexShrink: 0 }}>
+                {g.pctMaduras === null ? "sin empezar" : pct + "%"}
+              </span>
+            </div>
+            <div style={{ height: 8, borderRadius: 4, background: "#F2EFE7", overflow: "hidden" }}>
+              <div style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 4, background: flojo ? ACENTO : TINTA_SUAVE }} />
+            </div>
+            <div style={{ fontSize: 11.5, color: TINTA_TENUE, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
+              {g.total} tarjeta{g.total === 1 ? "" : "s"}
+              {g.easeMedio !== null && ` · dificultad ${g.easeMedio.toFixed(1).replace(".", ",")}`}
+              {g.atascadas.length > 0 && ` · ${g.atascadas.length} atragantada${g.atascadas.length === 1 ? "" : "s"}`}
+              {g.pendientesHoy > 0 && ` · ${g.pendientesHoy} para hoy`}
+            </div>
+          </div>
+        );
+      })}
+      {filas.length > 8 && (
+        <button type="button" onClick={() => setTodas((v) => !v)} style={{ ...styles.linkBtn, padding: 0, marginTop: 4 }}>
+          {todas ? "Ver menos" : `Ver los ${filas.length}`}
+        </button>
+      )}
+    </Card>
+  );
+}
+
 function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo }) {
   const hoy = new Date().toISOString().slice(0, 10);
   const progresoPorId = useMemo(() => {
@@ -3257,6 +3441,7 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
   );
 
   const [mostrandoLista, setMostrandoLista] = useState(true); // listado de mazos vs. vista de repaso
+  const [vista, setVista] = useState("repaso"); // dentro de un mazo: repasar o ver estadísticas
   const [mazoActivo, setMazoActivo] = useState(null); // mazo exacto seleccionado para repasar/ver
 
   // Si borras el mazo que tenías abierto, deja de existir en `mazos` —
@@ -3479,6 +3664,16 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
         title="Flashcards"
         subtitle={`${mazoActivo ? `"${mazoActivo}"` : "Tu mazo privado"} — ${flashcardsFiltradas.length} tarjeta${flashcardsFiltradas.length === 1 ? "" : "s"}${etiquetasActivas.length > 0 ? ` de ${etiquetasActivas.join(" · ")}` : ""}`}
       />
+      <div style={styles.tabsOrigen}>
+        <button type="button" onClick={() => setVista("repaso")}
+                style={{ ...styles.tabOrigenBtn, ...(vista === "repaso" ? styles.tabOrigenActivo : {}) }}>
+          Repasar
+        </button>
+        <button type="button" onClick={() => setVista("estadisticas")}
+                style={{ ...styles.tabOrigenBtn, ...(vista === "estadisticas" ? styles.tabOrigenActivo : {}) }}>
+          Estadísticas
+        </button>
+      </div>
       {etiquetasDelMazo.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <FieldLabel>Repasar solo estos temas</FieldLabel>
@@ -3503,8 +3698,12 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
           </div>
         </div>
       )}
+      {vista === "estadisticas" ? (
+        <EstadisticasFlashcards tarjetas={flashcardsFiltradas} progresoPorId={progresoPorId} hoy={hoy} />
+      ) : (
+       <>
       {resumen && (
-        <Card style={{ marginBottom: 16, textAlign: "center", borderColor: CORRECTO }}>
+        <Card style={{ marginBottom: 16, textAlign: "center", border: `1.5px solid ${CORRECTO}` }}>
           <p style={{ fontSize: 15, color: "#1E1C18", margin: 0 }}>
             ¡Sesión terminada! Has repasado {resumen.total} tarjeta{resumen.total === 1 ? "" : "s"}.
           </p>
@@ -3567,6 +3766,8 @@ function Flashcards({ user, flashcards, progreso, onRepaso, onUpdate, onAdd, onA
           </div>
         )}
       </div>
+       </>
+      )}
     </div>
   );
 }
