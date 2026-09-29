@@ -125,84 +125,63 @@ export function agruparAciertos(preguntas, clave, progresoPorId, fallosPorId) {
 
 // ---------- Flashcards ----------
 
-// Repetición espaciada. calidad: 0 = Otra vez (fallo, se reinicia),
-// 3 = Difícil, 4 = Bien, 5 = Fácil.
+// Repetición espaciada. calidad: 0 = Otra vez, 3 = Difícil, 4 = Bien,
+// 5 = Fácil.
 //
-// Arrancó siendo el SM-2 original (1987), y ahí los tres botones que no son
-// "Muy difícil" daban EXACTAMENTE el mismo próximo día: solo cambiaban la
-// facilidad, que tarda varios repasos en notarse. Marcar "Difícil" no te la
-// devolvía antes, que es justo lo que uno espera al pulsarlo.
+// Cada botón multiplica el intervalo actual por 1, 2, 3 o 4. Y ya está.
 //
-// Ahora cada botón tiene su propio multiplicador, como en Anki:
-//   Difícil -> el intervalo crece poco (x1.2), la vuelves a ver pronto.
-//   Bien    -> crece por la facilidad de la tarjeta, el caso normal.
-//   Fácil   -> crece más (x1.3 extra) y se salta días, para no gastar
-//              repasos en lo que ya te sabes.
-const FACTOR_DIFICIL = 1.2;
-const FACTOR_MUY_FACIL = 1.3;
+// Antes esto era el SM-2 (1987) con los retoques de Anki: el intervalo
+// crecía por un "factor de facilidad" que la propia tarjeta iba arrastrando,
+// así que el mismo botón daba un número distinto en cada tarjeta y no había
+// manera de saber a qué atenerse. Con multiplicadores fijos, el botón que
+// pulsas es el que decide: sobre 9 días, Difícil son 18, Bien 27, Fácil 36.
+// Se puede predecir de cabeza, que es lo que hace que elegir signifique algo.
+const MULTIPLICADOR = { 3: 2, 4: 3, 5: 4 };
+
+// La escalera arranca en un día: una tarjeta nueva es "x1", y de ahí para
+// arriba. Sin esto, multiplicar 0 por lo que sea sigue siendo 0.
+const INTERVALO_BASE = 1;
+
 export const EASE_MINIMO = 1.3;
 
-// Cuánto mueve la facilidad cada botón. El SM-2 original restaba 0.8 al
-// fallar: con dos fallos la tarjeta se quedaba clavada en el suelo de 1.3 y
-// no había forma humana de sacarla de ahí. Estos son los de Anki, que
-// castigan menos y, sobre todo, permiten recuperarse.
+// La facilidad ya NO decide el intervalo, pero se sigue guardando: es el
+// poso de todo el feedback dado en esa tarjeta y de ahí salen las
+// "atascadas" de la pantalla de estadísticas (EASE_ATASCADA). Los saltos son
+// los de Anki; el SM-2 original restaba 0.8 al fallar y con dos fallos la
+// tarjeta se quedaba clavada en el suelo de 1.3 sin forma de rescatarla.
 const CAMBIO_EASE = { 0: -0.2, 3: -0.15, 4: 0, 5: 0.15 };
 
-// Techo de días. El SM-2 está pensado para mantener algo sabido durante años,
-// y sin freno manda tarjetas a 3, 6, 12 meses. Para una oposición eso es
-// tirarlas: si no vuelven antes del examen, da igual lo bien que te las
-// supieras el día que las aplazaste. Dos meses es el horizonte que se
+// Techo de días. Multiplicar por 3 cada vez se dispara enseguida: 1, 3, 9,
+// 27, 81… y una tarjeta que vuelve dentro de tres meses es una tarjeta que
+// no vuelves a ver antes del examen. Dos meses es el horizonte que se
 // declaró aquí, y por encima de eso nada.
 export const MAX_INTERVALO = 60;
-
-// Con fecha objetivo puesta el techo se estrecha solo según se acerca: la
-// mitad de lo que queda. La mitad, y no lo que queda entero, para que
-// después de este repaso te dé tiempo a verla ALGUNA VEZ MÁS antes del día;
-// un intervalo igual a los días restantes la deja justo para el examen, que
-// es tarde para descubrir que se te había olvidado.
-export function topeIntervalo(hoy, fechaObjetivo) {
-  if (!fechaObjetivo) return MAX_INTERVALO;
-  const dias = diasEntre(hoy, fechaObjetivo);
-  // Pasada la fecha el plazo ya no aprieta, pero el techo general sigue.
-  if (dias <= 0) return MAX_INTERVALO;
-  return Math.max(1, Math.min(MAX_INTERVALO, Math.floor(dias / 2)));
-}
-
-// El intervalo que pide el algoritmo, antes de mirar el horizonte.
-function intervaloBruto(calidad, intervaloPrevio, ease, repeticiones) {
-  if (repeticiones === 1) return calidad === 5 ? 4 : 1;
-  if (repeticiones === 2) return calidad === 3 ? 4 : calidad === 5 ? 8 : 6;
-  const multiplicador = calidad === 3 ? FACTOR_DIFICIL : calidad === 5 ? ease * FACTOR_MUY_FACIL : ease;
-  // Siempre al menos un día más que la vez anterior: acertarla no puede
-  // dejarte el intervalo igual (con x1.2 sobre 1 día saldría 1 otra vez).
-  return Math.max(intervaloPrevio + 1, Math.round(intervaloPrevio * multiplicador));
-}
 
 export function calcularSM2(progresoPrevio, calidad, hoy = new Date(), tope = MAX_INTERVALO) {
   const easePrevio = (progresoPrevio && progresoPrevio.ease_factor) || 2.5;
   let repeticiones = (progresoPrevio && progresoPrevio.repeticiones) || 0;
   let intervalo = (progresoPrevio && progresoPrevio.intervalo_dias) || 0;
 
-  const easeDe = (c) => Math.max(EASE_MINIMO, Math.round((easePrevio + (CAMBIO_EASE[c] ?? 0)) * 100) / 100);
-  const ease = easeDe(calidad);
+  const ease = Math.max(EASE_MINIMO, Math.round((easePrevio + (CAMBIO_EASE[calidad] ?? 0)) * 100) / 100);
   const techo = Math.max(1, tope);
 
   if (calidad < 3) {
+    // "Otra vez" es x1: vuelve al primer peldaño y se empieza de nuevo. Es
+    // lo que dice el botón, y devolverla dentro de un mes porque llevara un
+    // mes aguantando sería justo lo contrario de haberla fallado.
     repeticiones = 0;
-    intervalo = 1;
+    intervalo = INTERVALO_BASE;
   } else {
     repeticiones += 1;
-    const bruto = intervaloBruto(calidad, intervalo, ease, repeticiones);
-    // Aquí está la diferencia con recortar por las bravas. Con un techo de
-    // dos meses, "Bien" (75 días) y "Fácil" (103) se quedarían los dos en 60
-    // y volverían a ser el mismo botón — que es justo la queja que se
-    // arregló antes. Así que en vez de truncar se ENCOGE la escalera entera:
-    // se mira lo más lejos que podría irse esta tarjeta (pulsando "Fácil") y,
-    // si eso pasa del techo, se reduce todo en la misma proporción. El orden
-    // y las distancias relativas se mantienen, y nada se sale del plazo.
-    // Sobre una tarjeta de 30 días con techo 60: 21 / 44 / 60 en vez de
-    // 60 / 60 / 60.
-    const mayor = intervaloBruto(5, intervalo, easeDe(5), repeticiones);
+    const base = Math.max(INTERVALO_BASE, intervalo);
+    const bruto = base * MULTIPLICADOR[calidad];
+    // Contra el techo no se recorta por las bravas: se ENCOGE la escalera
+    // entera. Con Math.min, una tarjeta de 27 días daría 54 / 60 / 60 y
+    // "Bien" y "Fácil" volverían a ser el mismo botón — que es exactamente
+    // la queja que se arregló hace dos cambios. Reduciendo las tres opciones
+    // en la misma proporción se mantiene el 2:3:4 intacto (30 / 45 / 60),
+    // solo que sobre una base más corta.
+    const mayor = base * MULTIPLICADOR[5];
     const factor = mayor > techo ? techo / mayor : 1;
     intervalo = Math.max(1, Math.min(techo, Math.round(bruto * factor)));
   }
@@ -219,9 +198,9 @@ export function calcularSM2(progresoPrevio, calidad, hoy = new Date(), tope = MA
 
 // Lo ya aplazado con el criterio anterior sigue en la base de datos con su
 // fecha lejana: una tarjeta mandada a 103 días no vuelve sola dentro del
-// plazo por mucho que ahora el techo sea otro. No se reescribe nada — se
+// techo por mucho que ahora el techo exista. No se reescribe nada — se
 // adelanta al leer, y la próxima vez que la repases ya se guarda bien.
-export function dentroDelHorizonte(progreso, hoy, tope) {
+export function dentroDelHorizonte(progreso, hoy, tope = MAX_INTERVALO) {
   const limite = new Date(new Date(hoy + "T00:00:00Z").getTime() + Math.max(1, tope) * 86400000)
     .toISOString()
     .slice(0, 10);
