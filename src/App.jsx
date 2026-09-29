@@ -12,7 +12,7 @@ import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, s
 import {
   esExamen, TEMA_PLACEHOLDER, temasDisponibles, filtrarPreguntas, indicePorId, aplicarFiltroPedido,
   estadisticasFlashcards, agruparEstadisticas, DIAS_MADURA,
-  mezclarTemas, temaDeTarjeta, sugerirAdelanto, planHastaObjetivo, DIAS_PARA_CONSOLIDAR,
+  mezclarTemas, temaDeTarjeta, sugerirAdelanto, planHastaObjetivo, DIAS_PARA_CONSOLIDAR, textoIntervalo,
   retencionGlobal, retencionPorSemana, retencionPorIntervalo, RETENCION_OBJETIVO,
   MAX_EDAD_TIRADA_MS, reconstruirTirada, agruparAciertos,
   calcularSM2, ordenarPorPrioridad, parsearEtiquetas, lunesDeLaSemana,
@@ -3263,11 +3263,16 @@ const TAM_SESION_FLASHCARDS = 20;
 // Las etiquetas se escriben como texto libre separado por comas y se guardan
 // en flashcards.etiquetas (text[]): se recortan, se quitan las vacías y se
 // deduplican, para que "Porcentajes, dsm , Porcentajes" no cree tres.
+// Los nombres de Anki. "Otra vez" en lugar de "Muy difícil" no es un
+// capricho: nombra la acción (vuelve a salirte hoy), no un juicio sobre la
+// tarjeta, y así se pulsa cuando has fallado, que es cuando toca. "Bien" es
+// el botón por defecto —acertaste sin drama— y "Fácil" el premio para lo que
+// te sabes de sobra.
 const CALIFICACIONES_FLASHCARD = [
-  { calidad: 0, label: "Muy difícil", bg: ACENTO_SUAVE, color: ACENTO, borde: ACENTO },
+  { calidad: 0, label: "Otra vez", bg: ACENTO_SUAVE, color: ACENTO, borde: ACENTO },
   { calidad: 3, label: "Difícil", bg: AVISO_SUAVE, color: AVISO, borde: AVISO },
-  { calidad: 4, label: "Fácil", bg: CAUTELA_SUAVE, color: CAUTELA, borde: CAUTELA },
-  { calidad: 5, label: "Muy fácil", bg: CORRECTO_SUAVE, color: CORRECTO, borde: CORRECTO },
+  { calidad: 4, label: "Bien", bg: CORRECTO_SUAVE, color: CORRECTO, borde: CORRECTO },
+  { calidad: 5, label: "Fácil", bg: "#FBF3DE", color: "#8A6A1E", borde: ORO },
 ];
 
 // Estadísticas de flashcards. La pregunta que contesta cada bloque:
@@ -3854,9 +3859,12 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
                 type="button"
                 disabled={enviando}
                 onClick={() => calificar(c.calidad)}
-                style={{ ...styles.btnDificultad, background: c.bg, color: c.color, borderColor: c.borde, opacity: enviando ? 0.6 : 1 }}
+                style={{ ...styles.btnDificultad, background: c.bg, color: c.color, border: `1.5px solid ${c.borde}`, opacity: enviando ? 0.6 : 1 }}
               >
                 {c.label}
+                <span style={{ display: "block", fontSize: 11.5, fontWeight: 600, opacity: 0.8, marginTop: 3 }}>
+                  {textoIntervalo(calcularSM2(progresoPorId[carta.grupo_id || carta.id], c.calidad).intervalo_dias)}
+                </span>
               </button>
             ))}
           </div>

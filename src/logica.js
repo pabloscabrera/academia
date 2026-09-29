@@ -529,3 +529,19 @@ export function planHastaObjetivo(stats, hoy, fechaObjetivo) {
     llegasConLoEmpezado: dias >= DIAS_PARA_CONSOLIDAR,
   };
 }
+
+// "36 d", "3 meses", "1,2 años": el número pelado de días deja de decir
+// nada en cuanto pasa de un par de meses.
+export function textoIntervalo(dias) {
+  if (!dias || dias < 1) return "hoy";
+  if (dias === 1) return "1 día";
+  // Hasta un par de meses se dicen los días: "36 días" sitúa mejor que
+  // "1 mes" cuando estás decidiendo entre dos botones.
+  if (dias < 60) return `${dias} días`;
+  if (dias < 365) {
+    const meses = Math.round(dias / 30.4);
+    return `${meses} ${meses === 1 ? "mes" : "meses"}`;
+  }
+  const anios = Math.round((dias / 365) * 10) / 10;
+  return `${String(anios).replace(".", ",")} ${anios === 1 ? "año" : "años"}`;
+}
