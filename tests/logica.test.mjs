@@ -4,7 +4,7 @@ import {
   esExamen, esTemaReal, temasDisponibles, filtrarPreguntas, indicePorId,
   reconstruirTirada, agruparAciertos, calcularSM2, ordenarPorPrioridad,
   parsearEtiquetas, lunesDeLaSemana, aplicarFiltroPedido,
-  conTiempoLimite, mensajeDeCarga,
+  conTiempoLimite, mensajeDeCarga, textoIntervalo,
 } from "../src/logica.js";
 
 test("esExamen distingue una edición de examen de una asignatura suelta", () => {
@@ -270,4 +270,29 @@ test("el error que ve el usuario está en castellano y dice qué hacer", () => {
   assert.match(mensajeDeCarga(new Error("El servidor está tardando demasiado.")), /conexión a internet/);
   assert.match(mensajeDeCarga({ message: "Invalid API key" }), /rechazado la conexión/);
   assert.equal(mensajeDeCarga(null), "No se pudo cargar la aplicación.");
+});
+
+test("el intervalo se escribe en la unidad que se entiende", () => {
+  assert.equal(textoIntervalo(0), "hoy");
+  assert.equal(textoIntervalo(1), "1 día");
+  assert.equal(textoIntervalo(36), "36 días");
+  assert.equal(textoIntervalo(61), "2 meses");
+  assert.equal(textoIntervalo(365), "1 año");
+  assert.equal(textoIntervalo(550), "1,5 años");
+});
+
+test("la previsión de cada botón es la que se aplica al pulsarlo", () => {
+  const hoy = new Date("2026-10-01T12:00:00Z");
+  const asentada = { ease_factor: 2.5, repeticiones: 5, intervalo_dias: 30 };
+  // Lo que el botón enseña sale de la MISMA función que luego guarda, así
+  // que no pueden discrepar.
+  for (const q of [0, 3, 4, 5]) {
+    const previsto = calcularSM2(asentada, q, hoy).intervalo_dias;
+    const aplicado = calcularSM2(asentada, q, hoy).intervalo_dias;
+    assert.equal(previsto, aplicado);
+  }
+  assert.deepEqual(
+    [0, 3, 4, 5].map((q) => textoIntervalo(calcularSM2(asentada, q, hoy).intervalo_dias)),
+    ["1 día", "36 días", "2 meses", "3 meses"]
+  );
 });
