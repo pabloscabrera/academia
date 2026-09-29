@@ -4,7 +4,7 @@ import {
   esExamen, esTemaReal, temasDisponibles, filtrarPreguntas, indicePorId,
   reconstruirTirada, agruparAciertos, calcularSM2, ordenarPorPrioridad,
   parsearEtiquetas, lunesDeLaSemana, aplicarFiltroPedido,
-  conTiempoLimite, mensajeDeCarga, textoIntervalo, topeIntervalo, MAX_INTERVALO, dentroDelHorizonte,
+  conTiempoLimite, mensajeDeCarga, textoIntervalo, MAX_INTERVALO, dentroDelHorizonte,
 } from "../src/logica.js";
 
 test("esExamen distingue una edición de examen de una asignatura suelta", () => {
@@ -98,7 +98,7 @@ test("los cuatro botones dan cuatro días distintos, que es su razón de ser", (
   const dias = [0, 3, 4, 5].map((q) => calcularSM2(asentada, q, hoy).intervalo_dias);
   assert.equal(new Set(dias).size, 4, `los cuatro deben diferir, salieron ${dias.join(", ")}`);
   const [otraVez, dificil, bien, facil] = dias;
-  assert.equal(otraVez, 1, "fallar la devuelve a mañana");
+  assert.equal(otraVez, 1, "fallar la devuelve al primer peldaño");
   assert.ok(dificil < bien, "Difícil tiene que traerla antes que Bien");
   assert.ok(facil > bien, "Fácil tiene que ahorrarte repasos");
 });
@@ -106,26 +106,46 @@ test("los cuatro botones dan cuatro días distintos, que es su razón de ser", (
 test("fallar reinicia las repeticiones, acertar las encadena", () => {
   const hoy = new Date("2026-10-01T12:00:00Z");
   const primera = calcularSM2(null, 4, hoy);
-  assert.deepEqual({ r: primera.repeticiones, i: primera.intervalo_dias }, { r: 1, i: 1 });
+  assert.deepEqual({ r: primera.repeticiones, i: primera.intervalo_dias }, { r: 1, i: 3 });
   const segunda = calcularSM2(primera, 4, hoy);
-  assert.deepEqual({ r: segunda.repeticiones, i: segunda.intervalo_dias }, { r: 2, i: 6 });
+  assert.deepEqual({ r: segunda.repeticiones, i: segunda.intervalo_dias }, { r: 2, i: 9 });
   const tercera = calcularSM2(segunda, 4, hoy);
-  assert.equal(tercera.intervalo_dias, Math.round(6 * segunda.ease_factor));
+  assert.equal(tercera.intervalo_dias, 27);
   const fallada = calcularSM2(tercera, 0, hoy);
   assert.deepEqual({ r: fallada.repeticiones, i: fallada.intervalo_dias }, { r: 0, i: 1 });
 });
 
-test("una nueva marcada Fácil se salta el primer día", () => {
+test("cada botón multiplica el intervalo por 1, 2, 3 o 4", () => {
   const hoy = new Date("2026-10-01T12:00:00Z");
-  assert.equal(calcularSM2(null, 5, hoy).intervalo_dias, 4, "repetir mañana lo que te sabes es tiempo tirado");
-  assert.equal(calcularSM2(null, 4, hoy).intervalo_dias, 1);
+  // Una nueva arranca en el primer peldaño, así que se leen los factores
+  // tal cual: 1, 2, 3, 4 días.
+  assert.deepEqual([0, 3, 4, 5].map((q) => calcularSM2(null, q, hoy).intervalo_dias), [1, 2, 3, 4]);
+
+  const nueve = { ease_factor: 2.5, repeticiones: 2, intervalo_dias: 9 };
+  assert.deepEqual([0, 3, 4, 5].map((q) => calcularSM2(nueve, q, hoy).intervalo_dias), [1, 18, 27, 36]);
+
+  // Dos tarjetas con facilidades opuestas: el mismo botón da el mismo día.
+  // Eso es lo que se ganó al quitar el factor de facilidad del cálculo.
+  const facil = { ease_factor: 2.8, repeticiones: 3, intervalo_dias: 9 };
+  const dura = { ease_factor: 1.3, repeticiones: 3, intervalo_dias: 9 };
+  assert.equal(calcularSM2(facil, 4, hoy).intervalo_dias, calcularSM2(dura, 4, hoy).intervalo_dias);
 });
 
-test("acertarla nunca deja el intervalo igual", () => {
+test("fallar la devuelve al primer peldaño, aunque llevara meses aguantando", () => {
   const hoy = new Date("2026-10-01T12:00:00Z");
-  // Con x1.2 sobre 1 día, redondear daría 1 otra vez y se quedaría en bucle.
-  const corta = { ease_factor: 1.3, repeticiones: 4, intervalo_dias: 1 };
-  assert.ok(calcularSM2(corta, 3, hoy).intervalo_dias > 1);
+  const asentada = { ease_factor: 2.5, repeticiones: 8, intervalo_dias: 45 };
+  const fallada = calcularSM2(asentada, 0, hoy);
+  assert.equal(fallada.intervalo_dias, 1, "x1 es volver a empezar, no repetir el mismo aplazamiento");
+  assert.equal(fallada.repeticiones, 0);
+});
+
+test("la facilidad se sigue guardando aunque ya no decida el intervalo", () => {
+  const hoy = new Date("2026-10-01T12:00:00Z");
+  // De ella salen las "atascadas" de la pantalla de estadísticas.
+  const p = { ease_factor: 2.5, repeticiones: 3, intervalo_dias: 9 };
+  assert.ok(calcularSM2(p, 3, hoy).ease_factor < 2.5, "Difícil la baja");
+  assert.ok(calcularSM2(p, 5, hoy).ease_factor > 2.5, "Fácil la sube");
+  assert.equal(calcularSM2(p, 4, hoy).ease_factor, 2.5, "Bien la deja donde está");
 });
 
 test("de un mal día se puede volver: la facilidad se recupera", () => {
@@ -294,7 +314,7 @@ test("la previsión de cada botón es la que se aplica al pulsarlo", () => {
   }
   assert.deepEqual(
     [0, 3, 4, 5].map((q) => textoIntervalo(calcularSM2(asentada, q, hoy).intervalo_dias)),
-    ["1 día", "21 días", "44 días", "60 días"]
+    ["1 día", "30 días", "45 días", "60 días"]
   );
 });
 
@@ -326,16 +346,6 @@ test("con el techo apretando, los botones SIGUEN dando días distintos", () => {
   }
 });
 
-test("el techo se estrecha solo según se acerca la fecha objetivo", () => {
-  assert.equal(topeIntervalo("2026-10-01", ""), MAX_INTERVALO, "sin fecha manda el techo general");
-  // La mitad de lo que queda, para que dé tiempo a verla una vez más antes.
-  assert.equal(topeIntervalo("2026-10-01", "2026-12-01"), 30);
-  assert.equal(topeIntervalo("2026-10-01", "2026-10-11"), 5);
-  assert.equal(topeIntervalo("2026-10-01", "2026-10-02"), 1, "el día antes, todo vuelve mañana");
-  assert.equal(topeIntervalo("2026-10-01", "2027-06-01"), MAX_INTERVALO, "una fecha lejana no levanta el techo");
-  assert.equal(topeIntervalo("2026-10-01", "2026-09-01"), MAX_INTERVALO, "pasada la fecha el plazo ya no aprieta");
-});
-
 test("lo ya aplazado a meses vista se adelanta al techo, y lo demás no se toca", () => {
   const progreso = [
     { flashcard_id: "lejos", proxima_revision: "2027-01-15", intervalo_dias: 103 },
@@ -349,14 +359,14 @@ test("lo ya aplazado a meses vista se adelanta al techo, y lo demás no se toca"
   assert.equal(nueva.proxima_revision, null);
 });
 
-test("una tarjeta nueva cabe entera dentro del plazo que queda", () => {
+test("la escalera se estabiliza dentro del techo en vez de dispararse", () => {
   const hoy = new Date("2026-10-01T12:00:00Z");
-  // Diez días por delante: la escalera completa tiene que caber ahí dentro,
-  // no plantarse en el día 37 como haría sin horizonte.
-  const techo = topeIntervalo("2026-10-01", "2026-10-11");
+  // x3 cada vez llega a 81 días en cuatro aciertos; el techo lo para.
   let p = null;
-  for (let i = 0; i < 8; i++) {
-    p = calcularSM2(p, 4, hoy, techo);
-    assert.ok(p.intervalo_dias <= techo, `llegó a ${p.intervalo_dias} días con ${techo} de techo`);
+  const dias = [];
+  for (let i = 0; i < 6; i++) {
+    p = calcularSM2(p, 4, hoy);
+    dias.push(p.intervalo_dias);
   }
+  assert.deepEqual(dias, [3, 9, 27, 45, 45, 45]);
 });
