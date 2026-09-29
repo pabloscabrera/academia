@@ -4,7 +4,7 @@ import {
   esExamen, esTemaReal, temasDisponibles, filtrarPreguntas, indicePorId,
   reconstruirTirada, agruparAciertos, calcularSM2, ordenarPorPrioridad,
   parsearEtiquetas, lunesDeLaSemana, aplicarFiltroPedido,
-  conTiempoLimite, mensajeDeCarga, textoIntervalo,
+  conTiempoLimite, mensajeDeCarga, textoIntervalo, topeIntervalo, MAX_INTERVALO, dentroDelHorizonte,
 } from "../src/logica.js";
 
 test("esExamen distingue una edición de examen de una asignatura suelta", () => {
@@ -97,10 +97,10 @@ test("los cuatro botones dan cuatro días distintos, que es su razón de ser", (
   const asentada = { ease_factor: 2.5, repeticiones: 5, intervalo_dias: 30 };
   const dias = [0, 3, 4, 5].map((q) => calcularSM2(asentada, q, hoy).intervalo_dias);
   assert.equal(new Set(dias).size, 4, `los cuatro deben diferir, salieron ${dias.join(", ")}`);
-  const [muyDificil, dificil, facil, muyFacil] = dias;
-  assert.equal(muyDificil, 1, "fallar la devuelve a mañana");
-  assert.ok(dificil < facil, "Difícil tiene que traerla antes que Fácil");
-  assert.ok(muyFacil > facil, "Muy fácil tiene que ahorrarte repasos");
+  const [otraVez, dificil, bien, facil] = dias;
+  assert.equal(otraVez, 1, "fallar la devuelve a mañana");
+  assert.ok(dificil < bien, "Difícil tiene que traerla antes que Bien");
+  assert.ok(facil > bien, "Fácil tiene que ahorrarte repasos");
 });
 
 test("fallar reinicia las repeticiones, acertar las encadena", () => {
@@ -115,7 +115,7 @@ test("fallar reinicia las repeticiones, acertar las encadena", () => {
   assert.deepEqual({ r: fallada.repeticiones, i: fallada.intervalo_dias }, { r: 0, i: 1 });
 });
 
-test("una nueva marcada Muy fácil se salta el primer día", () => {
+test("una nueva marcada Fácil se salta el primer día", () => {
   const hoy = new Date("2026-10-01T12:00:00Z");
   assert.equal(calcularSM2(null, 5, hoy).intervalo_dias, 4, "repetir mañana lo que te sabes es tiempo tirado");
   assert.equal(calcularSM2(null, 4, hoy).intervalo_dias, 1);
@@ -276,6 +276,7 @@ test("el intervalo se escribe en la unidad que se entiende", () => {
   assert.equal(textoIntervalo(0), "hoy");
   assert.equal(textoIntervalo(1), "1 día");
   assert.equal(textoIntervalo(36), "36 días");
+  assert.equal(textoIntervalo(60), "60 días", "el techo se dice en días, que es como se compara");
   assert.equal(textoIntervalo(61), "2 meses");
   assert.equal(textoIntervalo(365), "1 año");
   assert.equal(textoIntervalo(550), "1,5 años");
@@ -293,6 +294,69 @@ test("la previsión de cada botón es la que se aplica al pulsarlo", () => {
   }
   assert.deepEqual(
     [0, 3, 4, 5].map((q) => textoIntervalo(calcularSM2(asentada, q, hoy).intervalo_dias)),
-    ["1 día", "36 días", "2 meses", "3 meses"]
+    ["1 día", "21 días", "44 días", "60 días"]
   );
+});
+
+// ---------- El horizonte de estudio ----------
+
+test("ninguna tarjeta se aplaza más allá del techo", () => {
+  const hoy = new Date("2026-10-01T12:00:00Z");
+  let p = null;
+  // Acertándola siempre "Fácil", que es lo que más la estira.
+  for (let i = 0; i < 30; i++) p = calcularSM2(p, 5, hoy);
+  assert.ok(
+    p.intervalo_dias <= MAX_INTERVALO,
+    `se fue a ${p.intervalo_dias} días: una tarjeta que vuelve después del examen es una tarjeta perdida`
+  );
+});
+
+test("con el techo apretando, los botones SIGUEN dando días distintos", () => {
+  const hoy = new Date("2026-10-01T12:00:00Z");
+  const asentada = { ease_factor: 2.5, repeticiones: 5, intervalo_dias: 30 };
+  // Es la trampa de recortar por las bravas: con Math.min, "Difícil", "Bien"
+  // y "Fácil" se quedarían los tres en el techo y volverían a ser el mismo
+  // botón. Encogiendo la escalera entera se mantienen separados hasta con
+  // cinco días por delante.
+  for (const techo of [60, 30, 15, 5]) {
+    const dias = [0, 3, 4, 5].map((q) => calcularSM2(asentada, q, hoy, techo).intervalo_dias);
+    assert.equal(new Set(dias).size, 4, `con techo ${techo} salieron ${dias.join(", ")}`);
+    assert.ok(dias[1] < dias[2] && dias[2] < dias[3], `con techo ${techo} se desordenaron: ${dias.join(", ")}`);
+    assert.ok(Math.max(...dias) <= techo, `con techo ${techo} se pasó: ${dias.join(", ")}`);
+  }
+});
+
+test("el techo se estrecha solo según se acerca la fecha objetivo", () => {
+  assert.equal(topeIntervalo("2026-10-01", ""), MAX_INTERVALO, "sin fecha manda el techo general");
+  // La mitad de lo que queda, para que dé tiempo a verla una vez más antes.
+  assert.equal(topeIntervalo("2026-10-01", "2026-12-01"), 30);
+  assert.equal(topeIntervalo("2026-10-01", "2026-10-11"), 5);
+  assert.equal(topeIntervalo("2026-10-01", "2026-10-02"), 1, "el día antes, todo vuelve mañana");
+  assert.equal(topeIntervalo("2026-10-01", "2027-06-01"), MAX_INTERVALO, "una fecha lejana no levanta el techo");
+  assert.equal(topeIntervalo("2026-10-01", "2026-09-01"), MAX_INTERVALO, "pasada la fecha el plazo ya no aprieta");
+});
+
+test("lo ya aplazado a meses vista se adelanta al techo, y lo demás no se toca", () => {
+  const progreso = [
+    { flashcard_id: "lejos", proxima_revision: "2027-01-15", intervalo_dias: 103 },
+    { flashcard_id: "cerca", proxima_revision: "2026-10-20", intervalo_dias: 19 },
+    { flashcard_id: "nueva", proxima_revision: null },
+  ];
+  const [lejos, cerca, nueva] = dentroDelHorizonte(progreso, "2026-10-01", 60);
+  assert.equal(lejos.proxima_revision, "2026-11-30", "si no, esa tarjeta no vuelve antes del examen");
+  assert.equal(lejos.intervalo_dias, 103, "solo se adelanta la fecha; el historial de la tarjeta no se falsea");
+  assert.equal(cerca.proxima_revision, "2026-10-20", "lo que ya cabe en el plazo se queda como está");
+  assert.equal(nueva.proxima_revision, null);
+});
+
+test("una tarjeta nueva cabe entera dentro del plazo que queda", () => {
+  const hoy = new Date("2026-10-01T12:00:00Z");
+  // Diez días por delante: la escalera completa tiene que caber ahí dentro,
+  // no plantarse en el día 37 como haría sin horizonte.
+  const techo = topeIntervalo("2026-10-01", "2026-10-11");
+  let p = null;
+  for (let i = 0; i < 8; i++) {
+    p = calcularSM2(p, 4, hoy, techo);
+    assert.ok(p.intervalo_dias <= techo, `llegó a ${p.intervalo_dias} días con ${techo} de techo`);
+  }
 });

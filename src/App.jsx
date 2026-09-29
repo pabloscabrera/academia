@@ -15,7 +15,7 @@ import {
   mezclarTemas, temaDeTarjeta, sugerirAdelanto, planHastaObjetivo, DIAS_PARA_CONSOLIDAR, textoIntervalo,
   retencionGlobal, retencionPorSemana, retencionPorIntervalo, RETENCION_OBJETIVO,
   MAX_EDAD_TIRADA_MS, reconstruirTirada, agruparAciertos,
-  calcularSM2, ordenarPorPrioridad, parsearEtiquetas, lunesDeLaSemana,
+  calcularSM2, topeIntervalo, dentroDelHorizonte, ordenarPorPrioridad, parsearEtiquetas, lunesDeLaSemana,
   ESPERA_MAX_CARGA_MS, conTiempoLimite, mensajeDeCarga,
 } from "./logica";
 
@@ -693,7 +693,11 @@ export default function AcademiaPIR() {
   const registrarRepasoFlashcard = async (flashcardId, calidad) => {
     if (!flashcardId || !user) return;
     const previo = flashcardsProgreso.find((p) => p.flashcard_id === flashcardId);
-    const nuevo = calcularSM2(previo, calidad);
+    // El techo se recalcula en cada repaso, no se guarda: así una tarjeta
+    // metida hoy y una de hace un mes se aplazan con el mismo criterio, y al
+    // acercarse la fecha objetivo todo se va estrechando solo.
+    const tope = topeIntervalo(new Date().toISOString().slice(0, 10), ajustes.fechaObjetivo);
+    const nuevo = calcularSM2(previo, calidad, new Date(), tope);
     const fila = { name: user.name, flashcard_id: flashcardId, ...nuevo };
 
     // Una fila por repaso, para poder dibujar la retención. El progreso de la
@@ -1189,7 +1193,8 @@ function AjustesPanel({ ajustes, setAjustes, onClose }) {
         <FieldLabel>Fecha para llegar preparado</FieldLabel>
         <p style={{ fontSize: 12, color: TINTA_TENUE, margin: "0 0 8px", lineHeight: 1.45 }}>
           Ponla antes del examen si quieres llegar con margen. Las estadísticas de flashcards calculan
-          desde aquí cuántas tarjetas nuevas te da tiempo a estrenar.
+          desde aquí cuántas tarjetas nuevas te da tiempo a estrenar, y las flashcards dejan de aplazarse
+          más allá de la mitad de lo que queda: según se acerca la fecha, los repasos se juntan solos.
         </p>
         <input
           type="date"
@@ -3483,6 +3488,10 @@ function PlanObjetivo({ stats, hoy, fechaObjetivo }) {
           )}
         </p>
       )}
+      <p style={{ fontSize: 12, color: TINTA_TENUE, margin: "10px 0 0", lineHeight: 1.5 }}>
+        Mientras tanto, ninguna tarjeta se aplaza más de {textoIntervalo(topeIntervalo(hoy, fechaObjetivo))}: una
+        que volviera después de tu fecha no te serviría de nada.
+      </p>
     </Card>
   );
 }
@@ -3649,13 +3658,22 @@ function GrupoEstadistica({ titulo, filas }) {
   );
 }
 
+const diasHasta = (hoy, fecha) =>
+  Math.round((new Date(fecha + "T00:00:00Z") - new Date(hoy + "T00:00:00Z")) / 86400000);
+
 function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo }) {
   const hoy = new Date().toISOString().slice(0, 10);
+  // Mismo techo que se aplicará al pulsar, para que lo que anuncia el botón
+  // sea exactamente lo que va a pasar.
+  const tope = topeIntervalo(hoy, fechaObjetivo);
+  // Lo aplazado a meses vista cuando no había techo se adelanta al leerlo,
+  // para que no se quede fuera del plazo de estudio.
+  const progresoEnPlazo = useMemo(() => dentroDelHorizonte(progreso, hoy, tope), [progreso, hoy, tope]);
   const progresoPorId = useMemo(() => {
     const m = {};
-    progreso.forEach((p) => { m[p.flashcard_id] = p; });
+    progresoEnPlazo.forEach((p) => { m[p.flashcard_id] = p; });
     return m;
-  }, [progreso]);
+  }, [progresoEnPlazo]);
 
   const mazos = useMemo(
     () => [...new Set(flashcards.map((f) => f.mazo || "General"))].sort((a, b) => a.localeCompare(b)),
@@ -3863,11 +3881,17 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
               >
                 {c.label}
                 <span style={{ display: "block", fontSize: 11.5, fontWeight: 600, opacity: 0.8, marginTop: 3 }}>
-                  {textoIntervalo(calcularSM2(progresoPorId[carta.grupo_id || carta.id], c.calidad).intervalo_dias)}
+                  {textoIntervalo(calcularSM2(progresoPorId[carta.grupo_id || carta.id], c.calidad, new Date(), tope).intervalo_dias)}
                 </span>
               </button>
             ))}
           </div>
+        )}
+        {revelada && (
+          <p style={{ fontSize: 11.5, color: TINTA_TENUE, textAlign: "center", marginTop: 10 }}>
+            Nada se aplaza más de {textoIntervalo(tope)}
+            {fechaObjetivo ? `: quedan ${diasHasta(hoy, fechaObjetivo)} días para tu fecha` : ""}.
+          </p>
         )}
       </div>
     );
