@@ -905,7 +905,7 @@ export default function AcademiaPIR() {
           }
           return null;
         })()}
-        <main style={styles.main}>
+        <main style={styles.main} className="main-app">
           {section === "flashcards" && (
             <Flashcards
               user={user}
@@ -1367,8 +1367,8 @@ function Header({
     setMostrarFrase(true);
   };
   return (
-    <header style={styles.header}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+    <header style={styles.header} className="cabecera">
+      <div className="cabecera-marca" style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <Compass size={20} color={ACENTO} strokeWidth={1.8} />
         <span style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: 19, color: TINTA, letterSpacing: 0.3 }}>AUTOPIR</span>
         {enLinea > 0 && (
@@ -1413,8 +1413,8 @@ function Header({
           </span>
         )}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span style={{ fontSize: 13, color: TINTA_SUAVE, display: "flex", alignItems: "center", gap: 4 }}>
+      <div className="cabecera-iconos" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span className="cabecera-nombre" style={{ fontSize: 13, color: TINTA_SUAVE, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
           <User size={14} /> {user.name}{user.isAdmin ? " · admin" : ""}
         </span>
         <div style={{ position: "relative" }}>
@@ -1424,7 +1424,7 @@ function Header({
           {mostrarLogros && (
             <>
               <div style={styles.dropdownCatcher} onClick={() => setMostrarLogros(false)} />
-              <div style={styles.logrosDropdown} onClick={(e) => e.stopPropagation()}>
+              <div className="desplegable" style={styles.logrosDropdown} onClick={(e) => e.stopPropagation()}>
                 <Logros user={user} miRacha={miRacha} compact />
               </div>
             </>
@@ -1443,7 +1443,7 @@ function Header({
           {mostrarRuleta && (
             <>
               <div style={styles.dropdownCatcher} onClick={() => setMostrarRuleta(false)} />
-              <div style={{ ...styles.logrosDropdown, width: 300 }} onClick={(e) => e.stopPropagation()}>
+              <div className="desplegable" style={{ ...styles.logrosDropdown, width: 300 }} onClick={(e) => e.stopPropagation()}>
                 <RuletaDiaria user={user} questions={questions} onGirarRuleta={onGirarRuleta} />
               </div>
             </>
@@ -1456,7 +1456,7 @@ function Header({
           {mostrarFrase && (
             <>
               <div style={styles.dropdownCatcher} onClick={() => setMostrarFrase(false)} />
-              <div style={{ ...styles.logrosDropdown, width: 320 }} onClick={(e) => e.stopPropagation()}>
+              <div className="desplegable" style={{ ...styles.logrosDropdown, width: 320 }} onClick={(e) => e.stopPropagation()}>
                 <p style={{ fontFamily: "'Fraunces', Georgia, serif", fontStyle: "italic", fontWeight: 500, fontSize: 21, lineHeight: 1.5, color: TINTA, margin: 0 }}>{frase}</p>
                 <button type="button" onClick={nuevaFrase} style={{ ...styles.linkBtn, marginTop: 12 }}>
                   Otra frase
@@ -1479,7 +1479,7 @@ function Header({
               <X size={20} color="#6E6A61" />
             </button>
           </div>
-          <main style={styles.main}>
+          <main style={styles.main} className="main-app">
             <Ranking rachas={rachas} user={user} />
           </main>
         </div>
@@ -1491,7 +1491,7 @@ function Header({
               <X size={20} color="#6E6A61" />
             </button>
           </div>
-          <main style={styles.main}>
+          <main style={styles.main} className="main-app">
             <BancoPreguntas
               questions={questions}
               user={user}
@@ -1517,7 +1517,7 @@ function Nav({ section, setSection, alerta }) {
     { id: "perfil", label: "Mi perfil", icon: User },
   ];
   return (
-    <nav style={styles.nav}>
+    <nav style={styles.nav} className="nav-app">
       {items.map((it) => {
         const Icon = it.icon;
         const active = section === it.id;
@@ -4796,7 +4796,7 @@ const SOMBRA_SUAVE = "0 1px 2px rgba(30,28,24,0.07), 0 1px 6px rgba(30,28,24,0.0
 const styles = {
   app: { fontFamily: "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", background: "#EEECE4", minHeight: "100vh", color: TINTA, WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none", fontSize: 17 },
   center: { display: "flex", alignItems: "center", justifyContent: "center" },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 24px", borderBottom: `1px solid ${RAYA}` },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "18px 24px", borderBottom: `1px solid ${RAYA}` },
   nav: { display: "flex", gap: 6, padding: "0 18px", borderBottom: `1px solid ${RAYA}`, overflowX: "auto" },
   navBtn: { display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: "16px 14px", fontSize: 16, cursor: "pointer", whiteSpace: "nowrap" },
   navDot: { position: "absolute", top: 10, right: 6, width: 8, height: 8, borderRadius: "50%", background: ACENTO, animation: "dueloPulso 1.2s ease-in-out infinite" },
