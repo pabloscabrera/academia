@@ -26,6 +26,49 @@
          parados en vez de girar. */
       @keyframes animateSpin { to { transform: rotate(360deg); } }
       .animate-spin { animation: animateSpin 1s linear infinite; }
+
+      /* La app se escribe con estilos en línea, así que aquí van las únicas
+         reglas que dependen del ancho de la pantalla — y por eso llevan
+         !important: un estilo en línea gana a una hoja de estilos.
+
+         El problema que resuelven: en la cabecera caben la marca, hasta tres
+         píldoras, el nombre y siete botones. En un iPad entra de sobra; en un
+         móvil eso mide unos 530 px dentro de una caja de 374, la página
+         entera se ensancha, y el engranaje de Ajustes y el botón de salir se
+         quedan literalmente fuera de la pantalla. */
+      @media (max-width: 620px) {
+        .cabecera { padding: 12px 14px !important; }
+        /* Ya sabes cómo te llamas, y son los ~110 px que hacen falta para
+           que quepan los botones, que son lo que sí hace algo. */
+        .cabecera-nombre { display: none !important; }
+        .cabecera-marca { gap: 6px !important; }
+        .cabecera-iconos { gap: 2px !important; }
+        .nav-app { padding: 0 6px !important; }
+        .nav-app button { padding: 13px 5px !important; font-size: 13.5px !important; gap: 6px !important; }
+        /* Las cuatro pestañas con su icono no caben, y la que se queda fuera
+           ("Mi perfil") no se ve que esté ahí: la barra se desplaza pero no
+           lo parece. Sin los iconos entran las cuatro y ya no hay nada
+           escondido; el texto solo se lee igual de bien. */
+        .nav-app button svg { display: none !important; }
+        .main-app { padding: 20px 14px 46px !important; }
+
+        /* Los desplegables (Logros, Ruleta, Frase) van anclados con
+           `right: 0` a SU botón. En una pantalla ancha el botón está a la
+           derecha y el panel cae hacia dentro; en un móvil los botones se
+           han bajado a una segunda fila pegados a la izquierda, así que un
+           panel de 320 px colgado de su borde derecho se sale medio metro
+           por fuera de la pantalla.
+
+           En vez de inventar un `top` a ojo, se le quita el anclaje al
+           botón (los envoltorios pasan a `static`) y el panel se cuelga de
+           la fila de iconos entera, de borde a borde. */
+        /* Ancho completo: además de dejar los iconos repartidos, es lo que
+           da al panel colgado de esta fila el ancho de la pantalla en vez
+           del de los siete botones. */
+        .cabecera-iconos { position: relative !important; width: 100% !important; justify-content: space-between !important; }
+        .cabecera-iconos > div { position: static !important; }
+        .desplegable { left: 0 !important; right: 0 !important; width: auto !important; max-width: none !important; }
+      }
     </style>
   </head>
   <body>
