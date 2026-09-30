@@ -570,3 +570,42 @@ export function textoIntervalo(dias) {
   const anios = Math.round((dias / 365) * 10) / 10;
   return `${String(anios).replace(".", ",")} ${anios === 1 ? "año" : "años"}`;
 }
+
+// ---------- Ruleta diaria ----------
+//
+// La pregunta se elige AL PULSAR, no cuando termina la animación. Antes se
+// sorteaba dentro del setTimeout de 3 segundos, y esos 3 segundos eran una
+// ventana en la que todo se podía perder: la ruleta vive dentro de un
+// desplegable de la cabecera, así que cualquier toque en la pantalla lo
+// cierra, desmonta el componente y el resultado no llega a existir — pero el
+// temporizador SÍ seguía corriendo y marcaba el giro como gastado en
+// Supabase. Resultado: "ya has girado hoy" sin haber visto una sola
+// pregunta, y hasta el día siguiente.
+
+export const MAX_CURSOS_RULETA = 6;
+
+export function cursosDeRuleta(questions, max = MAX_CURSOS_RULETA) {
+  const reales = (questions || []).filter((q) => q && !q.inventada && q.curso);
+  return [...new Set(reales.map((q) => q.curso))].slice(0, max);
+}
+
+// `azar` entra por argumento para poder fijarlo en una prueba.
+export function elegirPreguntaRuleta(questions, cursos, azar = Math.random) {
+  if (!cursos || cursos.length === 0) return null;
+  const indice = Math.floor(azar() * cursos.length);
+  const curso = cursos[Math.min(indice, cursos.length - 1)];
+  const delCurso = (questions || []).filter((q) => q && !q.inventada && q.curso === curso);
+  if (delCurso.length === 0) return null;
+  const pregunta = delCurso[Math.min(Math.floor(azar() * delCurso.length), delCurso.length - 1)];
+  return { indice: cursos.indexOf(curso), curso, pregunta };
+}
+
+// Se guarda el id, no la pregunta entera: así nunca resucita el texto viejo
+// de una pregunta corregida por SQL entre medias, igual que en las tiradas.
+export function reconstruirRuleta(guardada, questions, cursos, hoy) {
+  if (!guardada || guardada.fecha !== hoy || !guardada.preguntaId) return null;
+  const pregunta = (questions || []).find((q) => q && q.id === guardada.preguntaId);
+  if (!pregunta) return null;
+  const curso = guardada.curso || pregunta.curso;
+  return { indice: (cursos || []).indexOf(curso), curso, pregunta };
+}

@@ -5,6 +5,7 @@ import {
   reconstruirTirada, agruparAciertos, calcularSM2, ordenarPorPrioridad,
   parsearEtiquetas, lunesDeLaSemana, aplicarFiltroPedido,
   conTiempoLimite, mensajeDeCarga, textoIntervalo, MAX_INTERVALO, dentroDelHorizonte,
+  cursosDeRuleta, elegirPreguntaRuleta, reconstruirRuleta,
 } from "../src/logica.js";
 
 test("esExamen distingue una edición de examen de una asignatura suelta", () => {
@@ -369,4 +370,49 @@ test("la escalera se estabiliza dentro del techo en vez de dispararse", () => {
     dias.push(p.intervalo_dias);
   }
   assert.deepEqual(dias, [3, 9, 27, 45, 45, 45]);
+});
+
+// ---------- Ruleta diaria ----------
+
+test("la ruleta elige la pregunta al pulsar, no al acabar la animación", () => {
+  const questions = [
+    { id: "a1", curso: "PIR 22", inventada: false },
+    { id: "a2", curso: "PIR 22", inventada: false },
+    { id: "b1", curso: "PIR 23", inventada: false },
+    { id: "x1", curso: "PIR 24", inventada: true },
+  ];
+  const cursos = cursosDeRuleta(questions);
+  assert.deepEqual(cursos, ["PIR 22", "PIR 23"], "las inventadas no entran en la ruleta");
+
+  // azar fijo: primera llamada elige curso, segunda elige pregunta.
+  const valores = [0.9, 0];
+  const r = elegirPreguntaRuleta(questions, cursos, () => valores.shift());
+  assert.equal(r.curso, "PIR 23");
+  assert.equal(r.pregunta.id, "b1");
+  assert.equal(r.indice, 1, "el índice es el que la rueda tiene que dejar arriba");
+});
+
+test("la ruleta nunca devuelve una pregunta a medias", () => {
+  // azar = 1 exacto desbordaría el índice y daría undefined, que al pintarlo
+  // revienta la tarjeta entera (p.opciones.map de undefined).
+  const questions = [{ id: "a1", curso: "PIR 22", inventada: false }];
+  const cursos = cursosDeRuleta(questions);
+  const r = elegirPreguntaRuleta(questions, cursos, () => 1);
+  assert.ok(r && r.pregunta && r.pregunta.id === "a1");
+  assert.equal(elegirPreguntaRuleta(questions, [], Math.random), null, "sin cursos, no hay sorteo");
+});
+
+test("el giro del día se recupera al volver, y caduca al cambiar de día", () => {
+  const questions = [{ id: "a1", curso: "PIR 22", inventada: false }];
+  const cursos = cursosDeRuleta(questions);
+  const guardada = { fecha: "2026-10-01", curso: "PIR 22", preguntaId: "a1" };
+
+  const hoy = reconstruirRuleta(guardada, questions, cursos, "2026-10-01");
+  assert.equal(hoy.pregunta.id, "a1", "cerrar el desplegable no puede costarte el giro del día");
+  assert.equal(reconstruirRuleta(guardada, questions, cursos, "2026-10-02"), null, "mañana toca otra");
+  assert.equal(
+    reconstruirRuleta(guardada, [], cursos, "2026-10-01"),
+    null,
+    "si esa pregunta ya no está en el banco, no se inventa nada"
+  );
 });
