@@ -15,6 +15,7 @@ import {
   mezclarTemas, temaDeTarjeta, sugerirAdelanto, planHastaObjetivo, DIAS_PARA_CONSOLIDAR, textoIntervalo,
   retencionGlobal, retencionPorSemana, retencionPorIntervalo, RETENCION_OBJETIVO,
   MAX_EDAD_TIRADA_MS, reconstruirTirada, agruparAciertos,
+  cursosDeRuleta, elegirPreguntaRuleta, reconstruirRuleta,
   calcularSM2, MAX_INTERVALO, dentroDelHorizonte, ordenarPorPrioridad, parsearEtiquetas, lunesDeLaSemana,
   ESPERA_MAX_CARGA_MS, conTiempoLimite, mensajeDeCarga,
 } from "./logica";
@@ -148,6 +149,23 @@ function guardarTirada(nombre, datos) {
 
 function borrarTirada(nombre) {
   try { localStorage.removeItem(claveTirada(nombre)); } catch {}
+}
+
+// El giro del día se guarda aquí, no solo en el estado de React: la ruleta
+// vive en un desplegable de la cabecera y cerrarlo desmonta el componente.
+const claveRuleta = (nombre) => `pir-ruleta-${nombre}`;
+
+function leerRuletaGuardada(nombre) {
+  try {
+    const crudo = localStorage.getItem(claveRuleta(nombre));
+    return crudo ? JSON.parse(crudo) : null;
+  } catch {
+    return null;
+  }
+}
+
+function guardarRuleta(nombre, datos) {
+  try { localStorage.setItem(claveRuleta(nombre), JSON.stringify(datos)); } catch {}
 }
 
 const CURSOS_RULETA_COLORES = ["#2E7D6B", "#C89B3C", "#A6362B", "#5EC9C0", "#8A5A9E", "#3B6FA0"];
@@ -1426,7 +1444,7 @@ function Header({
             <>
               <div style={styles.dropdownCatcher} onClick={() => setMostrarRuleta(false)} />
               <div style={{ ...styles.logrosDropdown, width: 300 }} onClick={(e) => e.stopPropagation()}>
-                <RuletaDiaria questions={questions} miRacha={miRacha} onGirarRuleta={onGirarRuleta} />
+                <RuletaDiaria user={user} questions={questions} onGirarRuleta={onGirarRuleta} />
               </div>
             </>
           )}
@@ -2920,43 +2938,58 @@ function BarraNivel({ actual, siguiente, totalCorrectas, compact }) {
   );
 }
 
-function RuletaDiaria({ questions, miRacha, onGirarRuleta }) {
-  const cursosDisponibles = useMemo(() => {
-    const reales = questions.filter((q) => !q.inventada);
-    return [...new Set(reales.map((q) => q.curso))].slice(0, 6);
-  }, [questions]);
+function RuletaDiaria({ user, questions, onGirarRuleta }) {
+  const hoy = new Date().toISOString().slice(0, 10);
+  const nombre = user ? user.name : "";
+  const cursos = useMemo(() => cursosDeRuleta(questions), [questions]);
 
+  // Lo que salió hoy, recuperado del disco. La ruleta vive en un desplegable
+  // de la cabecera: cualquier toque en la pantalla lo cierra y desmonta esto,
+  // así que el resultado no puede vivir solo en el estado de React.
+  const guardado = useMemo(
+    () => reconstruirRuleta(leerRuletaGuardada(nombre), questions, cursos, hoy),
+    [nombre, questions, cursos, hoy]
+  );
+
+  const [resultado, setResultado] = useState(null);
   const [girando, setGirando] = useState(false);
   const [angulo, setAngulo] = useState(0);
-  const [resultado, setResultado] = useState(null);
+  const temporizador = useRef(null);
 
-  const hoy = new Date().toISOString().slice(0, 10);
-  const yaGirasteHoy = miRacha && miRacha.ultimo_giro_ruleta === hoy;
+  // Sin esto el temporizador sigue vivo después de cerrar el desplegable:
+  // marcaba el giro como gastado en Supabase para una pregunta que nadie
+  // llegó a ver, y te dejaba sin ruleta el resto del día.
+  useEffect(() => () => clearTimeout(temporizador.current), []);
 
-  if (cursosDisponibles.length === 0) return null;
+  if (cursos.length === 0) return null;
 
-  const numSegmentos = cursosDisponibles.length;
+  const visible = resultado || guardado;
+  // El candado es haber visto la pregunta, no la marca del servidor: si el
+  // giro se perdió por el camino, no tiene sentido cobrártelo igual.
+  const yaGirasteHoy = !!guardado;
+
+  const numSegmentos = cursos.length;
   const anguloPorSegmento = 360 / numSegmentos;
-  const gradiente = cursosDisponibles
+  const gradiente = cursos
     .map((c, i) => `${CURSOS_RULETA_COLORES[i % CURSOS_RULETA_COLORES.length]} ${i * anguloPorSegmento}deg ${(i + 1) * anguloPorSegmento}deg`)
     .join(", ");
 
   const girar = () => {
     if (girando || yaGirasteHoy) return;
+    // Se sortea AHORA, no dentro del temporizador: la animación solo decide
+    // cuándo se enseña, nunca si llega a existir.
+    const elegido = elegirPreguntaRuleta(questions, cursos);
+    if (!elegido) return;
+
+    guardarRuleta(nombre, { fecha: hoy, curso: elegido.curso, preguntaId: elegido.pregunta.id });
+    if (onGirarRuleta) onGirarRuleta();
+
     setGirando(true);
-    setResultado(null);
-    const indiceGanador = Math.floor(Math.random() * numSegmentos);
-    const cursoGanador = cursosDisponibles[indiceGanador];
-    const anguloCentro = indiceGanador * anguloPorSegmento + anguloPorSegmento / 2;
-    const vueltas = 5;
-    const nuevoAngulo = angulo - (angulo % 360) + vueltas * 360 + (360 - anguloCentro);
-    setAngulo(nuevoAngulo);
-    setTimeout(() => {
-      const delCurso = questions.filter((q) => !q.inventada && q.curso === cursoGanador);
-      const pregunta = delCurso[Math.floor(Math.random() * delCurso.length)];
-      setResultado({ curso: cursoGanador, pregunta });
+    const anguloCentro = elegido.indice * anguloPorSegmento + anguloPorSegmento / 2;
+    setAngulo((prev) => prev - (prev % 360) + 5 * 360 + (360 - anguloCentro));
+    temporizador.current = setTimeout(() => {
+      setResultado(elegido);
       setGirando(false);
-      if (onGirarRuleta) onGirarRuleta();
     }, 3000);
   };
 
@@ -2977,21 +3010,23 @@ function RuletaDiaria({ questions, miRacha, onGirarRuleta }) {
         </div>
         <div style={{ flex: 1, minWidth: 170 }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#1E1C18", marginBottom: 4 }}>Ruleta del día</div>
-          {yaGirasteHoy && !resultado ? (
-            <div style={{ fontSize: 12.5, color: "#9B9689" }}>Ya has girado hoy. Vuelve mañana para otra pregunta sorpresa.</div>
+          {yaGirasteHoy ? (
+            <div style={{ fontSize: 12.5, color: "#9B9689" }}>
+              Esta es la pregunta que te tocó hoy. Vuelve mañana para otra.
+            </div>
           ) : (
             <>
               <div style={{ fontSize: 12.5, color: "#9B9689", marginBottom: 8 }}>Gira y te toca una pregunta sorpresa de un curso al azar.</div>
-              <button type="button" onClick={girar} disabled={girando || yaGirasteHoy} style={{ ...styles.btnSecondary, opacity: girando ? 0.6 : 1 }}>
+              <button type="button" onClick={girar} disabled={girando} style={{ ...styles.btnSecondary, opacity: girando ? 0.6 : 1 }}>
                 {girando ? "Girando..." : "Girar"}
               </button>
             </>
           )}
         </div>
       </div>
-      {resultado && (
+      {visible && (
         <div style={{ marginTop: 16 }}>
-          <PreguntaGeneradaCard p={resultado.pregunta} guardada={false} onGuardar={null} />
+          <PreguntaGeneradaCard p={visible.pregunta} guardada={false} onGuardar={null} />
         </div>
       )}
     </Card>
