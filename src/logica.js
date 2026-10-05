@@ -651,3 +651,36 @@ export function hayQueDescargar(cache, { count = null, sello = null, ahora = Dat
   if (sello) return cache.sello !== sello;
   return ahora - (cache.guardadoEn || 0) >= maxEdad;
 }
+
+// ---------------------------------------------------------------------------
+// ¿Es utilizable el banco que viene de la copia local?
+// ---------------------------------------------------------------------------
+// La copia guardada en el navegador puede quedarse en mal estado: una descarga
+// cortada a medias, una versión antigua del formato, o filas repetidas por una
+// paginación inestable. Y una fila rota no se nota al guardarla sino al
+// dibujarla, que es cuando ya estorba.
+//
+// Es todo o nada, como la reconstrucción de una tirada a medias: si algo no
+// cuadra se tira la copia entera y se vuelve a descargar, en vez de colar filas
+// a medio hacer en la lista. Descargar de más es barato; una tarjeta que no
+// responde al tocarla, no.
+export function preguntaUsable(q) {
+  if (!q || typeof q !== "object") return false;
+  if (typeof q.id !== "string" || !q.id) return false;
+  if (typeof q.pregunta !== "string" || !q.pregunta.trim()) return false;
+  if (!Array.isArray(q.opciones) || q.opciones.length < 2) return false;
+  return q.opciones.every((o) => typeof o === "string");
+}
+
+export function bancoUsable(preguntas) {
+  if (!Array.isArray(preguntas) || preguntas.length === 0) return false;
+  const vistos = new Set();
+  for (const q of preguntas) {
+    if (!preguntaUsable(q)) return false;
+    // Un id repetido significa que la descarga trajo la misma fila dos veces;
+    // React las dibuja con la misma clave y la lista deja de ser fiable.
+    if (vistos.has(q.id)) return false;
+    vistos.add(q.id);
+  }
+  return true;
+}
