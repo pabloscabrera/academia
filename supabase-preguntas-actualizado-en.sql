@@ -38,11 +38,19 @@ create trigger preguntas_actualizado_en
 create index if not exists preguntas_actualizado_en_idx
   on public.preguntas (actualizado_en desc);
 
--- Comprobación: la primera fila debe traer una fecha, y la segunda consulta
--- debe devolver una marca MÁS NUEVA que la de antes (el trigger funciona).
+-- Comprobación. OJO: va en una EJECUCIÓN APARTE, después de que esto termine.
+-- El editor de Supabase corre todo el bloque en una sola transacción, y `now()`
+-- en Postgres devuelve la hora de INICIO de la transacción, no la del instante:
+-- metido aquí, el `default now()` del alter y el `now()` del trigger escriben el
+-- mismo valor y la comprobación sale plana aunque el trigger funcione
+-- perfectamente. Comprobado en un Postgres 16 local: en una sola transacción da
+-- 1 marca distinta, y la fila actualizada queda con la misma marca que una que
+-- no se tocó; con el update en su propia transacción da 2.
+--
+--   update public.preguntas set tema = tema
+--    where id = (select id from public.preguntas order by id limit 1);
+--
+--   select count(distinct actualizado_en) as marcas_distintas
+--     from public.preguntas;   -- debe dar 2
+
 select count(*) as filas, max(actualizado_en) as ultima from public.preguntas;
-
-update public.preguntas set tema = tema
- where id = (select id from public.preguntas order by actualizado_en asc limit 1);
-
-select max(actualizado_en) as ultima_tras_el_update from public.preguntas;
