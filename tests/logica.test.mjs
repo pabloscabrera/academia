@@ -6,6 +6,7 @@ import {
   parsearEtiquetas, lunesDeLaSemana, aplicarFiltroPedido,
   conTiempoLimite, mensajeDeCarga, textoIntervalo, MAX_INTERVALO, dentroDelHorizonte,
   cursosDeRuleta, elegirPreguntaRuleta, reconstruirRuleta,
+  hayQueDescargar, selloDeFilas, MAX_EDAD_CACHE_MS,
 } from "../src/logica.js";
 
 test("esExamen distingue una edición de examen de una asignatura suelta", () => {
@@ -415,4 +416,73 @@ test("el giro del día se recupera al volver, y caduca al cambiar de día", () =
     null,
     "si esa pregunta ya no está en el banco, no se inventa nada"
   );
+});
+
+// --- Cuándo volver a descargar el banco ------------------------------------
+
+test("selloDeFilas devuelve la marca más reciente, tal cual la dio el servidor", () => {
+  const filas = [
+    { id: "a", actualizado_en: "2026-10-01T10:00:00+00:00" },
+    { id: "b", actualizado_en: "2026-10-05T08:30:00.123456+00:00" },
+    { id: "c", actualizado_en: "2026-09-30T23:59:59+00:00" },
+  ];
+  // La cadena se devuelve sin reformatear: se compara por igualdad con la que
+  // manda el servidor, así que normalizarla la rompería.
+  assert.equal(selloDeFilas(filas), "2026-10-05T08:30:00.123456+00:00");
+});
+
+test("selloDeFilas aguanta filas sin columna, basura y listas vacías", () => {
+  assert.equal(selloDeFilas([{ id: "a" }, { id: "b", actualizado_en: null }]), null);
+  assert.equal(selloDeFilas([{ actualizado_en: "no es una fecha" }]), null);
+  assert.equal(selloDeFilas([]), null);
+  assert.equal(selloDeFilas(null), null);
+  // Con la migración sin ejecutar ninguna fila trae la columna: debe dar null
+  // para que manden el recuento y la caducidad, no romper.
+  assert.equal(selloDeFilas([{ id: "a" }, { id: "b" }]), null);
+});
+
+test("sin copia guardada siempre se descarga", () => {
+  assert.equal(hayQueDescargar(null, { count: 10, sello: "x" }), true);
+  assert.equal(hayQueDescargar({ preguntas: [] }, { count: 0, sello: "x" }), true);
+});
+
+test("un recuento distinto manda por encima del sello", () => {
+  const cache = { preguntas: [1, 2, 3], guardadoEn: Date.now(), sello: "s1" };
+  // Se añadió una pregunta: el sello coincide (el alta no toca las viejas y
+  // la nueva podría traer una marca anterior si se insertó con fecha), pero el
+  // recuento no, y eso basta.
+  assert.equal(hayQueDescargar(cache, { count: 4, sello: "s1" }), true);
+});
+
+test("con sello igual no se descarga, aunque la copia tenga semanas", () => {
+  const cache = { preguntas: [1, 2], guardadoEn: 0, sello: "s1" };
+  assert.equal(
+    hayQueDescargar(cache, { count: 2, sello: "s1", ahora: 40 * 24 * 3600 * 1000 }),
+    false,
+    "el sello es exacto: caducar por tiempo solo gastaría datos"
+  );
+});
+
+test("un sello distinto descarga: es la corrección de texto que el recuento no ve", () => {
+  const cache = { preguntas: [1, 2], guardadoEn: Date.now(), sello: "s1" };
+  assert.equal(hayQueDescargar(cache, { count: 2, sello: "s2" }), true);
+});
+
+test("sin sello se cae al criterio viejo de recuento y un día", () => {
+  const recien = { preguntas: [1, 2], guardadoEn: 1000, sello: null };
+  assert.equal(hayQueDescargar(recien, { count: 2, sello: null, ahora: 2000 }), false);
+  assert.equal(
+    hayQueDescargar(recien, { count: 2, sello: null, ahora: 1000 + MAX_EDAD_CACHE_MS }),
+    true
+  );
+  // Una copia de antes de la migración no tiene sello guardado, pero el
+  // servidor ya responde con uno: hay que descargar para quedar comparables.
+  const vieja = { preguntas: [1, 2], guardadoEn: Date.now() };
+  assert.equal(hayQueDescargar(vieja, { count: 2, sello: "s1" }), true);
+});
+
+test("sin recuento (consulta caída) el sello sigue decidiendo", () => {
+  const cache = { preguntas: [1, 2], guardadoEn: Date.now(), sello: "s1" };
+  assert.equal(hayQueDescargar(cache, { count: null, sello: "s1" }), false);
+  assert.equal(hayQueDescargar(cache, { count: null, sello: "s2" }), true);
 });

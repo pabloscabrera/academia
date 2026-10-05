@@ -609,3 +609,45 @@ export function reconstruirRuleta(guardada, questions, cursos, hoy) {
   const curso = guardada.curso || pregunta.curso;
   return { indice: (cursos || []).indexOf(curso), curso, pregunta };
 }
+
+// ---------------------------------------------------------------------------
+// Cuándo volver a descargar el banco de preguntas
+// ---------------------------------------------------------------------------
+// El banco vive guardado en el navegador, y la pregunta en cada arranque es si
+// la copia sigue siendo fiel. Comparar el RECUENTO detecta altas y bajas, pero
+// no una corrección de texto: las erratas que se arreglan por SQL no cambian
+// ningún número. Por eso se pide además el `actualizado_en` más reciente (una
+// fila, unos 100 bytes), que sí se mueve con cada `update`.
+//
+// Un día antes de volver a fiarse solo del recuento. Solo se usa cuando no hay
+// sello —la columna todavía no existe, o la consulta falló—, para que la app
+// siga funcionando sin la migración en vez de quedarse con una copia eterna.
+export const MAX_EDAD_CACHE_MS = 24 * 60 * 60 * 1000;
+
+// El sello se saca de las filas DESCARGADAS, no de la consulta previa: si una
+// corrección entra justo entre una y otra, guardar el sello de la consulta
+// dejaría la copia vieja marcada como al día para siempre.
+export function selloDeFilas(filas) {
+  let mejor = null;
+  let mejorMs = -Infinity;
+  for (const fila of filas || []) {
+    const valor = fila && fila.actualizado_en;
+    if (!valor) continue;
+    const ms = Date.parse(valor);
+    if (Number.isNaN(ms) || ms <= mejorMs) continue;
+    mejorMs = ms;
+    mejor = valor;
+  }
+  return mejor;
+}
+
+// `count`/`sello` son lo que respondió el servidor; `null` significa que esa
+// consulta no se pudo hacer.
+export function hayQueDescargar(cache, { count = null, sello = null, ahora = Date.now(), maxEdad = MAX_EDAD_CACHE_MS } = {}) {
+  if (!cache || !Array.isArray(cache.preguntas) || cache.preguntas.length === 0) return true;
+  if (typeof count === "number" && count !== cache.preguntas.length) return true;
+  // Con sello no hace falta caducar por tiempo: cualquier cambio en el banco
+  // lo mueve, así que mientras coincida la copia es exacta.
+  if (sello) return cache.sello !== sello;
+  return ahora - (cache.guardadoEn || 0) >= maxEdad;
+}
