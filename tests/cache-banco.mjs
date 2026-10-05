@@ -128,8 +128,43 @@ try {
     throw new Error(`sin la columna no debía descargar (copia reciente), hubo ${contadores.completas - antes4}`);
   }
 
+  // 5) Una copia local en mal estado (la misma fila dos veces, que es lo que
+  // deja una paginación inestable) se descarta entera y se vuelve a descargar,
+  // en vez de dibujar dos tarjetas con la misma clave.
+  selloRoto = false;
+  const antes5 = contadores.completas;
+  await pagina.evaluate((p) => new Promise((res) => {
+    const req = indexedDB.open("autopir", 1);
+    req.onsuccess = () => {
+      const tx = req.result.transaction("cache", "readwrite");
+      tx.objectStore("cache").put({ preguntas: [p, p], guardadoEn: Date.now(), sello: "2026-10-05T10:00:00+00:00" }, "preguntas");
+      tx.oncomplete = res; tx.onerror = res;
+    };
+    req.onerror = res;
+  }), PREGUNTAS[0]);
+  await cargar();
+  if (contadores.completas !== antes5 + 1) {
+    throw new Error(`una copia con ids repetidos debía forzar una descarga, hubo ${contadores.completas - antes5}`);
+  }
+
+  // 6) Lo mismo con una fila que reventaría al dibujarla.
+  const antes6 = contadores.completas;
+  await pagina.evaluate((p) => new Promise((res) => {
+    const req = indexedDB.open("autopir", 1);
+    req.onsuccess = () => {
+      const tx = req.result.transaction("cache", "readwrite");
+      tx.objectStore("cache").put({ preguntas: [{ ...p, opciones: "a,b,c,d" }], guardadoEn: Date.now(), sello: "2026-10-05T10:00:00+00:00" }, "preguntas");
+      tx.oncomplete = res; tx.onerror = res;
+    };
+    req.onerror = res;
+  }), PREGUNTAS[0]);
+  await cargar();
+  if (contadores.completas !== antes6 + 1) {
+    throw new Error(`una copia con una fila rota debía forzar una descarga, hubo ${contadores.completas - antes6}`);
+  }
+
   if (errores.length) throw new Error("errores en el navegador:\n" + errores.join("\n"));
-  console.log(`OK: descargas=${contadores.completas} (1 inicial + 1 tras la corrección), recuentos=${contadores.recuentos}, sellos=${contadores.sellos}`);
+  console.log(`OK: ${contadores.completas} descargas (inicial + corrección + dos copias en mal estado), recuentos=${contadores.recuentos}, sellos=${contadores.sellos}`);
 } catch (err) {
   fallo = err;
 } finally {

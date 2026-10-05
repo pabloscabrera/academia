@@ -13,6 +13,8 @@
 // privada, con el almacenamiento lleno o con las cookies bloqueadas, esto
 // tiene que degradar a "descargar como siempre", nunca a romper la app.
 
+import { bancoUsable } from "./logica.js";
+
 const NOMBRE_BD = "autopir";
 const ALMACEN = "cache";
 const CLAVE = "preguntas";
@@ -55,7 +57,10 @@ function operar(modo, hacer) {
 export async function leerPreguntasCache() {
   try {
     const guardado = await operar("readonly", (almacen) => almacen.get(CLAVE));
-    if (!guardado || !Array.isArray(guardado.preguntas) || guardado.preguntas.length === 0) return null;
+    if (!guardado) return null;
+    // Una copia con filas rotas o repetidas se descarta entera y se vuelve a
+    // descargar: es más barato que dibujar una lista en la que algo falla.
+    if (!bancoUsable(guardado.preguntas)) return null;
     return guardado;
   } catch {
     return null;
@@ -63,7 +68,9 @@ export async function leerPreguntasCache() {
 }
 
 export async function guardarPreguntasCache(preguntas, sello = null) {
-  if (!Array.isArray(preguntas) || preguntas.length === 0) return false;
+  // Tampoco se guarda lo que no se aceptaría al leer, o la copia mala
+  // sobreviviría a los reinicios.
+  if (!bancoUsable(preguntas)) return false;
   try {
     await operar("readwrite", (almacen) =>
       almacen.put({ preguntas, guardadoEn: Date.now(), sello }, CLAVE)

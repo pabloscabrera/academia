@@ -7,6 +7,7 @@ import {
   conTiempoLimite, mensajeDeCarga, textoIntervalo, MAX_INTERVALO, dentroDelHorizonte,
   cursosDeRuleta, elegirPreguntaRuleta, reconstruirRuleta,
   hayQueDescargar, selloDeFilas, MAX_EDAD_CACHE_MS,
+  preguntaUsable, bancoUsable,
 } from "../src/logica.js";
 
 test("esExamen distingue una edición de examen de una asignatura suelta", () => {
@@ -485,4 +486,44 @@ test("sin recuento (consulta caída) el sello sigue decidiendo", () => {
   const cache = { preguntas: [1, 2], guardadoEn: Date.now(), sello: "s1" };
   assert.equal(hayQueDescargar(cache, { count: null, sello: "s1" }), false);
   assert.equal(hayQueDescargar(cache, { count: null, sello: "s2" }), true);
+});
+
+// --- Copia local utilizable ------------------------------------------------
+
+const PREG = (id) => ({ id, pregunta: "¿Algo?", opciones: ["a", "b", "c", "d"], curso: "PIR 21" });
+
+test("una pregunta bien formada se acepta", () => {
+  assert.equal(preguntaUsable(PREG("p1")), true);
+});
+
+test("se rechaza lo que reventaría al dibujar la tarjeta", () => {
+  assert.equal(preguntaUsable(null), false);
+  assert.equal(preguntaUsable({ ...PREG("p1"), id: undefined }), false, "sin id no hay clave de React");
+  assert.equal(preguntaUsable({ ...PREG("p1"), id: 7 }), false, "un id que no es texto tampoco vale");
+  assert.equal(preguntaUsable({ ...PREG("p1"), pregunta: "   " }), false);
+  assert.equal(preguntaUsable({ ...PREG("p1"), opciones: "a,b,c,d" }), false, "opciones como texto revienta el .map");
+  assert.equal(preguntaUsable({ ...PREG("p1"), opciones: ["a"] }), false);
+  assert.equal(preguntaUsable({ ...PREG("p1"), opciones: ["a", null, "c", "d"] }), false);
+});
+
+test("un banco correcto se acepta entero", () => {
+  assert.equal(bancoUsable([PREG("p1"), PREG("p2"), PREG("p3")]), true);
+});
+
+test("un id repetido invalida el banco entero", () => {
+  // Es la huella de una paginación inestable: la misma fila en dos páginas.
+  // React dibujaría dos tarjetas con la misma clave.
+  assert.equal(bancoUsable([PREG("p1"), PREG("p2"), PREG("p1")]), false);
+});
+
+test("una sola fila rota tira la copia entera, no solo esa fila", () => {
+  // Todo o nada a propósito: colar la lista a medias es peor que descargarla
+  // otra vez, igual que con la tirada a medias.
+  assert.equal(bancoUsable([PREG("p1"), { ...PREG("p2"), opciones: null }, PREG("p3")]), false);
+});
+
+test("una copia vacía o inexistente no vale", () => {
+  assert.equal(bancoUsable([]), false);
+  assert.equal(bancoUsable(null), false);
+  assert.equal(bancoUsable("no es una lista"), false);
 });

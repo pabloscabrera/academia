@@ -83,7 +83,13 @@ async function fetchTodasPreguntas() {
     const { data, error } = await supabase
       .from("preguntas")
       .select("*")
+      // El desempate por `id` no es cosmético: el banco se cargó en bloque, así
+      // que cientos de filas comparten el mismo `created_at` al milisegundo. Con
+      // un orden ambiguo, Postgres puede devolver una misma fila en dos páginas
+      // y dejarse otra fuera, y el recuento total sigue cuadrando, así que no se
+      // nota. `id` es único, de modo que el orden pasa a ser siempre el mismo.
       .order("created_at", { ascending: true })
+      .order("id", { ascending: true })
       .range(desde, desde + TAM_PAGINA - 1);
     if (error) throw error;
     todas = todas.concat(data || []);
@@ -2144,6 +2150,12 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos,
       {termino && filtered.length === 0 && (
         <p style={{ fontSize: 13.5, color: "#9B9689", padding: "8px 0" }}>Ninguna pregunta contiene "{busqueda.trim()}".</p>
       )}
+      {/* Se probó envolver la lista en un `<div key={origen|termino}>` para que
+          React la reconstruyera entera al cambiar la búsqueda, como red contra
+          tarjetas que se quedan de la búsqueda anterior. Medido en un navegador
+          con la CPU 4 veces más lenta y las 2102 coincidiendo: pasa de 48 ms a
+          141 ms por tecla, que ya se nota al escribir. No compensa pagar eso por
+          una hipótesis, así que se queda fuera. */}
       {filtered.slice(0, visibles).map((q) => (
         <PreguntaCard key={q.id} q={q} isAdmin={user.isAdmin} onUpdate={onUpdate} onDelete={onDelete} favoritos={favoritos} onToggleFavorito={onToggleFavorito} progreso={progresoPorId[q.id]} />
       ))}
