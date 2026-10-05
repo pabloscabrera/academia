@@ -18,6 +18,7 @@ import {
   cursosDeRuleta, elegirPreguntaRuleta, reconstruirRuleta,
   calcularSM2, MAX_INTERVALO, dentroDelHorizonte, ordenarPorPrioridad, parsearEtiquetas, lunesDeLaSemana,
   ESPERA_MAX_CARGA_MS, conTiempoLimite, mensajeDeCarga,
+  hayQueDescargar, selloDeFilas,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -92,29 +93,42 @@ async function fetchTodasPreguntas() {
   return todas;
 }
 
-// Un día antes de volver a fiarse del recuento. Con menos se gana poco (el
-// banco cambia cuando se transcribe un examen nuevo, no a diario) y con más
-// una corrección de texto tardaría demasiado en llegar a quien ya la tiene
-// descargada.
-const MAX_EDAD_CACHE_MS = 24 * 60 * 60 * 1000;
+// Las dos consultas baratas con las que se decide si la copia local sigue
+// valiendo. Van juntas en un Promise.all porque no dependen una de otra.
+//
+// El recuento (head: true) no trae ni una fila, y el sello trae una sola: unos
+// cientos de bytes frente a los megas del banco completo. Cada una devuelve
+// null por su cuenta si falla, y `hayQueDescargar` sabe apañarse sin ella: sin
+// red no se descarga nada y se usa la copia de ayer; sin la columna
+// `actualizado_en` (la migración todavía sin ejecutar) manda la caducidad de un
+// día, como antes.
+async function sondearBanco() {
+  const [recuento, ultima] = await Promise.all([
+    supabase.from("preguntas").select("id", { count: "exact", head: true }),
+    supabase.from("preguntas").select("actualizado_en").order("actualizado_en", { ascending: false }).limit(1),
+  ]);
+  return {
+    count: recuento.error ? null : recuento.count,
+    sello: ultima.error || !ultima.data || !ultima.data[0] ? null : ultima.data[0].actualizado_en,
+    sinRed: !!recuento.error,
+  };
+}
 
 // Devuelve el banco entero, bajándolo solo si hace falta.
 async function obtenerPreguntas() {
   const cache = await leerPreguntasCache();
   if (cache) {
-    // Una consulta de solo recuento (head: true) no trae ni una fila: unos
-    // bytes frente a los megas del banco completo.
-    const { count, error } = await supabase
-      .from("preguntas")
-      .select("id", { count: "exact", head: true });
+    const sonda = await sondearBanco();
     // Sin red, la copia de ayer vale más que una pantalla vacía.
-    if (error) return cache.preguntas;
-    const fresca = Date.now() - cache.guardadoEn < MAX_EDAD_CACHE_MS;
-    if (fresca && count === cache.preguntas.length) return cache.preguntas;
+    if (sonda.sinRed) return cache.preguntas;
+    if (!hayQueDescargar(cache, sonda)) return cache.preguntas;
   }
   try {
     const todas = await fetchTodasPreguntas();
-    guardarPreguntasCache(todas);
+    // El sello sale de lo descargado, no de la sonda: si una corrección entra
+    // entre las dos, guardar el de la sonda dejaría esta copia marcada como al
+    // día para siempre.
+    guardarPreguntasCache(todas, selloDeFilas(todas));
     return todas;
   } catch (err) {
     if (cache) return cache.preguntas;

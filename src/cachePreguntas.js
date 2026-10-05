@@ -47,7 +47,11 @@ function operar(modo, hacer) {
   });
 }
 
-// Devuelve { preguntas, guardadoEn } o null si no hay nada utilizable.
+// Devuelve { preguntas, guardadoEn, sello } o null si no hay nada utilizable.
+// `sello` es el `actualizado_en` más reciente del banco en el momento de
+// guardarlo: es lo que permite enterarse de una corrección de texto, que no
+// cambia el recuento. Las copias guardadas antes de que existiera no lo
+// traen, y entonces manda la caducidad por tiempo.
 export async function leerPreguntasCache() {
   try {
     const guardado = await operar("readonly", (almacen) => almacen.get(CLAVE));
@@ -58,11 +62,11 @@ export async function leerPreguntasCache() {
   }
 }
 
-export async function guardarPreguntasCache(preguntas) {
+export async function guardarPreguntasCache(preguntas, sello = null) {
   if (!Array.isArray(preguntas) || preguntas.length === 0) return false;
   try {
     await operar("readwrite", (almacen) =>
-      almacen.put({ preguntas, guardadoEn: Date.now() }, CLAVE)
+      almacen.put({ preguntas, guardadoEn: Date.now(), sello }, CLAVE)
     );
     return true;
   } catch {
