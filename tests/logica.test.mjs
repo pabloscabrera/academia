@@ -9,6 +9,7 @@ import {
   hayQueDescargar, selloDeFilas, MAX_EDAD_CACHE_MS,
   preguntaUsable, bancoUsable,
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar,
+  ultimaCalificacionPorTarjeta, estadoCuadricula,
 } from "../src/logica.js";
 
 test("esExamen distingue una edición de examen de una asignatura suelta", () => {
@@ -582,4 +583,49 @@ test("al fundir dos mazos manda el estilo del destino", () => {
 test("renombrar un mazo sin estilo no mueve nada", () => {
   const e = indiceEstilosMazo([]);
   assert.deepEqual(estiloTrasRenombrar(e, "A", "B"), { mover: false, estilo: null });
+});
+
+// --- Cuadrícula por última calificación ------------------------------------
+
+test("de varios repasos de una tarjeta se queda el más reciente", () => {
+  const m = ultimaCalificacionPorTarjeta([
+    { flashcard_id: "a", calidad: 0, creado_en: "2026-10-01T10:00:00Z" },
+    { flashcard_id: "a", calidad: 4, creado_en: "2026-10-05T10:00:00Z" },
+    { flashcard_id: "a", calidad: 3, creado_en: "2026-10-03T10:00:00Z" },
+    { flashcard_id: "b", calidad: 5, creado_en: "2026-10-02T10:00:00Z" },
+  ]);
+  assert.equal(m.get("a"), 4);
+  assert.equal(m.get("b"), 5);
+});
+
+test("filas sin id o sin calidad no cuentan", () => {
+  const m = ultimaCalificacionPorTarjeta([
+    null, { calidad: 4 }, { flashcard_id: "a" }, { flashcard_id: "b", calidad: 4, creado_en: "2026-10-01T00:00:00Z" },
+  ]);
+  assert.equal(m.size, 1);
+  assert.equal(m.get("b"), 4);
+});
+
+test("una calificación de 0 (Otra vez) no se confunde con ausencia", () => {
+  // El fallo clásico: `if (!calidad)` trataría el 0 como "sin dato".
+  const m = ultimaCalificacionPorTarjeta([{ flashcard_id: "a", calidad: 0, creado_en: "2026-10-01T00:00:00Z" }]);
+  const prog = { a: { ultima_revision: "2026-10-01T00:00:00Z" } };
+  assert.equal(estadoCuadricula({ id: "a" }, prog, m), 0);
+});
+
+test("sin fila de progreso, la tarjeta es nueva", () => {
+  assert.equal(estadoCuadricula({ id: "a" }, {}, new Map()), "nueva");
+});
+
+test("repasada pero sin repaso en lo cargado NO es gris, es sin-registro", () => {
+  // Lo anterior a que existiera flashcards_repasos, o más viejo que la ventana
+  // de 90 días. Pintarla de "nueva" diría que no ha salido nunca, y sí salió.
+  const prog = { a: { ultima_revision: "2024-01-01T00:00:00Z" } };
+  assert.equal(estadoCuadricula({ id: "a" }, prog, new Map()), "sin-registro");
+});
+
+test("se usa grupo_id cuando lo hay, igual que el progreso", () => {
+  const m = ultimaCalificacionPorTarjeta([{ flashcard_id: "g1", calidad: 5, creado_en: "2026-10-01T00:00:00Z" }]);
+  const prog = { g1: { ultima_revision: "2026-10-01T00:00:00Z" } };
+  assert.equal(estadoCuadricula({ id: "otra", grupo_id: "g1" }, prog, m), 5);
 });
