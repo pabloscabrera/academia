@@ -82,6 +82,46 @@ test('lo marcado "Otra vez" se pone por delante de lo vencido', () => {
   assert.deepEqual(r, ["otraVez", "atrasada"]);
 });
 
+test("si todas vuelven el mismo día, el orden lo decide el azar", () => {
+  const progreso = {
+    a: { proxima_revision: "2026-10-20", repeticiones: 3 },
+    b: { proxima_revision: "2026-10-20", repeticiones: 3 },
+    c: { proxima_revision: "2026-10-20", repeticiones: 3 },
+  };
+  const lista = [t("a"), t("b"), t("c")];
+  // Un azar que va de mayor a menor le da la vuelta a la lista: si el
+  // desempate fuera estable saldría "a b c" pase lo que pase.
+  let n = 3;
+  const alReves = () => n--;
+  assert.deepEqual(colaDeRepaso(lista, progreso, "2026-10-07", alReves).map((x) => x.id), ["c", "b", "a"]);
+});
+
+test("el azar NO se come la urgencia: primero la fecha, el sorteo solo desempata", () => {
+  const progreso = {
+    tarde: { proxima_revision: "2026-11-01", repeticiones: 3 },
+    pronto: { proxima_revision: "2026-10-09", repeticiones: 3 },
+  };
+  let n = 0;
+  const alDerecho = () => n++; // le daría la vuelta si mandara el sorteo
+  assert.deepEqual(
+    colaDeRepaso([t("tarde"), t("pronto")], progreso, "2026-10-07", alDerecho).map((x) => x.id),
+    ["pronto", "tarde"]
+  );
+});
+
+test("entre vencidas del mismo día también se sortea", () => {
+  const progreso = {
+    x: { proxima_revision: "2026-10-05", repeticiones: 2 },
+    y: { proxima_revision: "2026-10-05", repeticiones: 2 },
+  };
+  let n = 2;
+  const alReves = () => n--;
+  assert.deepEqual(
+    colaDeRepaso([t("x"), t("y")], progreso, "2026-10-07", alReves).map((x) => x.id),
+    ["y", "x"]
+  );
+});
+
 test("la cola lleva todas las tarjetas, ninguna se pierde por el camino", () => {
   const lista = [t("a"), t("b"), t("c"), t("d")];
   const progreso = { a: { proxima_revision: "2026-12-01", repeticiones: 2 } };
