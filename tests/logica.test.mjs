@@ -8,6 +8,7 @@ import {
   cursosDeRuleta, elegirPreguntaRuleta, reconstruirRuleta,
   hayQueDescargar, selloDeFilas, MAX_EDAD_CACHE_MS,
   preguntaUsable, bancoUsable,
+  indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar,
 } from "../src/logica.js";
 
 test("esExamen distingue una edición de examen de una asignatura suelta", () => {
@@ -526,4 +527,59 @@ test("una copia vacía o inexistente no vale", () => {
   assert.equal(bancoUsable([]), false);
   assert.equal(bancoUsable(null), false);
   assert.equal(bancoUsable("no es una lista"), false);
+});
+
+// --- Color e icono por mazo ------------------------------------------------
+
+const ICONOS = ["Layers", "Brain", "Heart"];
+const COLORES = ["acento", "correcto", "oro"];
+
+test("un mazo sin estilo guardado no inventa ninguno", () => {
+  const e = indiceEstilosMazo([]);
+  assert.deepEqual(estiloDeMazo(e, "General", ICONOS, COLORES), { icono: null, color: null });
+});
+
+test("se devuelve lo guardado cuando es válido", () => {
+  const e = indiceEstilosMazo([{ mazo: "Farmacología", icono: "Brain", color: "oro" }]);
+  assert.deepEqual(estiloDeMazo(e, "Farmacología", ICONOS, COLORES), { icono: "Brain", color: "oro" });
+});
+
+test("un icono o color que ya no existe en el catálogo se ignora, no rompe", () => {
+  // Si mañana se quita un icono de la lista, los mazos que lo tuvieran vuelven
+  // a su aspecto por defecto en vez de quedarse sin dibujar.
+  const e = indiceEstilosMazo([{ mazo: "Viejo", icono: "IconoRetirado", color: "fucsia" }]);
+  assert.deepEqual(estiloDeMazo(e, "Viejo", ICONOS, COLORES), { icono: null, color: null });
+});
+
+test("se puede guardar solo el color, o solo el icono", () => {
+  const e = indiceEstilosMazo([{ mazo: "A", color: "acento" }, { mazo: "B", icono: "Heart" }]);
+  assert.deepEqual(estiloDeMazo(e, "A", ICONOS, COLORES), { icono: null, color: "acento" });
+  assert.deepEqual(estiloDeMazo(e, "B", ICONOS, COLORES), { icono: "Heart", color: null });
+});
+
+test("filas basura no entran en el índice", () => {
+  const e = indiceEstilosMazo([null, { icono: "Brain" }, { mazo: 7 }, { mazo: "Bien", color: "oro" }]);
+  assert.equal(e.size, 1);
+  assert.equal(e.get("Bien").color, "oro");
+});
+
+test("al renombrar, el estilo sigue al mazo", () => {
+  const e = indiceEstilosMazo([{ mazo: "Viejo", icono: "Brain", color: "oro" }]);
+  assert.deepEqual(estiloTrasRenombrar(e, "Viejo", "Nuevo"),
+    { mover: true, estilo: { icono: "Brain", color: "oro" } });
+});
+
+test("al fundir dos mazos manda el estilo del destino", () => {
+  // "Enviar a otro mazo" es renombrar para coincidir con uno que ya existe:
+  // el destino conserva el suyo, no se lo pisa el que llega.
+  const e = indiceEstilosMazo([
+    { mazo: "Origen", icono: "Brain", color: "oro" },
+    { mazo: "Destino", icono: "Heart", color: "acento" },
+  ]);
+  assert.deepEqual(estiloTrasRenombrar(e, "Origen", "Destino"), { mover: false, estilo: null });
+});
+
+test("renombrar un mazo sin estilo no mueve nada", () => {
+  const e = indiceEstilosMazo([]);
+  assert.deepEqual(estiloTrasRenombrar(e, "A", "B"), { mover: false, estilo: null });
 });

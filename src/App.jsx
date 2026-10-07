@@ -1,11 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import {
-  CloudOff,
-  Compass, ListChecks, Trophy, Clock, ChevronRight, ChevronDown,
-  Plus, Check, X, Loader2, User, LogOut, Flag, Pencil, Trash2,
-   Zap, Heart, Swords, Sword, Flame, Sparkles, Star, Award, Target, Settings,
-   Medal, Gem, Crown, Search, Layers, Lightbulb, Users, Eye, FolderInput
-} from "lucide-react";
+import { Activity, Award, Baby, BookOpen, Brain, Check, ChevronDown, ChevronRight, Clock, CloudOff, Compass, Crown, Eye, Flag, Flame, FolderInput, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, Palette, Pencil, Percent, Plus, Puzzle, Search, Settings, Sparkles, Star, Stethoscope, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
 import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, sinFila, filasPendientes, CONFLICTO } from "./colaPendientes";
@@ -19,6 +13,7 @@ import {
   calcularSM2, MAX_INTERVALO, dentroDelHorizonte, ordenarPorPrioridad, parsearEtiquetas, lunesDeLaSemana,
   ESPERA_MAX_CARGA_MS, conTiempoLimite, mensajeDeCarga,
   hayQueDescargar, selloDeFilas,
+  indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -227,6 +222,7 @@ export default function AcademiaPIR() {
   const [repasosFlashcards, setRepasosFlashcards] = useState([]);
   const [favoritos, setFavoritos] = useState([]);
   const [flashcards, setFlashcards] = useState([]);
+  const [estilosMazo, setEstilosMazo] = useState([]);
   const [flashcardsProgreso, setFlashcardsProgreso] = useState([]);
   const [dueloEsperando, setDueloEsperando] = useState(null);
   const [autoUnirseDuelo, setAutoUnirseDuelo] = useState(false);
@@ -253,14 +249,19 @@ export default function AcademiaPIR() {
     // la anterior, y con datos móviles eso son cuatro idas y vueltas
     // encadenadas antes de poder pintar nada.
     const cargarDatosApp = async () => {
-      const [qData, rachasRes, flashcardsRes] = await Promise.all([
+      const [qData, rachasRes, flashcardsRes, estilosRes] = await Promise.all([
         obtenerPreguntas(),
         supabase.from("rachas").select("*"),
         supabase.from("flashcards").select("*"),
+        supabase.from("mazos_estilo").select("*"),
       ]);
       setQuestions(qData || []);
       setRachas(rachasRes.data || []);
       setFlashcards(flashcardsRes.data || []);
+      // Va en el mismo Promise.all, así que no cuesta otra ida y vuelta. Si la
+      // tabla todavía no existe (migración sin ejecutar) esto llega con error y
+      // se queda vacío: los mazos se ven como siempre y nada más se rompe.
+      setEstilosMazo(estilosRes.error ? [] : (estilosRes.data || []));
     };
 
     let sesionAlCargar = false;
@@ -819,6 +820,30 @@ export default function AcademiaPIR() {
     return !error;
   };
 
+  // El estilo es decorativo, así que si falla no se avisa ni se deshace nada:
+  // el mazo se queda con el aspecto que tuviera. Lo que no puede pasar es que
+  // un fallo aquí impida renombrar o borrar, de ahí que vaya por su cuenta.
+  const guardarEstiloMazo = async (mazo, { icono, color }) => {
+    const fila = { mazo, icono: icono || null, color: color || null };
+    setEstilosMazo((prev) => {
+      const sinEse = prev.filter((e) => e.mazo !== mazo);
+      return icono || color ? [...sinEse, fila] : sinEse;
+    });
+    try {
+      if (!icono && !color) {
+        // Quitar las dos cosas es volver al aspecto por defecto: se borra la
+        // fila en vez de dejarla con los dos campos a nulo.
+        await supabase.from("mazos_estilo").delete().eq("mazo", mazo);
+      } else {
+        await supabase.from("mazos_estilo").upsert(fila, { onConflict: "user_id,mazo" });
+      }
+      return true;
+    } catch (err) {
+      console.error("No se pudo guardar el estilo del mazo:", err);
+      return false;
+    }
+  };
+
   const renombrarMazo = async (viejo, nuevo) => {
     const destino = (nuevo || "").trim();
     if (!destino || destino === viejo) return false;
@@ -828,6 +853,13 @@ export default function AcademiaPIR() {
       const { error } = await supabase.from("flashcards").update({ mazo: destino }).in("id", ids);
       if (error) throw error;
       setFlashcards((prev) => prev.map((f) => ((f.mazo || "General") === viejo ? { ...f, mazo: destino } : f)));
+      // El estilo tiene que seguir al mazo. Si el destino ya existía con estilo
+      // propio (esto es también lo que hace "enviar a otro mazo"), manda el
+      // suyo y el del origen se descarta — ver estiloTrasRenombrar.
+      const { mover, estilo } = estiloTrasRenombrar(indiceEstilosMazo(estilosMazo), viejo, destino);
+      if (mover) await guardarEstiloMazo(destino, estilo);
+      setEstilosMazo((prev) => prev.filter((e) => e.mazo !== viejo));
+      supabase.from("mazos_estilo").delete().eq("mazo", viejo).then(() => {}, () => {});
       return true;
     } catch (err) {
       console.error("No se pudo renombrar el mazo:", err);
@@ -843,6 +875,10 @@ export default function AcademiaPIR() {
     if (!error) {
       const restantes = flashcards.filter((f) => !ids.includes(f.id));
       setFlashcards(restantes);
+      // Borrado el mazo, su estilo sobra. Si fallara tampoco pasa nada: es una
+      // fila huérfana que nadie lee mientras no vuelva a existir ese nombre.
+      setEstilosMazo((prev) => prev.filter((e) => e.mazo !== nombre));
+      supabase.from("mazos_estilo").delete().eq("mazo", nombre).then(() => {}, () => {});
       // flashcards_progreso.flashcard_id ya no es una FK a flashcards(id)
       // (no puede serlo: grupo_id se repite entre las copias de una misma
       // tarjeta), así que ya no hay "on delete cascade" automático — solo se
@@ -940,6 +976,8 @@ export default function AcademiaPIR() {
               onDelete={deleteFlashcard}
               onRenombrarMazo={renombrarMazo}
               onEliminarMazo={eliminarMazo}
+              estilosMazo={estilosMazo}
+              onEstiloMazo={guardarEstiloMazo}
             />
           )}
           {section === "perfil" && (
@@ -3710,7 +3748,7 @@ function GrupoEstadistica({ titulo, filas }) {
   );
 }
 
-function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo }) {
+function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo, estilosMazo, onEstiloMazo }) {
   const hoy = new Date().toISOString().slice(0, 10);
   // Mismo techo que se aplicará al pulsar, para que lo que anuncia el botón
   // sea exactamente lo que va a pasar.
@@ -3727,6 +3765,8 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     () => [...new Set(flashcards.map((f) => f.mazo || "General"))].sort((a, b) => a.localeCompare(b)),
     [flashcards]
   );
+
+  const indiceEstilos = useMemo(() => indiceEstilosMazo(estilosMazo), [estilosMazo]);
 
   const statsPorMazo = useMemo(() => {
     const m = new Map();
@@ -3977,6 +4017,8 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
               onBorrar={() => onEliminarMazo(m)}
               avisoBorrado={`¿Borrar "${m}" y sus ${s.total} tarjeta${s.total === 1 ? "" : "s"}? No se puede deshacer.`}
               otrosMazos={mazos.filter((x) => x !== m)}
+              estilo={estiloDeMazo(indiceEstilos, m, CLAVES_ICONO_MAZO, CLAVES_COLOR_MAZO)}
+              onEstilo={onEstiloMazo ? (nuevo) => onEstiloMazo(m, nuevo) : null}
             />
           );
         })}
@@ -4145,12 +4187,90 @@ function FilaNavegacion({ icono: Icono, titulo, subtitulo, badge, onClick }) {
 // Como FilaNavegacion, pero con lápiz (renombrar in situ) y papelera
 // (borrar con confirmación) junto al nombre — usada para cada mazo real,
 // nunca para la fila sintética "Todas las tarjetas".
-function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onRenombrar, onBorrar, avisoBorrado, otrosMazos }) {
+// Elegir color e icono de un mazo. Todo a la vista y de un toque: son 8 y 12
+// opciones, así que un desplegable solo escondería lo que hay que comparar.
+// "Sin icono" y "Quitar color" son opciones del propio catálogo, no un botón
+// aparte, porque volver al aspecto de antes es una elección más.
+function SelectorEstiloMazo({ icono, color, onGuardar, onCerrar }) {
+  const [iconoSel, setIconoSel] = useState(icono);
+  const [colorSel, setColorSel] = useState(color);
+  const [guardando, setGuardando] = useState(false);
+  const tinte = colorSel ? COLORES_MAZO[colorSel] : TINTA_SUAVE;
+
+  return (
+    <Card style={{ marginBottom: 8, padding: 14 }}>
+      <FieldLabel>Color</FieldLabel>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "8px 0 16px" }}>
+        {CLAVES_COLOR_MAZO.map((c) => (
+          <button
+            key={c}
+            type="button"
+            title={c}
+            onClick={() => setColorSel(colorSel === c ? null : c)}
+            style={{
+              width: 34, height: 34, borderRadius: "50%", cursor: "pointer",
+              background: COLORES_MAZO[c],
+              border: colorSel === c ? `3px solid ${TINTA}` : `2px solid ${RAYA}`,
+            }}
+          />
+        ))}
+      </div>
+
+      <FieldLabel>Icono</FieldLabel>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, margin: "8px 0 16px" }}>
+        {CLAVES_ICONO_MAZO.map((k) => {
+          const I = ICONOS_MAZO[k];
+          const activo = iconoSel === k;
+          return (
+            <button
+              key={k}
+              type="button"
+              title={k}
+              onClick={() => setIconoSel(activo ? null : k)}
+              style={{
+                width: 40, height: 40, borderRadius: 10, cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                background: activo ? ACENTO_SUAVE : "transparent",
+                border: activo ? `2px solid ${tinte}` : `1.5px solid ${RAYA}`,
+              }}
+            >
+              <I size={19} color={activo ? tinte : TINTA_SUAVE} />
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          type="button"
+          disabled={guardando}
+          onClick={async () => {
+            setGuardando(true);
+            await onGuardar({ icono: iconoSel, color: colorSel });
+            setGuardando(false);
+            onCerrar();
+          }}
+          style={{ ...styles.btnPrimary, flex: 1, opacity: guardando ? 0.7 : 1 }}
+        >
+          {guardando ? "Guardando..." : "Guardar"}
+        </button>
+        <button type="button" onClick={onCerrar} style={styles.btnSecondary}>Cancelar</button>
+      </div>
+    </Card>
+  );
+}
+
+function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onRenombrar, onBorrar, avisoBorrado, otrosMazos, estilo, onEstilo }) {
   const [modo, setModo] = useState("normal"); // normal | editando | enviando | confirmando
   const [nombreNuevo, setNombreNuevo] = useState(titulo);
   const [procesando, setProcesando] = useState(false);
   const destinos = otrosMazos || [];
   const [destinoElegido, setDestinoElegido] = useState(destinos[0] || "");
+  // Sin estilo guardado se dibuja como siempre: el icono que llegue por prop y
+  // el color de tinta por defecto.
+  const est = estilo || { icono: null, color: null };
+  const IconoMazo = (est.icono && ICONOS_MAZO[est.icono]) || Icono;
+  const tinte = est.color ? COLORES_MAZO[est.color] : null;
 
   if (modo === "editando") {
     return (
@@ -4233,16 +4353,32 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onR
     );
   }
 
+  if (modo === "estilo") {
+    return (
+      <SelectorEstiloMazo
+        icono={est.icono}
+        color={est.color}
+        onGuardar={(nuevo) => onEstilo(nuevo)}
+        onCerrar={() => setModo("normal")}
+      />
+    );
+  }
+
   return (
-    <div style={styles.filaCarpeta}>
+    <div style={{ ...styles.filaCarpeta, ...(tinte ? { borderLeft: `4px solid ${tinte}` } : {}) }}>
       <button type="button" onClick={onClick} style={styles.filaCarpetaBoton}>
-        <span style={styles.filaCarpetaIcono}><Icono size={17} /></span>
+        <span style={styles.filaCarpetaIcono}><IconoMazo size={17} color={tinte || undefined} /></span>
         <span style={{ flex: 1, minWidth: 0 }}>
           <div style={styles.filaCarpetaTitulo}>{titulo}</div>
           {subtitulo && <div style={styles.filaCarpetaSubtitulo}>{subtitulo}</div>}
         </span>
         {badge != null && <span style={styles.filaCarpetaBadge}>{badge}</span>}
       </button>
+      {onEstilo && (
+        <button type="button" onClick={() => setModo("estilo")} title="Color e icono" style={styles.filaCarpetaIconBtn}>
+          <Palette size={14} />
+        </button>
+      )}
       <button type="button" onClick={() => setModo("editando")} title="Renombrar" style={styles.filaCarpetaIconBtn}>
         <Pencil size={14} />
       </button>
@@ -4817,6 +4953,32 @@ function Card({ children, style, className }) {
 function FieldLabel({ children, style }) {
   return <div style={{ fontSize: 12, color: "#6E6A61", marginBottom: 6, ...style }}>{children}</div>;
 }
+
+// Catálogo de colores e iconos que puede llevar un mazo. Lo que se guarda en
+// la base es la CLAVE ("acento", "Brain"), no el valor: así la tabla no sabe
+// nada de la paleta ni de lucide, y retirar una opción de aquí no deja una
+// fila ilegible — ese mazo vuelve a su aspecto por defecto (hay prueba).
+//
+// Los ocho colores son oscuros a propósito: el fondo de las tarjetas es crema,
+// y un tono claro sobre crema no se distingue. Los iconos están elegidos por
+// las asignaturas del PIR, no por bonitos: Percent está porque el mazo que ya
+// existe es el de porcentajes y prevalencias.
+const COLORES_MAZO = {
+  tinta: TINTA,
+  acento: ACENTO,
+  aviso: AVISO,
+  oro: ORO,
+  correcto: CORRECTO,
+  turquesa: "#1F6E6B",
+  azul: "#2A5A8C",
+  morado: "#6B3A7A",
+};
+const ICONOS_MAZO = {
+  Layers, Brain, Heart, BookOpen, Stethoscope, Baby,
+  Users, MessageCircle, Puzzle, Percent, Activity, Target,
+};
+const CLAVES_ICONO_MAZO = Object.keys(ICONOS_MAZO);
+const CLAVES_COLOR_MAZO = Object.keys(COLORES_MAZO);
 
 const SOMBRA_SUAVE = "0 1px 2px rgba(30,28,24,0.07), 0 1px 6px rgba(30,28,24,0.05)";
 const styles = {
