@@ -684,3 +684,46 @@ export function bancoUsable(preguntas) {
   }
   return true;
 }
+
+// ---------------------------------------------------------------------------
+// Color e icono por mazo
+// ---------------------------------------------------------------------------
+// Un mazo no es una entidad: `mazo` es una etiqueta de texto repetida en cada
+// tarjeta, y la lista sale de agrupar. El estilo vive aparte, en una tabla con
+// clave (user_id, mazo), y puede no existir — un mazo sin estilo se ve como se
+// veía antes. De ahí que esto no invente nada: devuelve null y decide quien
+// dibuja.
+//
+// Los nombres que se guardan (el del icono y el de la clave de color) son
+// texto, no objetos: la tabla no sabe nada de lucide ni de la paleta, así que
+// quitar un icono del catálogo mañana no deja una fila ilegible, solo un mazo
+// que vuelve a su aspecto por defecto. Por eso `estiloDeMazo` **valida contra
+// los catálogos que se le pasan** en vez de confiar en lo guardado.
+export function indiceEstilosMazo(filas) {
+  const m = new Map();
+  for (const f of filas || []) {
+    if (!f || typeof f.mazo !== "string") continue;
+    m.set(f.mazo, { icono: f.icono || null, color: f.color || null });
+  }
+  return m;
+}
+
+export function estiloDeMazo(estilos, mazo, iconosValidos, coloresValidos) {
+  const guardado = (estilos && estilos.get && estilos.get(mazo)) || null;
+  const icono = guardado && iconosValidos && iconosValidos.includes(guardado.icono)
+    ? guardado.icono : null;
+  const color = guardado && coloresValidos && coloresValidos.includes(guardado.color)
+    ? guardado.color : null;
+  return { icono, color };
+}
+
+// Al renombrar un mazo su estilo tiene que seguirle. Y "enviar un mazo a otro"
+// es renombrarlo para que coincida con el destino, así que el destino puede ya
+// tener estilo propio: en ese caso manda el suyo y el del origen se descarta,
+// que es lo que uno espera al fundir dos mazos en uno.
+export function estiloTrasRenombrar(estilos, viejo, nuevo) {
+  const origen = (estilos && estilos.get && estilos.get(viejo)) || null;
+  const destinoYaTiene = !!(estilos && estilos.get && estilos.get(nuevo));
+  if (!origen || destinoYaTiene) return { mover: false, estilo: null };
+  return { mover: true, estilo: origen };
+}
