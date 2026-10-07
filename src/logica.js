@@ -228,6 +228,33 @@ export function ordenarPorPrioridad(lista, progresoPorId, azar = Math.random) {
   return conPrioridad.map((x) => x.f);
 }
 
+// La cola completa: TODAS las tarjetas puestas en el orden en que les toca
+// volver a salir, no solo las que vencen hoy.
+//
+// Por qué existe. El modelo de Anki da por hecho que repasas a diario: si hoy
+// no vence nada, hoy no hay nada que hacer. Quien estudia a ratos abre la app,
+// quiere ponerse, y se encuentra un "vuelve mañana" — que es lo contrario de
+// lo que conviene. Las fechas siguen calculándose igual; lo que cambia es que
+// aquí se usan como ORDEN y no como permiso: primero lo vencido (lo más
+// atrasado delante, y lo marcado "Otra vez" por encima de todo), luego lo
+// nunca visto, y después lo que aún no toca, empezando por lo que vuelve
+// antes. Así siempre se puede seguir, y lo que sale es siempre lo que más
+// cerca está de olvidarse.
+export function colaDeRepaso(lista, progresoPorId, hoy, azar = Math.random) {
+  const vencidas = [];
+  const futuras = [];
+  for (const f of lista) {
+    const p = progresoPorId[f.grupo_id || f.id];
+    if (!p || !p.proxima_revision || p.proxima_revision <= hoy) vencidas.push(f);
+    else futuras.push({ f, cuando: p.proxima_revision });
+  }
+  futuras.sort((a, b) => String(a.cuando).localeCompare(String(b.cuando)));
+  return [
+    ...ordenarPorPrioridad(vencidas, progresoPorId, azar),
+    ...futuras.map((x) => x.f),
+  ];
+}
+
 export const parsearEtiquetas = (texto) => [
   ...new Set((texto || "").split(",").map((e) => e.trim()).filter(Boolean)),
 ];
@@ -494,31 +521,6 @@ export function mezclarTemas(lista, claveDe, ventana = 5) {
 // tiene, su mazo. Sin esto, un mazo de un solo tema no se mezclaría nunca.
 export const temaDeTarjeta = (f) =>
   ((f.etiquetas && f.etiquetas[0]) || f.mazo || "General");
-
-// ---------- Repartir los picos de carga ----------
-//
-// Que un jueves caigan 90 tarjetas no es un problema del algoritmo, es que
-// se acumularon. Adelantar unas cuantas hoy lo deshace. Repasar antes de
-// tiempo recorta un poco el espaciado, así que solo se propone cuando el
-// pico es de verdad, no por tres tarjetas de más.
-export const PICO_MINIMO = 25;
-
-export function sugerirAdelanto(prevision, margen = 1.6) {
-  if (!prevision || prevision.length < 3) return null;
-  const futuros = prevision.slice(1);
-  const conCarga = futuros.filter((d) => d.cuantas > 0);
-  if (conCarga.length === 0) return null;
-
-  const media = conCarga.reduce((a, d) => a + d.cuantas, 0) / conCarga.length;
-  const pico = futuros.reduce((max, d) => (d.cuantas > max.cuantas ? d : max), futuros[0]);
-  if (pico.cuantas < PICO_MINIMO || pico.cuantas < media * margen) return null;
-
-  // Se propone bajar el pico hasta la media, sin pasarse: adelantar media
-  // sesión de golpe cansa más de lo que ahorra.
-  const aAdelantar = Math.min(Math.round(pico.cuantas - media), 25);
-  if (aAdelantar < 5) return null;
-  return { fecha: pico.fecha, cuantas: pico.cuantas, adelantar: aAdelantar, quedarian: pico.cuantas - aAdelantar };
-}
 
 // ---------- Llegar a una fecha con todo consolidado ----------
 //

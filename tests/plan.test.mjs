@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  mezclarTemas, temaDeTarjeta, sugerirAdelanto, planHastaObjetivo,
-  PICO_MINIMO, DIAS_PARA_CONSOLIDAR,
+  mezclarTemas, temaDeTarjeta, colaDeRepaso, planHastaObjetivo,
+  DIAS_PARA_CONSOLIDAR,
 } from "../src/logica.js";
 
 const clave = (x) => x.tema;
@@ -48,26 +48,46 @@ test("el tema de una tarjeta es su etiqueta, y si no, su mazo", () => {
   assert.equal(temaDeTarjeta({}), "General");
 });
 
-const dia = (f, n) => ({ fecha: f, cuantas: n });
+// ---------- La cola de repaso ----------
 
-test("se avisa del pico y se propone bajarlo a la media", () => {
-  const s = sugerirAdelanto([dia("d0", 10), dia("d1", 8), dia("d2", 60), dia("d3", 9), dia("d4", 7)]);
-  assert.equal(s.fecha, "d2");
-  assert.equal(s.cuantas, 60);
-  assert.ok(s.adelantar > 0 && s.quedarian < 60);
-  assert.ok(s.adelantar <= 25, "no se propone adelantar media sesión de golpe");
+const t = (id) => ({ id });
+
+test("la cola va por turno: lo vencido, luego lo nuevo, luego lo que aún no toca", () => {
+  const progreso = {
+    vieja: { proxima_revision: "2026-10-01", repeticiones: 3 },
+    deAyer: { proxima_revision: "2026-10-06", repeticiones: 2 },
+    pronto: { proxima_revision: "2026-10-09", repeticiones: 4 },
+    lejos: { proxima_revision: "2026-11-20", repeticiones: 5 },
+  };
+  const lista = [t("lejos"), t("pronto"), t("nueva"), t("deAyer"), t("vieja")];
+  const r = colaDeRepaso(lista, progreso, "2026-10-07").map((x) => x.id);
+  assert.deepEqual(r, ["vieja", "deAyer", "nueva", "pronto", "lejos"]);
 });
 
-test("no se molesta al usuario por tres tarjetas de más", () => {
-  assert.equal(sugerirAdelanto([dia("d0", 5), dia("d1", 6), dia("d2", 9), dia("d3", 5)]), null,
-    `el pico no llega al mínimo de ${PICO_MINIMO}`);
-  assert.equal(sugerirAdelanto([dia("d0", 30), dia("d1", 30), dia("d2", 32), dia("d3", 30)]), null,
-    "carga alta pero repartida: no hay nada que repartir");
+test("sin nada vencido la cola NO queda vacía: sale lo que vuelve antes", () => {
+  const progreso = {
+    a: { proxima_revision: "2026-10-20", repeticiones: 3 },
+    b: { proxima_revision: "2026-10-09", repeticiones: 3 },
+  };
+  const r = colaDeRepaso([t("a"), t("b")], progreso, "2026-10-07").map((x) => x.id);
+  assert.deepEqual(r, ["b", "a"], "ordenadas por cercanía, no un 'vuelve mañana'");
 });
 
-test("hoy no cuenta como pico: lo que toca hoy no se adelanta", () => {
-  const s = sugerirAdelanto([dia("hoy", 90), dia("d1", 5), dia("d2", 6), dia("d3", 5)]);
-  assert.equal(s, null);
+test('lo marcado "Otra vez" se pone por delante de lo vencido', () => {
+  const progreso = {
+    otraVez: { proxima_revision: "2026-10-07", repeticiones: 0, ultima_revision: "2026-10-07" },
+    atrasada: { proxima_revision: "2026-09-01", repeticiones: 4 },
+  };
+  const r = colaDeRepaso([t("atrasada"), t("otraVez")], progreso, "2026-10-07").map((x) => x.id);
+  assert.deepEqual(r, ["otraVez", "atrasada"]);
+});
+
+test("la cola lleva todas las tarjetas, ninguna se pierde por el camino", () => {
+  const lista = [t("a"), t("b"), t("c"), t("d")];
+  const progreso = { a: { proxima_revision: "2026-12-01", repeticiones: 2 } };
+  const r = colaDeRepaso(lista, progreso, "2026-10-07");
+  assert.equal(r.length, 4);
+  assert.deepEqual([...r.map((x) => x.id)].sort(), ["a", "b", "c", "d"]);
 });
 
 const stats = (o) => ({ nueva: 0, reaprendiendo: 0, joven: 0, madura: 0, ...o });

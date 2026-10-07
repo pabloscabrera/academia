@@ -6,11 +6,11 @@ import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, s
 import {
   esExamen, TEMA_PLACEHOLDER, temasDisponibles, filtrarPreguntas, indicePorId, aplicarFiltroPedido,
   estadisticasFlashcards, agruparEstadisticas, DIAS_MADURA,
-  mezclarTemas, temaDeTarjeta, sugerirAdelanto, planHastaObjetivo, DIAS_PARA_CONSOLIDAR, textoIntervalo,
+  mezclarTemas, temaDeTarjeta, planHastaObjetivo, DIAS_PARA_CONSOLIDAR, textoIntervalo,
   retencionGlobal, retencionPorSemana, retencionPorIntervalo, RETENCION_OBJETIVO,
   MAX_EDAD_TIRADA_MS, reconstruirTirada, agruparAciertos,
   cursosDeRuleta, elegirPreguntaRuleta, reconstruirRuleta,
-  calcularSM2, MAX_INTERVALO, dentroDelHorizonte, ordenarPorPrioridad, parsearEtiquetas, lunesDeLaSemana,
+  calcularSM2, MAX_INTERVALO, dentroDelHorizonte, ordenarPorPrioridad, colaDeRepaso, parsearEtiquetas, lunesDeLaSemana,
   ESPERA_MAX_CARGA_MS, conTiempoLimite, mensajeDeCarga,
   hayQueDescargar, selloDeFilas,
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar,
@@ -3388,16 +3388,6 @@ const CALIFICACIONES_FLASHCARD = [
 //  - Cómo lo llevas: ¿cuánto he consolidado de verdad, no cuánto he visto?
 //  - Por mazo / por tema: ¿dónde se me está yendo el esfuerzo?
 //  - Las que se atragantan: ¿qué tarjetas hay que reescribir en vez de repetir?
-// "el jueves 9" en vez de "2026-10-09": la fecha suelta no dice nada.
-function diaLargo(iso) {
-  try {
-    const d = new Date(iso + "T00:00:00Z");
-    const texto = d.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", timeZone: "UTC" });
-    return "El " + texto;
-  } catch {
-    return "El " + iso;
-  }
-}
 
 const TANDA_CUADRICULA = 60;
 
@@ -4031,33 +4021,20 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
   const [busquedaTarjetas, setBusquedaTarjetas] = useState("");
 
 
-  // Primero la urgencia decide QUÉ entra; después se alterna el tema dentro
-  // de lo elegido. Agrupar por tema se siente más fácil y retiene peor.
-  // Si en los próximos días hay un pico de carga, se ofrece deshacerlo
-  // adelantando parte hoy. Solo cuando el pico es de verdad: ver
-  // sugerirAdelanto.
-  const adelanto = useMemo(() => {
-    const e = estadisticasFlashcards(flashcardsFiltradas, progresoPorId, hoy);
-    const s = sugerirAdelanto(e.prevision);
-    if (!s) return null;
-    const candidatas = flashcardsFiltradas.filter((f) => {
-      const p = progresoPorId[f.grupo_id || f.id];
-      return p && p.proxima_revision === s.fecha;
-    });
-    return candidatas.length > 0 ? { ...s, candidatas } : null;
-  }, [flashcardsFiltradas, progresoPorId, hoy]);
-
-  const empezarCon = (lista) => {
-    setSesion(mezclarTemas(lista, temaDeTarjeta));
-    setIdx(0);
-    setRevelada(false);
-    setResumen(null);
-    setEditandoCarta(null);
-  };
+  // La cola entera, en orden de turno: lo vencido delante y, detrás, lo que
+  // aún no toca empezando por lo que vuelve antes. La fecha decide el ORDEN,
+  // no el permiso — así nunca sale un "vuelve mañana" a quien se ha sentado a
+  // estudiar hoy. Primero la urgencia decide QUÉ entra; después se alterna el
+  // tema dentro de lo elegido, porque agrupar por tema se siente más fácil y
+  // retiene peor.
+  const cola = useMemo(
+    () => colaDeRepaso(flashcardsFiltradas, progresoPorId, hoy),
+    [flashcardsFiltradas, progresoPorId, hoy]
+  );
 
   const empezar = () => {
-    const cantidad = Math.max(1, Math.min(numTarjetas || 1, pendientes.length));
-    setSesion(mezclarTemas(ordenarPorPrioridad(pendientes, progresoPorId).slice(0, cantidad), temaDeTarjeta));
+    const cantidad = Math.max(1, Math.min(numTarjetas || 1, cola.length));
+    setSesion(mezclarTemas(cola.slice(0, cantidad), temaDeTarjeta));
     setIdx(0);
     setRevelada(false);
     setResumen(null);
@@ -4338,27 +4315,45 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
         </Card>
       )}
       <Card style={{ textAlign: "center", padding: "28px 20px" }}>
-        {pendientes.length === 0 ? (
+        {cola.length === 0 ? (
           <p style={{ fontSize: 15, color: "#1E1C18", margin: 0 }}>
-            No te toca repasar ninguna tarjeta{etiquetasActivas.length > 0 ? ` de ${etiquetasActivas.join(" · ")}` : mazoActivo ? ` de "${mazoActivo}"` : ""} hoy. ¡Vuelve mañana!
+            No hay ninguna tarjeta{etiquetasActivas.length > 0 ? ` de ${etiquetasActivas.join(" · ")}` : mazoActivo ? ` de "${mazoActivo}"` : ""} todavía.
           </p>
         ) : (
           <>
-            <p style={{ fontSize: 15, color: "#1E1C18", marginTop: 0, marginBottom: 16 }}>
-              Tienes {pendientes.length} tarjeta{pendientes.length === 1 ? "" : "s"} para repasar hoy.
-            </p>
+            {pendientes.length > 0 ? (
+              <p style={{ fontSize: 15, color: "#1E1C18", marginTop: 0, marginBottom: 16 }}>
+                Te tocan {pendientes.length} tarjeta{pendientes.length === 1 ? "" : "s"}.
+                {cola.length > pendientes.length && (
+                  <span style={{ display: "block", fontSize: 12.5, color: TINTA_TENUE, marginTop: 6, lineHeight: 1.5 }}>
+                    Si pides más de {pendientes.length}, sigue por las siguientes de la cola, en el orden en que les toca volver.
+                  </span>
+                )}
+              </p>
+            ) : (
+              /* Antes aquí ponía "vuelve mañana" y se acababa la pantalla: quien
+                 no estudia a diario se encontraba la puerta cerrada justo el día
+                 que se sentaba a estudiar. */
+              <p style={{ fontSize: 15, color: "#1E1C18", marginTop: 0, marginBottom: 16 }}>
+                Hoy no vence ninguna{etiquetasActivas.length > 0 ? ` de ${etiquetasActivas.join(" · ")}` : mazoActivo ? ` de "${mazoActivo}"` : ""}, pero puedes seguir.
+                <span style={{ display: "block", fontSize: 12.5, color: TINTA_TENUE, marginTop: 6, lineHeight: 1.5 }}>
+                  Salen en el orden en que les toca volver, la más cercana primero.
+                  Adelantarlas recorta un poco su espaciado: lo que de verdad se olvida es lo que acabas no repasando.
+                </span>
+              </p>
+            )}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 18 }}>
               <FieldLabel style={{ margin: 0 }}>¿Cuántas quieres hacer?</FieldLabel>
               <input
                 type="number"
                 min={1}
-                max={pendientes.length}
+                max={cola.length}
                 value={numTarjetas}
                 onChange={(e) => {
                   const v = parseInt(e.target.value, 10);
                   setNumTarjetas(Number.isNaN(v) ? "" : v);
                 }}
-                onBlur={() => setNumTarjetas((v) => Math.max(1, Math.min(v || 1, pendientes.length)))}
+                onBlur={() => setNumTarjetas((v) => Math.max(1, Math.min(v || 1, cola.length)))}
                 style={{ ...styles.input, width: 70, textAlign: "center" }}
               />
             </div>
@@ -4368,26 +4363,6 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
           </>
         )}
       </Card>
-      {adelanto && (
-        <Card style={{ marginTop: 12, border: `1.5px solid ${AVISO}` }}>
-          <p style={{ margin: 0, fontSize: 14.5, color: TINTA, lineHeight: 1.55 }}>
-            <strong>{diaLargo(adelanto.fecha)}</strong> te caen {adelanto.cuantas} tarjetas.
-            Adelanta {adelanto.adelantar} hoy y ese día se te quedan en {adelanto.quedarian}.
-          </p>
-          <p style={{ margin: "8px 0 0", fontSize: 12, color: TINTA_TENUE, lineHeight: 1.5 }}>
-            Repasarlas antes de tiempo recorta un poco su espaciado. Compensa cuando el montón es grande:
-            lo que de verdad se olvida es lo que acabas no repasando.
-          </p>
-          <button
-            type="button"
-            onClick={() => empezarCon(ordenarPorPrioridad(adelanto.candidatas, progresoPorId).slice(0, adelanto.adelantar))}
-            style={{ ...styles.btnSecondary, marginTop: 14, justifyContent: "center", borderColor: AVISO, color: AVISO }}
-          >
-            Adelantar {adelanto.adelantar}
-          </button>
-        </Card>
-      )}
-
       <div style={{ marginTop: 32 }}>
         <button type="button" onClick={() => setVerTarjetas((v) => !v)} style={{ ...styles.linkBtn, display: "flex", alignItems: "center", gap: 6, padding: 0 }}>
           {verTarjetas ? <ChevronDown size={15} /> : <ChevronRight size={15} />} Ver, añadir y editar tarjetas ({flashcardsFiltradas.length})
