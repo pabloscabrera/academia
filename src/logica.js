@@ -214,25 +214,37 @@ export function dentroDelHorizonte(progreso, hoy, tope = MAX_INTERVALO) {
 // visto. Así el orden reacciona a la dificultad ya declarada, no solo a la
 // fecha de vencimiento.
 //
-// **Y en los empates manda el azar**, que es lo que faltaba: si contestas
-// "Fácil" a todas, todas se van al mismo día, y con un desempate estable el
-// orden de la lista —siempre el mismo— decidía por su cuenta. Resultado: las
-// repasabas una y otra vez en el mismo orden, que es justo lo que no conviene,
-// porque se aprende la secuencia en vez de la tarjeta. Se sortea una vez por
-// llamada y solo se mira cuando la fecha coincide, así que no pisa la urgencia.
+// **El desempate es la parte delicada, y son dos criterios, en este orden.**
+// Si contestas "Fácil" a todas, todas se van al mismo día, y entonces decide
+// quien venga detrás. Al principio no venía nadie: mandaba el orden de la
+// lista, siempre el mismo, así que repasabas la misma secuencia una y otra vez
+// y acababas aprendiéndote el orden en vez de la tarjeta. Sortearlo arregló
+// eso pero abrió lo contrario: con azar puro una tarjeta puede volver a
+// tocarte mañana sin que las demás hayan salido todavía.
+//
+// Así que primero **la que hace más que no ves** (`ultima_revision`, que es un
+// instante completo, no un día), y solo cuando eso también empata, el sorteo.
+// Es un reparto SIN reemplazo y no hace falta guardar nada nuevo: repasar una
+// actualiza su `ultima_revision` y la manda al final de su grupo ella sola, así
+// que la rueda da la vuelta entera antes de repetir. El azar se queda para lo
+// que de verdad está a la par — lo nunca visto, o lo que se repasó en el mismo
+// instante.
 export function ordenarPorPrioridad(lista, progresoPorId, azar = Math.random) {
   const conPrioridad = lista.map((f) => {
     const p = progresoPorId[f.grupo_id || f.id];
     const sorteo = azar();
-    if (!p) return { f, prioridad: 2, orden: sorteo, sorteo };
-    if (p.repeticiones === 0) return { f, prioridad: 0, orden: p.ultima_revision || "", sorteo };
-    return { f, prioridad: 1, orden: p.proxima_revision || "", sorteo };
+    if (!p) return { f, prioridad: 2, orden: sorteo, visto: "", sorteo };
+    const visto = p.ultima_revision || "";
+    if (p.repeticiones === 0) return { f, prioridad: 0, orden: visto, visto, sorteo };
+    return { f, prioridad: 1, orden: p.proxima_revision || "", visto, sorteo };
   });
   conPrioridad.sort((a, b) => {
     if (a.prioridad !== b.prioridad) return a.prioridad - b.prioridad;
     if (a.prioridad === 2) return a.orden - b.orden;
     const porFecha = String(a.orden).localeCompare(String(b.orden));
-    return porFecha !== 0 ? porFecha : a.sorteo - b.sorteo;
+    if (porFecha !== 0) return porFecha;
+    const porVisto = String(a.visto).localeCompare(String(b.visto));
+    return porVisto !== 0 ? porVisto : a.sorteo - b.sorteo;
   });
   return conPrioridad.map((x) => x.f);
 }
@@ -248,20 +260,23 @@ export function ordenarPorPrioridad(lista, progresoPorId, azar = Math.random) {
 // atrasado delante, y lo marcado "Otra vez" por encima de todo), luego lo
 // nunca visto, y después lo que aún no toca, empezando por lo que vuelve
 // antes. Así siempre se puede seguir, y lo que sale es siempre lo que más
-// cerca está de olvidarse. Dentro de un mismo día el orden es aleatorio, para
-// que repasar lo que venció a la vez no salga siempre en la misma secuencia.
+// cerca está de olvidarse. Dentro de un mismo día sale primero la que hace más
+// que no ves, así la rueda da la vuelta entera antes de repetir ninguna.
 export function colaDeRepaso(lista, progresoPorId, hoy, azar = Math.random) {
   const vencidas = [];
   const futuras = [];
   for (const f of lista) {
     const p = progresoPorId[f.grupo_id || f.id];
     if (!p || !p.proxima_revision || p.proxima_revision <= hoy) vencidas.push(f);
-    else futuras.push({ f, cuando: p.proxima_revision, sorteo: azar() });
+    else futuras.push({ f, cuando: p.proxima_revision, visto: p.ultima_revision || "", sorteo: azar() });
   }
-  // Mismo criterio que arriba: entre las que vuelven el mismo día, al azar.
+  // Mismo desempate que arriba: entre las que vuelven el mismo día, primero la
+  // que hace más que no ves, y el azar solo si eso también empata.
   futuras.sort((a, b) => {
     const porFecha = String(a.cuando).localeCompare(String(b.cuando));
-    return porFecha !== 0 ? porFecha : a.sorteo - b.sorteo;
+    if (porFecha !== 0) return porFecha;
+    const porVisto = String(a.visto).localeCompare(String(b.visto));
+    return porVisto !== 0 ? porVisto : a.sorteo - b.sorteo;
   });
   return [
     ...ordenarPorPrioridad(vencidas, progresoPorId, azar),

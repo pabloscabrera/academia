@@ -96,6 +96,41 @@ test("si todas vuelven el mismo día, el orden lo decide el azar", () => {
   assert.deepEqual(colaDeRepaso(lista, progreso, "2026-10-07", alReves).map((x) => x.id), ["c", "b", "a"]);
 });
 
+test("en un empate sale primero la que hace más que no ves, pase lo que pase el azar", () => {
+  const progreso = {
+    reciente: { proxima_revision: "2026-10-20", repeticiones: 3, ultima_revision: "2026-10-06T10:00:00.000Z" },
+    vieja: { proxima_revision: "2026-10-20", repeticiones: 3, ultima_revision: "2026-09-01T10:00:00.000Z" },
+  };
+  // Con el azar en contra en los dos sentidos: el criterio no depende de él.
+  for (const azar of [() => 0, () => 1, (() => { let n = 0; return () => n++; })()]) {
+    assert.deepEqual(
+      colaDeRepaso([t("reciente"), t("vieja")], progreso, "2026-10-07", azar).map((x) => x.id),
+      ["vieja", "reciente"]
+    );
+  }
+});
+
+test("la rueda da la vuelta entera antes de repetir ninguna", () => {
+  // Seis tarjetas empatadas a la misma fecha y tres sesiones de dos. Repasar
+  // una solo le toca su `ultima_revision` (la fecha se deja fija a propósito,
+  // que es el caso difícil: si cambiara, la propia fecha ya las separaría).
+  const ids = ["a", "b", "c", "d", "e", "f"];
+  const lista = ids.map(t);
+  const progreso = Object.fromEntries(
+    ids.map((id) => [id, { proxima_revision: "2026-10-20", repeticiones: 3, ultima_revision: "" }])
+  );
+  const salidas = [];
+  for (let sesion = 0; sesion < 3; sesion++) {
+    const dos = colaDeRepaso(lista, progreso, "2026-10-07").slice(0, 2);
+    for (const carta of dos) {
+      salidas.push(carta.id);
+      progreso[carta.id].ultima_revision = `2026-10-07T1${sesion}:00:00.000Z`;
+    }
+  }
+  assert.equal(salidas.length, 6);
+  assert.deepEqual([...salidas].sort(), ids, `se repitió alguna antes de tiempo: ${salidas.join(" ")}`);
+});
+
 test("el azar NO se come la urgencia: primero la fecha, el sorteo solo desempata", () => {
   const progreso = {
     tarde: { proxima_revision: "2026-11-01", repeticiones: 3 },
