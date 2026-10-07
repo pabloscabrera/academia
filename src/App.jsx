@@ -14,6 +14,7 @@ import {
   ESPERA_MAX_CARGA_MS, conTiempoLimite, mensajeDeCarga,
   hayQueDescargar, selloDeFilas,
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar,
+  ultimaCalificacionPorTarjeta, estadoCuadricula,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -400,7 +401,10 @@ export default function AcademiaPIR() {
         supabase.from("favoritos").select("*").eq("name", user.name),
         supabase.from("flashcards_progreso").select("*").eq("name", user.name),
         supabase.from("preguntas_progreso").select("*").eq("name", user.name),
-        supabase.from("flashcards_repasos").select("acierto, intervalo_antes, creado_en").eq("name", user.name).gte("creado_en", desde),
+        // `flashcard_id` y `calidad` son para la cuadrícula de Estadísticas (colorear
+        // cada tarjeta por el último botón pulsado); van en la misma consulta, así
+        // que no cuestan otra ida y vuelta.
+        supabase.from("flashcards_repasos").select("flashcard_id, calidad, acierto, intervalo_antes, creado_en").eq("name", user.name).gte("creado_en", desde),
       ]);
       if (preguntasProgresoRes.error) console.error("No se pudo cargar preguntas_progreso:", preguntasProgresoRes.error.message);
       if (!activo) return;
@@ -3390,6 +3394,72 @@ function diaLargo(iso) {
   }
 }
 
+// Una tarjeta, un cuadrado, coloreado por el último botón que pulsaste en ella.
+// Lo que aporta frente a las barras de arriba: ahí ves medias, aquí ves qué
+// tarjeta concreta se te atraganta, y puedes contar de un vistazo cuántas rojas
+// hay. El texto va en el `title` en vez de dentro: con cientos de tarjetas no
+// cabe, y el cuadrado ya dice lo único que se escanea a esta escala.
+function CuadriculaTarjetas({ tarjetas, progresoPorId, repasos }) {
+  const ultimas = useMemo(() => ultimaCalificacionPorTarjeta(repasos), [repasos]);
+  const celdas = useMemo(
+    () => tarjetas.map((t) => ({ t, estado: estadoCuadricula(t, progresoPorId, ultimas) })),
+    [tarjetas, progresoPorId, ultimas]
+  );
+  const porCalidad = Object.fromEntries(CALIFICACIONES_FLASHCARD.map((c) => [c.calidad, c]));
+  const recuento = (est) => celdas.filter((c) => c.estado === est).length;
+
+  const estiloDe = (estado) => {
+    if (estado === "nueva") return { background: "#E4E0D4", border: `1px solid ${RAYA}` };
+    // Repasada pero sin saber con qué botón: ni gris (diría que no ha salido)
+    // ni de un color (nos lo estaríamos inventando).
+    if (estado === "sin-registro") return { background: "transparent", border: `1.5px dashed ${TINTA_TENUE}` };
+    // Relleno con el color FUERTE, no con el suave de los botones: a 17 px un
+    // tinte claro sobre crema no se distingue, y el sentido de la cuadrícula es
+    // contar rojas de un vistazo. El tono es el mismo que el del botón que
+    // pulsaste, así que se reconoce.
+    const c = porCalidad[estado];
+    return { background: c.borde, border: `1px solid ${c.borde}` };
+  };
+
+  const leyenda = [
+    ...CALIFICACIONES_FLASHCARD.map((c) => ({ clave: c.calidad, texto: c.label })),
+    { clave: "sin-registro", texto: "Sin registro" },
+    { clave: "nueva", texto: "Sin estrenar" },
+  ];
+
+  return (
+    <Card style={{ marginBottom: 14 }}>
+      <h3 style={styles.h3}>Tarjeta a tarjeta</h3>
+      <p style={{ fontSize: 12.5, color: TINTA_SUAVE, margin: "0 0 14px" }}>
+        El color es el último botón que pulsaste en cada una. Toca o pasa por encima para ver cuál es.
+      </p>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 14 }}>
+        {celdas.map(({ t, estado }) => (
+          <div
+            key={t.id}
+            title={`${t.frontal}${estado === "nueva" ? " — sin estrenar" : estado === "sin-registro" ? " — repasada, sin registro del último repaso" : ` — ${porCalidad[estado].label}`}`}
+            style={{ width: 17, height: 17, borderRadius: 4, boxSizing: "border-box", ...estiloDe(estado) }}
+          />
+        ))}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+        {leyenda.map((l) => (
+          <span key={l.clave} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: TINTA_SUAVE }}>
+            <span style={{ width: 11, height: 11, borderRadius: 3, boxSizing: "border-box", ...estiloDe(l.clave) }} />
+            {l.texto} {recuento(l.clave)}
+          </span>
+        ))}
+      </div>
+      {recuento("sin-registro") > 0 && (
+        <p style={{ fontSize: 11.5, color: TINTA_TENUE, margin: "12px 0 0" }}>
+          Las de borde punteado sí se han repasado, pero su repaso es anterior al registro
+          (o a los últimos 90 días, que es lo que se descarga). Se colorean solas en cuanto vuelvan a salir.
+        </p>
+      )}
+    </Card>
+  );
+}
+
 function EstadisticasFlashcards({ tarjetas, progresoPorId, hoy, repasos, fechaObjetivo }) {
   const e = useMemo(() => estadisticasFlashcards(tarjetas, progresoPorId, hoy), [tarjetas, progresoPorId, hoy]);
   const porMazo = useMemo(
@@ -3437,6 +3507,7 @@ function EstadisticasFlashcards({ tarjetas, progresoPorId, hoy, repasos, fechaOb
 
       <PlanObjetivo stats={e} hoy={hoy} fechaObjetivo={fechaObjetivo} />
 
+      <CuadriculaTarjetas tarjetas={tarjetas} progresoPorId={progresoPorId} repasos={repasos} />
       <Retencion repasos={repasos} hoy={hoy} />
 
       <Card style={{ marginBottom: 16 }}>

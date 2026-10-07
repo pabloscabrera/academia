@@ -727,3 +727,43 @@ export function estiloTrasRenombrar(estilos, viejo, nuevo) {
   if (!origen || destinoYaTiene) return { mover: false, estilo: null };
   return { mover: true, estilo: origen };
 }
+
+// ---------------------------------------------------------------------------
+// Cuadrícula de tarjetas, coloreada por la última calificación
+// ---------------------------------------------------------------------------
+// `flashcards_progreso` guarda el estado actual de cada tarjeta, pero NO qué
+// botón se pulsó: eso solo está en `flashcards_repasos`, una fila por repaso.
+// De ahí salen tres estados y no dos, y conviene no fundirlos:
+//
+//   "nueva"        — sin fila de progreso: nunca ha salido.
+//   "sin-registro" — repasada, pero sin repaso suyo en lo cargado. Pasa con lo
+//                    anterior a que existiera `flashcards_repasos` y con lo más
+//                    viejo que la ventana que se descarga. Pintarlo de gris
+//                    sería mentir: esa tarjeta sí se ha repasado.
+//   0 | 3 | 4 | 5  — la calificación del repaso más reciente.
+//
+// Se va rellenando solo: en cuanto una tarjeta se repasa otra vez, pasa a tener
+// calificación.
+export function ultimaCalificacionPorTarjeta(repasos) {
+  const ultima = new Map();
+  for (const r of repasos || []) {
+    if (!r || !r.flashcard_id || typeof r.calidad !== "number") continue;
+    const previo = ultima.get(r.flashcard_id);
+    // Sin `creado_en` se queda la primera vista, que es mejor que tirar la fila.
+    if (!previo || String(r.creado_en || "") > String(previo.creado_en || "")) {
+      ultima.set(r.flashcard_id, { calidad: r.calidad, creado_en: r.creado_en });
+    }
+  }
+  const m = new Map();
+  for (const [id, v] of ultima) m.set(id, v.calidad);
+  return m;
+}
+
+export function estadoCuadricula(tarjeta, progresoPorId, ultimas) {
+  const clave = tarjeta && (tarjeta.grupo_id || tarjeta.id);
+  const progreso = progresoPorId && progresoPorId[clave];
+  // Una fila de progreso sin repeticiones es una tarjeta que aún no ha salido.
+  if (!progreso || !progreso.ultima_revision) return "nueva";
+  const calidad = ultimas && ultimas.get ? ultimas.get(clave) : undefined;
+  return typeof calidad === "number" ? calidad : "sin-registro";
+}
