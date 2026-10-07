@@ -3371,11 +3371,16 @@ const TAM_SESION_FLASHCARDS = 20;
 // tarjeta, y así se pulsa cuando has fallado, que es cuando toca. "Bien" es
 // el botón por defecto —acertaste sin drama— y "Fácil" el premio para lo que
 // te sabes de sobra.
+// La escala va rojo -> naranja -> amarillo -> verde, en ese orden y sin saltos:
+// el amarillo es el punto medio ("Bien"), nunca el premio. Estuvo mal un tiempo
+// —"Bien" en verde y "Fácil" en dorado—, que leído de un vistazo decía que
+// acertar sin drama era lo mejor posible y que lo que te sabes de sobra era un
+// aviso. El verde se reserva para "Fácil", que es el extremo bueno.
 const CALIFICACIONES_FLASHCARD = [
   { calidad: 0, label: "Otra vez", bg: ACENTO_SUAVE, color: ACENTO, borde: ACENTO },
   { calidad: 3, label: "Difícil", bg: AVISO_SUAVE, color: AVISO, borde: AVISO },
-  { calidad: 4, label: "Bien", bg: CORRECTO_SUAVE, color: CORRECTO, borde: CORRECTO },
-  { calidad: 5, label: "Fácil", bg: "#FBF3DE", color: "#8A6A1E", borde: ORO },
+  { calidad: 4, label: "Bien", bg: CAUTELA_SUAVE, color: CAUTELA, borde: CAUTELA },
+  { calidad: 5, label: "Fácil", bg: CORRECTO_SUAVE, color: CORRECTO, borde: CORRECTO },
 ];
 
 // Estadísticas de flashcards. La pregunta que contesta cada bloque:
@@ -3394,65 +3399,149 @@ function diaLargo(iso) {
   }
 }
 
-// Una tarjeta, un cuadrado, coloreado por el último botón que pulsaste en ella.
-// Lo que aporta frente a las barras de arriba: ahí ves medias, aquí ves qué
-// tarjeta concreta se te atraganta, y puedes contar de un vistazo cuántas rojas
-// hay. El texto va en el `title` en vez de dentro: con cientos de tarjetas no
-// cabe, y el cuadrado ya dice lo único que se escanea a esta escala.
+const TANDA_CUADRICULA = 60;
+
+// Una tarjeta por recuadro, con su texto a la vista y una franja de color
+// arriba: el último botón que pulsaste en ella. Lo que aporta frente a las
+// barras de arriba es que ahí ves medias y aquí ves QUÉ tarjeta concreta se te
+// atraganta, sin tener que entrar a repasarla.
+//
+// Dos decisiones que conviene no deshacer:
+//  - El texto va DENTRO, no en un `title`. Una primera versión eran cuadrados
+//    de 17 px con el texto en el tooltip: cabían cientos de un vistazo, pero
+//    desde fuera no se sabía de qué tarjeta era cada color, que es justo lo que
+//    se viene a mirar. Se recorta a tres líneas (`-webkit-line-clamp`) y el
+//    `title` se queda como respaldo para leerlo entero.
+//  - El color es una FRANJA, no el relleno. Con el recuadro entero pintado el
+//    texto encima no se lee, y el recorte de "pinta solo el estado" ya lo hace
+//    el borde superior: a 5 px se distingue perfectamente sobre crema.
+// Se ordena de peor a mejor —rojas primero— porque con 271 tarjetas y 60 por
+// tanda, dejar las atascadas en la página tres es esconderlas; y porque es el
+// orden en el que conviene repasar, igual que en "Dónde fallas".
+const ORDEN_CUADRICULA = { 0: 0, 3: 1, 4: 2, 5: 3, "sin-registro": 4, nueva: 5 };
+
 function CuadriculaTarjetas({ tarjetas, progresoPorId, repasos }) {
   const ultimas = useMemo(() => ultimaCalificacionPorTarjeta(repasos), [repasos]);
-  const celdas = useMemo(
-    () => tarjetas.map((t) => ({ t, estado: estadoCuadricula(t, progresoPorId, ultimas) })),
-    [tarjetas, progresoPorId, ultimas]
-  );
   const porCalidad = Object.fromEntries(CALIFICACIONES_FLASHCARD.map((c) => [c.calidad, c]));
+  const celdas = useMemo(() => {
+    const lista = tarjetas.map((t) => ({ t, estado: estadoCuadricula(t, progresoPorId, ultimas) }));
+    // `sort` es estable en JS moderno, así que dentro de cada color se mantiene
+    // el orden del mazo.
+    return lista.sort((a, b) => ORDEN_CUADRICULA[a.estado] - ORDEN_CUADRICULA[b.estado]);
+  }, [tarjetas, progresoPorId, ultimas]);
+  const [visibles, setVisibles] = useState(TANDA_CUADRICULA);
+  useEffect(() => { setVisibles(TANDA_CUADRICULA); }, [tarjetas, repasos]);
+
   const recuento = (est) => celdas.filter((c) => c.estado === est).length;
 
-  const estiloDe = (estado) => {
-    if (estado === "nueva") return { background: "#E4E0D4", border: `1px solid ${RAYA}` };
-    // Repasada pero sin saber con qué botón: ni gris (diría que no ha salido)
-    // ni de un color (nos lo estaríamos inventando).
-    if (estado === "sin-registro") return { background: "transparent", border: `1.5px dashed ${TINTA_TENUE}` };
-    // Relleno con el color FUERTE, no con el suave de los botones: a 17 px un
-    // tinte claro sobre crema no se distingue, y el sentido de la cuadrícula es
-    // contar rojas de un vistazo. El tono es el mismo que el del botón que
-    // pulsaste, así que se reconoce.
-    const c = porCalidad[estado];
-    return { background: c.borde, border: `1px solid ${c.borde}` };
+  // La franja: color fuerte del botón si hay calificación; gris si no se ha
+  // estrenado; y a rayas si se repasó pero no consta con qué botón —pintarla
+  // de gris diría que no ha salido, y de un color nos lo estaríamos inventando.
+  const franjaDe = (estado) => {
+    if (estado === "nueva") return { background: RAYA };
+    if (estado === "sin-registro") {
+      return {
+        backgroundImage: `repeating-linear-gradient(135deg, ${TINTA_TENUE} 0 3px, transparent 3px 6px)`,
+      };
+    }
+    return { background: porCalidad[estado].borde };
   };
 
+  const etiquetaDe = (estado) =>
+    estado === "nueva" ? "Sin estrenar"
+      : estado === "sin-registro" ? "Sin registro"
+      : porCalidad[estado].label;
+
   const leyenda = [
-    ...CALIFICACIONES_FLASHCARD.map((c) => ({ clave: c.calidad, texto: c.label })),
-    { clave: "sin-registro", texto: "Sin registro" },
-    { clave: "nueva", texto: "Sin estrenar" },
+    ...CALIFICACIONES_FLASHCARD.map((c) => c.calidad),
+    "sin-registro",
+    "nueva",
   ];
 
   return (
     <Card style={{ marginBottom: 14 }}>
       <h3 style={styles.h3}>Tarjeta a tarjeta</h3>
       <p style={{ fontSize: 12.5, color: TINTA_SUAVE, margin: "0 0 14px" }}>
-        El color es el último botón que pulsaste en cada una. Toca o pasa por encima para ver cuál es.
+        La franja de arriba es el último botón que pulsaste en cada una. Primero las que peor llevas.
       </p>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 14 }}>
-        {celdas.map(({ t, estado }) => (
-          <div
-            key={t.id}
-            title={`${t.frontal}${estado === "nueva" ? " — sin estrenar" : estado === "sin-registro" ? " — repasada, sin registro del último repaso" : ` — ${porCalidad[estado].label}`}`}
-            style={{ width: 17, height: 17, borderRadius: 4, boxSizing: "border-box", ...estiloDe(estado) }}
-          />
-        ))}
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-        {leyenda.map((l) => (
-          <span key={l.clave} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: TINTA_SUAVE }}>
-            <span style={{ width: 11, height: 11, borderRadius: 3, boxSizing: "border-box", ...estiloDe(l.clave) }} />
-            {l.texto} {recuento(l.clave)}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
+        {leyenda.map((clave) => (
+          <span key={clave} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: TINTA_SUAVE }}>
+            <span style={{ width: 14, height: 5, borderRadius: 3, ...franjaDe(clave) }} />
+            {etiquetaDe(clave)} {recuento(clave)}
           </span>
         ))}
       </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))",
+          gap: 10,
+        }}
+      >
+        {celdas.slice(0, visibles).map(({ t, estado }) => (
+          <div
+            key={t.id}
+            title={`${t.frontal}\n\n${t.posterior}\n\n— ${etiquetaDe(estado)}`}
+            style={{
+              border: `1px solid ${RAYA}`,
+              borderRadius: 10,
+              overflow: "hidden",
+              background: "#FFFDF7",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div style={{ height: 5, flexShrink: 0, ...franjaDe(estado) }} />
+            <div style={{ padding: "9px 10px 10px", display: "flex", flexDirection: "column", gap: 7, flex: 1 }}>
+              <p
+                style={{
+                  margin: 0,
+                  fontSize: 12.5,
+                  lineHeight: 1.35,
+                  color: TINTA,
+                  fontWeight: 600,
+                  display: "-webkit-box",
+                  WebkitBoxOrient: "vertical",
+                  WebkitLineClamp: 3,
+                  overflow: "hidden",
+                }}
+              >
+                {t.frontal}
+              </p>
+              <p
+                style={{
+                  margin: 0,
+                  paddingTop: 7,
+                  borderTop: `1px solid ${RAYA}`,
+                  fontSize: 11.5,
+                  lineHeight: 1.3,
+                  color: TINTA_SUAVE,
+                  display: "-webkit-box",
+                  WebkitBoxOrient: "vertical",
+                  WebkitLineClamp: 2,
+                  overflow: "hidden",
+                  marginTop: "auto",
+                }}
+              >
+                {t.posterior}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+      {celdas.length > visibles && (
+        <button
+          type="button"
+          onClick={() => setVisibles((v) => v + TANDA_CUADRICULA)}
+          style={{ ...styles.btnSecondary, width: "100%", justifyContent: "center", marginTop: 12 }}
+        >
+          Ver más ({celdas.length - visibles} restantes)
+        </button>
+      )}
       {recuento("sin-registro") > 0 && (
         <p style={{ fontSize: 11.5, color: TINTA_TENUE, margin: "12px 0 0" }}>
-          Las de borde punteado sí se han repasado, pero su repaso es anterior al registro
+          Las de franja rayada sí se han repasado, pero su repaso es anterior al registro
           (o a los últimos 90 días, que es lo que se descarga). Se colorean solas en cuanto vuelvan a salir.
         </p>
       )}
