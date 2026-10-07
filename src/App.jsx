@@ -4033,8 +4033,13 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
   );
 
   const empezar = () => {
-    const cantidad = Math.max(1, Math.min(numTarjetas || 1, cola.length));
-    setSesion(mezclarTemas(cola.slice(0, cantidad), temaDeTarjeta));
+    // Se vuelve a pedir la cola en vez de usar la del `useMemo`: el desempate
+    // entre tarjetas del mismo día es aleatorio, y el memo solo se recalcula
+    // si cambian sus dependencias. Sin esto, empezar dos veces seguidas sin
+    // haber contestado nada daría exactamente el mismo orden.
+    const lista = colaDeRepaso(flashcardsFiltradas, progresoPorId, hoy);
+    const cantidad = Math.max(1, Math.min(numTarjetas || 1, lista.length));
+    setSesion(mezclarTemas(lista.slice(0, cantidad), temaDeTarjeta));
     setIdx(0);
     setRevelada(false);
     setResumen(null);
