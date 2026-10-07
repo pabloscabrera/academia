@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   mezclarTemas, temaDeTarjeta, colaDeRepaso, planHastaObjetivo,
-  DIAS_PARA_CONSOLIDAR,
+  reinsertarEnSesion, tarjetasDistintas, PASOS_REPETICION, DIAS_PARA_CONSOLIDAR,
 } from "../src/logica.js";
 
 const clave = (x) => x.tema;
@@ -193,4 +193,40 @@ test("una fecha ya pasada se marca como tal", () => {
   const p = planHastaObjetivo(stats({}), "2026-12-05", "2026-12-01");
   assert.equal(p.pasada, true);
   assert.ok(p.dias < 0);
+});
+
+// ---------- Lo fallado vuelve dentro de la sesión ----------
+
+test('"Otra vez" la cuela otra vez, unas cuantas más adelante', () => {
+  const sesion = [t("a"), t("b"), t("c"), t("d"), t("e"), t("f"), t("g")];
+  const r = reinsertarEnSesion(sesion, 0, 0).map((x) => x.id);
+  assert.deepEqual(r, ["a", "b", "c", "d", "a", "e", "f", "g"]);
+  assert.equal(r.indexOf("a", 1) - 0, 1 + PASOS_REPETICION[0], "vuelve tras los pasos marcados");
+});
+
+test('"Difícil" también vuelve, pero más tarde que "Otra vez"', () => {
+  const sesion = Array.from({ length: 20 }, (_, i) => t("c" + i));
+  const otraVez = reinsertarEnSesion(sesion, 0, 0).indexOf(sesion[0]);
+  const dificil = reinsertarEnSesion(sesion, 0, 3).lastIndexOf(sesion[0]);
+  assert.ok(dificil > otraVez + 1, `difícil ${dificil} debería ir más atrás que otra vez`);
+});
+
+test('"Bien" y "Fácil" no vuelven: la sesión no se alarga', () => {
+  const sesion = [t("a"), t("b"), t("c")];
+  assert.equal(reinsertarEnSesion(sesion, 0, 4), sesion);
+  assert.equal(reinsertarEnSesion(sesion, 0, 5), sesion);
+});
+
+test("si no quedan tantas por delante, entra al final (pero entra)", () => {
+  const sesion = [t("a"), t("b")];
+  assert.deepEqual(reinsertarEnSesion(sesion, 1, 0).map((x) => x.id), ["a", "b", "b"]);
+  assert.deepEqual(reinsertarEnSesion(sesion, 0, 3).map((x) => x.id), ["a", "b", "a"]);
+});
+
+test("las repetidas no se cuentan dos veces en el resumen", () => {
+  const sesion = [t("a"), t("b"), t("a"), t("c")];
+  assert.equal(tarjetasDistintas(sesion), 3);
+  assert.equal(tarjetasDistintas([]), 0);
+  // El progreso va indexado por `grupo_id || id`, así que esa es la identidad.
+  assert.equal(tarjetasDistintas([{ id: "x", grupo_id: "g" }, { id: "y", grupo_id: "g" }]), 1);
 });

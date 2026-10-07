@@ -284,6 +284,37 @@ export function colaDeRepaso(lista, progresoPorId, hoy, azar = Math.random) {
   ];
 }
 
+// ---------- Lo que fallas vuelve ANTES de acabar la sesión ----------
+//
+// Es el paso de aprendizaje de Anki, y es lo que faltaba para que el feedback
+// sirviera de algo en el momento: hasta aquí, marcar "Otra vez" solo movía una
+// fecha, así que la tarjeta que acababas de fallar no volvías a verla hasta el
+// día siguiente — con la respuesta ya olvidada otra vez. Ahora se cuela de
+// nuevo en la cola de ESTA sesión, por detrás de unas cuantas, para que llegue
+// con el recuerdo ya un poco frío (verla otra vez acto seguido no enseña nada,
+// la estarías leyendo, no recordándola).
+//
+// "Otra vez" vuelve pronto y "Difícil" más tarde, que es la diferencia entre
+// no saberla y que te haya costado. "Bien" y "Fácil" no vuelven: ya está.
+export const PASOS_REPETICION = { 0: 3, 3: 8 };
+
+export function reinsertarEnSesion(sesion, idx, calidad) {
+  const pasos = PASOS_REPETICION[calidad];
+  if (!pasos || !sesion || idx < 0 || idx >= sesion.length) return sesion;
+  const copia = [...sesion];
+  // Si no quedan tantas por delante entra al final, que sigue siendo "antes de
+  // acabar". `splice` con un índice mayor que la longitud ya empuja al final.
+  copia.splice(Math.min(copia.length, idx + 1 + pasos), 0, sesion[idx]);
+  return copia;
+}
+
+// Cuántas tarjetas DISTINTAS lleva una sesión. Las repetidas no cuentan dos
+// veces: "has repasado 14 tarjetas" tiene que seguir siendo el número de
+// tarjetas, no el de veces que has pulsado un botón.
+export function tarjetasDistintas(sesion) {
+  return new Set((sesion || []).map((c) => (c && (c.grupo_id || c.id)))).size;
+}
+
 export const parsearEtiquetas = (texto) => [
   ...new Set((texto || "").split(",").map((e) => e.trim()).filter(Boolean)),
 ];

@@ -10,7 +10,8 @@ import {
   retencionGlobal, retencionPorSemana, retencionPorIntervalo, RETENCION_OBJETIVO,
   MAX_EDAD_TIRADA_MS, reconstruirTirada, agruparAciertos,
   cursosDeRuleta, elegirPreguntaRuleta, reconstruirRuleta,
-  calcularSM2, MAX_INTERVALO, dentroDelHorizonte, ordenarPorPrioridad, colaDeRepaso, parsearEtiquetas, lunesDeLaSemana,
+  calcularSM2, MAX_INTERVALO, dentroDelHorizonte, ordenarPorPrioridad, colaDeRepaso, reinsertarEnSesion,
+  tarjetasDistintas, parsearEtiquetas, lunesDeLaSemana,
   ESPERA_MAX_CARGA_MS, conTiempoLimite, mensajeDeCarga,
   hayQueDescargar, selloDeFilas,
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar,
@@ -4052,12 +4053,17 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     const carta = sesion[idx];
     await onRepaso(carta.grupo_id || carta.id, calidad);
     setEnviando(false);
-    if (idx + 1 < sesion.length) {
+    // Lo fallado o lo que ha costado se cuela otra vez en esta misma sesión,
+    // unas cuantas tarjetas más adelante. La cola crece sobre la marcha: el
+    // feedback cambia lo que viene después, no solo una fecha para mañana.
+    const cola = reinsertarEnSesion(sesion, idx, calidad);
+    if (cola !== sesion) setSesion(cola);
+    if (idx + 1 < cola.length) {
       setIdx(idx + 1);
       setRevelada(false);
       setEditandoCarta(null);
     } else {
-      setResumen({ total: sesion.length });
+      setResumen({ total: tarjetasDistintas(cola) });
       setSesion(null);
     }
   };
@@ -4102,7 +4108,15 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     const carta = sesion[idx];
     return (
       <div>
-        <SectionTitle title="Flashcards" subtitle={`Tarjeta ${idx + 1} de ${sesion.length}`} />
+        {/* La cola crece cuando algo vuelve, así que el total sube a mitad de
+            sesión: se dice de dónde sale ese número en vez de dejarlo raro. */}
+        <SectionTitle
+          title="Flashcards"
+          subtitle={`Tarjeta ${idx + 1} de ${sesion.length}` +
+            (sesion.length > tarjetasDistintas(sesion)
+              ? ` · ${sesion.length - tarjetasDistintas(sesion)} para repetir`
+              : "")}
+        />
         <div style={styles.progressTrack}>
           <div style={{ ...styles.progressFill, width: `${(idx / sesion.length) * 100}%`, background: "#8A5A9E" }} />
         </div>
@@ -4146,6 +4160,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
           <>
             <p style={{ fontSize: 11.5, color: TINTA_TENUE, textAlign: "center", marginTop: 10 }}>
               Cada botón multiplica por 1, 2, 3 o 4. Nada se aplaza más de {textoIntervalo(MAX_INTERVALO)}.
+              <br />Lo que marques "Otra vez" o "Difícil" vuelve a salir antes de terminar.
             </p>
             {/* Deliberadamente discreto y solo con la respuesta a la vista: es
                 para la errata que se ve al repasar, no una acción del repaso.
