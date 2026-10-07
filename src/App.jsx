@@ -3867,6 +3867,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
   const [enviando, setEnviando] = useState(false);
   const [numTarjetas, setNumTarjetas] = useState(TAM_SESION_FLASHCARDS);
   const [verTarjetas, setVerTarjetas] = useState(false);
+  const [editandoCarta, setEditandoCarta] = useState(null); // { frontal, posterior } o null
   const [busquedaTarjetas, setBusquedaTarjetas] = useState("");
 
 
@@ -3891,6 +3892,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     setIdx(0);
     setRevelada(false);
     setResumen(null);
+    setEditandoCarta(null);
   };
 
   const empezar = () => {
@@ -3899,6 +3901,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     setIdx(0);
     setRevelada(false);
     setResumen(null);
+    setEditandoCarta(null);
   };
 
   const calificar = async (calidad) => {
@@ -3910,11 +3913,36 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     if (idx + 1 < sesion.length) {
       setIdx(idx + 1);
       setRevelada(false);
+      setEditandoCarta(null);
     } else {
       setResumen({ total: sesion.length });
       setSesion(null);
     }
   };
+
+  // Intro o espacio revelan la tarjeta, para no tener que soltar el teclado.
+  // Tres guardas que importan: no se dispara mientras se escribe (si no, el
+  // espacio de "memoria a corto plazo" revelaría en vez de escribirse), el
+  // espacio lleva preventDefault porque si no desplaza la página, y solo
+  // revela — nunca vuelve a ocultar, que sería desconcertante justo cuando
+  // vas a pulsar una dificultad.
+  useEffect(() => {
+    const alPulsar = (e) => {
+      if (e.key !== "Enter" && e.key !== " " && e.key !== "Spacebar") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const d = e.target;
+      const etiqueta = d && d.tagName ? d.tagName.toLowerCase() : "";
+      if (etiqueta === "input" || etiqueta === "textarea" || etiqueta === "select") return;
+      if (d && d.isContentEditable) return;
+      // Con Intro sobre un botón, dejar que el botón haga lo suyo.
+      if (e.key === "Enter" && etiqueta === "button") return;
+      if (!sesion || revelada || editandoCarta) return;
+      e.preventDefault();
+      setRevelada(true);
+    };
+    window.addEventListener("keydown", alPulsar);
+    return () => window.removeEventListener("keydown", alPulsar);
+  }, [sesion, revelada, editandoCarta]);
 
   if (flashcards.length === 0) {
     return (
@@ -3975,10 +4003,74 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
             ))}
           </div>
         )}
-        {revelada && (
-          <p style={{ fontSize: 11.5, color: TINTA_TENUE, textAlign: "center", marginTop: 10 }}>
-            Cada botón multiplica por 1, 2, 3 o 4. Nada se aplaza más de {textoIntervalo(MAX_INTERVALO)}.
-          </p>
+        {revelada && !editandoCarta && (
+          <>
+            <p style={{ fontSize: 11.5, color: TINTA_TENUE, textAlign: "center", marginTop: 10 }}>
+              Cada botón multiplica por 1, 2, 3 o 4. Nada se aplaza más de {textoIntervalo(MAX_INTERVALO)}.
+            </p>
+            {/* Deliberadamente discreto y solo con la respuesta a la vista: es
+                para la errata que se ve al repasar, no una acción del repaso.
+                Editar NO toca `flashcards_progreso` —`onUpdate` solo escribe en
+                `flashcards`— así que la memoria de la tarjeta sigue intacta. */}
+            <div style={{ display: "flex", justifyContent: "center", marginTop: 4 }}>
+              <button
+                type="button"
+                onClick={() => setEditandoCarta({ frontal: carta.frontal, posterior: carta.posterior })}
+                style={{
+                  background: "none", border: "none", cursor: "pointer", padding: "6px 10px",
+                  fontSize: 12, color: TINTA_TENUE, display: "flex", alignItems: "center", gap: 5,
+                }}
+              >
+                <Pencil size={12} /> Corregir esta tarjeta
+              </button>
+            </div>
+          </>
+        )}
+        {revelada && editandoCarta && (
+          <Card style={{ marginTop: 14, padding: 14 }}>
+            <FieldLabel>Delante</FieldLabel>
+            <textarea
+              value={editandoCarta.frontal}
+              onChange={(e) => setEditandoCarta((c) => ({ ...c, frontal: e.target.value }))}
+              style={{ ...styles.input, minHeight: 64, marginTop: 6, marginBottom: 12 }}
+            />
+            <FieldLabel>Detrás</FieldLabel>
+            <textarea
+              value={editandoCarta.posterior}
+              onChange={(e) => setEditandoCarta((c) => ({ ...c, posterior: e.target.value }))}
+              style={{ ...styles.input, minHeight: 64, marginTop: 6, marginBottom: 12 }}
+            />
+            <p style={{ fontSize: 11.5, color: TINTA_TENUE, margin: "0 0 12px" }}>
+              Corregir el texto no reinicia la memoria: la tarjeta conserva su dificultad y su próximo repaso.
+            </p>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                disabled={enviando || !editandoCarta.frontal.trim() || !editandoCarta.posterior.trim()}
+                onClick={async () => {
+                  setEnviando(true);
+                  const cambios = {
+                    frontal: editandoCarta.frontal.trim(),
+                    posterior: editandoCarta.posterior.trim(),
+                  };
+                  const ok = await onUpdate(carta.id, cambios);
+                  setEnviando(false);
+                  if (!ok) return;
+                  // `sesion` es una foto de las tarjetas hecha al empezar, así
+                  // que hay que parchearla también: si no, sigues viendo la
+                  // errata hasta la próxima sesión aunque ya esté corregida.
+                  setSesion((prev) => prev.map((c, i) => (i === idx ? { ...c, ...cambios } : c)));
+                  setEditandoCarta(null);
+                }}
+                style={{ ...styles.btnPrimary, flex: 1, opacity: enviando ? 0.7 : 1 }}
+              >
+                {enviando ? "Guardando..." : "Guardar"}
+              </button>
+              <button type="button" onClick={() => setEditandoCarta(null)} style={styles.btnSecondary}>
+                Cancelar
+              </button>
+            </div>
+          </Card>
         )}
       </div>
     );
