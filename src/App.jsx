@@ -4156,9 +4156,6 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
                 style={{ ...styles.btnDificultad, background: c.bg, color: c.color, border: `1.5px solid ${c.borde}`, opacity: enviando ? 0.6 : 1 }}
               >
                 {c.label}
-                <span style={{ display: "block", fontSize: 11.5, fontWeight: 600, opacity: 0.8, marginTop: 3 }}>
-                  {textoIntervalo(calcularSM2(progresoPorId[carta.grupo_id || carta.id], c.calidad).intervalo_dias)}
-                </span>
               </button>
             ))}
           </div>
@@ -5265,7 +5262,7 @@ const styles = {
   perfilStatNum: { fontSize: 24, fontFamily: "var(--font-display)", fontWeight: 600, color: TINTA },
   perfilStatLabel: { fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", textTransform: "uppercase", letterSpacing: 0.5, color: TINTA_TENUE, marginTop: 3, lineHeight: 1.4 },
   linkBtn: { background: "none", border: "none", color: ACENTO, fontSize: 13, cursor: "pointer", padding: "10px 0", fontWeight: 600 },
-  btnDificultad: { flex: "1 1 auto", minWidth: 110, padding: "13px 10px", borderRadius: 12, border: "1.5px solid", fontSize: 13.5, fontWeight: 700, cursor: "pointer", textAlign: "center" },
+  btnDificultad: { flex: "1 1 auto", minWidth: 110, padding: "16px 10px", borderRadius: 12, border: "1.5px solid", fontSize: 13.5, fontWeight: 700, cursor: "pointer", textAlign: "center" },
   insigniasGrid: { display: "flex", gap: 8, flexWrap: "wrap" },
   insigniaCard: { flex: "1 1 84px", minWidth: 78, textAlign: "center", background: "#fff", border: "1.5px solid", borderRadius: 14, padding: "12px 6px" },
   puntoVivo: { width: 8, height: 8, borderRadius: "50%", background: CORRECTO, animation: "dueloPulso 1.4s ease-in-out infinite" },
