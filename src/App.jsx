@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Activity, Award, Baby, BookOpen, Brain, Check, ChevronDown, ChevronRight, Clock, CloudOff, Compass, Crown, Eye, Flag, Flame, FolderInput, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, Palette, Pencil, Percent, Plus, Puzzle, Search, Settings, Sparkles, Star, Stethoscope, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
+import { Activity, Award, Baby, BookOpen, Brain, Check, ChevronDown, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, Flag, Flame, FolderInput, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, Palette, Pencil, Percent, Plus, Puzzle, Search, Settings, Sparkles, Star, Stethoscope, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
 import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, sinFila, filasPendientes, CONFLICTO } from "./colaPendientes";
@@ -11,8 +11,9 @@ import {
   MAX_EDAD_TIRADA_MS, reconstruirTirada, agruparAciertos,
   cursosDeRuleta, elegirPreguntaRuleta, reconstruirRuleta,
   calcularSM2, MAX_INTERVALO, dentroDelHorizonte, ordenarPorPrioridad, colaDeRepaso, reinsertarEnSesion,
+  mensajeDeEscritura, copiasParaMazo,
   tarjetasDistintas, parsearEtiquetas, lunesDeLaSemana,
-  ESPERA_MAX_CARGA_MS, conTiempoLimite, mensajeDeCarga,
+  ESPERA_MAX_CARGA_MS, ESPERA_MAX_ESCRITURA_MS, conTiempoLimite, mensajeDeCarga,
   hayQueDescargar, selloDeFilas,
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar,
   ultimaCalificacionPorTarjeta, estadoCuadricula,
@@ -226,6 +227,10 @@ export default function AcademiaPIR() {
   const [flashcards, setFlashcards] = useState([]);
   const [estilosMazo, setEstilosMazo] = useState([]);
   const [flashcardsProgreso, setFlashcardsProgreso] = useState([]);
+  // Lo que ha fallado al guardar, para enseñarlo. Antes no había nada de esto
+  // y por eso la estrella de favoritos "no funcionaba": el servidor rechazaba
+  // la fila y nadie se enteraba.
+  const [aviso, setAviso] = useState(null);
   const [dueloEsperando, setDueloEsperando] = useState(null);
   const [autoUnirseDuelo, setAutoUnirseDuelo] = useState(false);
   const [ajustes, setAjustes] = useState(() => {
@@ -719,18 +724,48 @@ export default function AcademiaPIR() {
     }
   };
 
+  // Toda escritura que la pantalla espera pasa por aquí, y resuelve SIEMPRE.
+  // Arregla de una vez dos cosas que el usuario sufrió por separado:
+  //  - una petición sin respuesta dejaba el botón en "Guardando..." para
+  //    siempre (reproducido en un navegador: sin `conTiempoLimite` no hay nada
+  //    que corte, porque supabase-js no trae plazo propio);
+  //  - un rechazo del servidor se tragaba en un `if (!error)` y no se contaba
+  //    a nadie, que es exactamente "la estrella no se pone amarilla".
+  // El aviso dice qué se estaba intentando y de quién es el problema.
+  const escribir = async (queIba, consulta) => {
+    try {
+      const res = await conTiempoLimite(
+        Promise.resolve(consulta),
+        ESPERA_MAX_ESCRITURA_MS,
+        "El servidor está tardando demasiado"
+      );
+      if (res && res.error) throw res.error;
+      return { ok: true, data: res && res.data };
+    } catch (err) {
+      console.error(queIba, err);
+      setAviso(mensajeDeEscritura(err, queIba));
+      return { ok: false, error: err };
+    }
+  };
+
   const toggleFavorito = async (pregunta) => {
     if (!pregunta || !pregunta.id) return;
     const esFavorita = favoritos.some((f) => f.pregunta_id === pregunta.id);
     if (esFavorita) {
-      const { error } = await supabase.from("favoritos").delete().eq("name", user.name).eq("pregunta_id", pregunta.id);
-      if (!error) setFavoritos((prev) => prev.filter((f) => f.pregunta_id !== pregunta.id));
+      const { ok } = await escribir(
+        "Quitar de favoritas",
+        supabase.from("favoritos").delete().eq("name", user.name).eq("pregunta_id", pregunta.id)
+      );
+      if (ok) setFavoritos((prev) => prev.filter((f) => f.pregunta_id !== pregunta.id));
     } else {
-      const { data, error } = await supabase
-        .from("favoritos")
-        .insert([{ name: user.name, pregunta_id: pregunta.id }])
-        .select();
-      if (!error && data && data[0]) setFavoritos((prev) => [...prev, data[0]]);
+      const { ok, data } = await escribir(
+        "Guardar en favoritas",
+        supabase.from("favoritos").insert([{ name: user.name, pregunta_id: pregunta.id }]).select()
+      );
+      // `select()` puede volver vacío si la política de lectura no deja releer
+      // la fila recién escrita; la estrella se enciende igual, porque guardar
+      // sí funcionó.
+      if (ok) setFavoritos((prev) => [...prev, (data && data[0]) || { name: user.name, pregunta_id: pregunta.id }]);
     }
   };
 
@@ -790,30 +825,50 @@ export default function AcademiaPIR() {
   };
 
   const addFlashcard = async (f) => {
-    const { data, error } = await supabase
-      .from("flashcards")
-      .insert([{ mazo: f.mazo || "General", frontal: f.frontal, posterior: f.posterior, etiquetas: f.etiquetas || [] }])
-      .select();
-    if (!error && data && data[0]) {
-      setFlashcards((prev) => [...prev, data[0]]);
-    }
-    return !error;
+    const { ok, data } = await escribir(
+      `Añadir la tarjeta a "${f.mazo || "General"}"`,
+      supabase
+        .from("flashcards")
+        .insert([{ mazo: f.mazo || "General", frontal: f.frontal, posterior: f.posterior, etiquetas: f.etiquetas || [] }])
+        .select()
+    );
+    if (ok && data && data[0]) setFlashcards((prev) => [...prev, data[0]]);
+    return ok;
   };
 
   const addFlashcardsBulk = async (mazo, tarjetas, etiquetas) => {
     const filas = tarjetas.map((t) => ({ mazo: mazo || "General", frontal: t.frontal, posterior: t.posterior, etiquetas: etiquetas || [] }));
-    const { data, error } = await supabase.from("flashcards").insert(filas).select();
-    if (!error && data) {
-      setFlashcards((prev) => [...prev, ...data]);
+    const { ok, data } = await escribir(`Importar ${filas.length} tarjetas a "${mazo || "General"}"`,
+      supabase.from("flashcards").insert(filas).select());
+    if (ok && data) setFlashcards((prev) => [...prev, ...data]);
+    return ok && data ? data.length : 0;
+  };
+
+  // Copiar un mazo entero a otro SIN vaciar el de origen. Antes esto era un
+  // renombrado (las tarjetas se mudaban), y lo que se pedía era lo contrario.
+  // La copia lleva el `grupo_id` del original, así que las dos comparten la
+  // misma fila de `flashcards_progreso`: repasas en un mazo y el otro se
+  // entera. Ver `copiasParaMazo`.
+  const copiarMazo = async (origen, destino) => {
+    const filas = copiasParaMazo(flashcards, origen, destino);
+    if (filas.length === 0) {
+      setAviso(`"${destino}" ya tiene todas las tarjetas de "${origen}".`);
+      return false;
     }
-    return error ? 0 : data.length;
+    const { ok, data } = await escribir(
+      `Copiar ${filas.length} tarjetas de "${origen}" a "${destino}"`,
+      supabase.from("flashcards").insert(filas).select()
+    );
+    if (ok && data) setFlashcards((prev) => [...prev, ...data]);
+    return ok;
   };
 
   const deleteFlashcard = async (id) => {
     const carta = flashcards.find((f) => f.id === id);
     const grupoId = carta ? carta.grupo_id || carta.id : id;
-    const { error } = await supabase.from("flashcards").delete().eq("id", id);
-    if (!error) {
+    const { ok } = await escribir("Borrar la tarjeta", supabase.from("flashcards").delete().eq("id", id));
+    const error = !ok;
+    if (ok) {
       const restantes = flashcards.filter((f) => f.id !== id);
       setFlashcards(restantes);
       const quedanCopias = restantes.some((f) => (f.grupo_id || f.id) === grupoId);
@@ -834,19 +889,12 @@ export default function AcademiaPIR() {
       const sinEse = prev.filter((e) => e.mazo !== mazo);
       return icono || color ? [...sinEse, fila] : sinEse;
     });
-    try {
-      if (!icono && !color) {
-        // Quitar las dos cosas es volver al aspecto por defecto: se borra la
-        // fila en vez de dejarla con los dos campos a nulo.
-        await supabase.from("mazos_estilo").delete().eq("mazo", mazo);
-      } else {
-        await supabase.from("mazos_estilo").upsert(fila, { onConflict: "user_id,mazo" });
-      }
-      return true;
-    } catch (err) {
-      console.error("No se pudo guardar el estilo del mazo:", err);
-      return false;
-    }
+    const { ok } = !icono && !color
+      // Quitar las dos cosas es volver al aspecto por defecto: se borra la
+      // fila en vez de dejarla con los dos campos a nulo.
+      ? await escribir(`Quitar el color de "${mazo}"`, supabase.from("mazos_estilo").delete().eq("mazo", mazo))
+      : await escribir(`Guardar el color de "${mazo}"`, supabase.from("mazos_estilo").upsert(fila, { onConflict: "user_id,mazo" }));
+    return ok;
   };
 
   const renombrarMazo = async (viejo, nuevo) => {
@@ -855,8 +903,8 @@ export default function AcademiaPIR() {
     const ids = flashcards.filter((f) => (f.mazo || "General") === viejo).map((f) => f.id);
     if (ids.length === 0) return false;
     try {
-      const { error } = await supabase.from("flashcards").update({ mazo: destino }).in("id", ids);
-      if (error) throw error;
+      const { ok } = await escribir(`Renombrar "${viejo}"`, supabase.from("flashcards").update({ mazo: destino }).in("id", ids));
+      if (!ok) return false;
       setFlashcards((prev) => prev.map((f) => ((f.mazo || "General") === viejo ? { ...f, mazo: destino } : f)));
       // El estilo tiene que seguir al mazo. Si el destino ya existía con estilo
       // propio (esto es también lo que hace "enviar a otro mazo"), manda el
@@ -876,8 +924,9 @@ export default function AcademiaPIR() {
     const filas = flashcards.filter((f) => (f.mazo || "General") === nombre);
     const ids = filas.map((f) => f.id);
     if (ids.length === 0) return false;
-    const { error } = await supabase.from("flashcards").delete().in("id", ids);
-    if (!error) {
+    const { ok } = await escribir(`Borrar el mazo "${nombre}"`, supabase.from("flashcards").delete().in("id", ids));
+    const error = !ok;
+    if (ok) {
       const restantes = flashcards.filter((f) => !ids.includes(f.id));
       setFlashcards(restantes);
       // Borrado el mazo, su estilo sobra. Si fallara tampoco pasa nada: es una
@@ -981,6 +1030,7 @@ export default function AcademiaPIR() {
               onDelete={deleteFlashcard}
               onRenombrarMazo={renombrarMazo}
               onEliminarMazo={eliminarMazo}
+              onCopiarMazo={copiarMazo}
               estilosMazo={estilosMazo}
               onEstiloMazo={guardarEstiloMazo}
             />
@@ -1035,8 +1085,38 @@ export default function AcademiaPIR() {
   return (
     <div style={{ ...styles.app, background: ajustes.fondo, zoom: ajustes.escala, "--font-display": fuenteActual.familia }}>
       {contenido}
+      {aviso && <BarraAviso texto={aviso} onCerrar={() => setAviso(null)} />}
       {mostrarAjustes && <AjustesPanel ajustes={ajustes} setAjustes={setAjustes} onClose={() => setMostrarAjustes(false)} />}
       {insigniaDesbloqueada && <InsigniaDesbloqueadaModal insignia={insigniaDesbloqueada} onClose={() => setInsigniaDesbloqueada(null)} />}
+    </div>
+  );
+}
+
+// Lo que falla al guardar se dice, en vez de dejar a oscuras a quien lo
+// pulsa. Va fija y por encima de TODO (zIndex 60 contra los 50 de
+// `pantallaCompleta`), porque el Banco y el Ranking son pantallas completas y
+// un aviso por debajo no se vería — que es justo el caso de la estrella de
+// favoritos, que vive dentro del Banco.
+function BarraAviso({ texto, onCerrar }) {
+  return (
+    <div
+      role="alert"
+      style={{
+        position: "fixed", left: 0, right: 0, top: 0, zIndex: 60,
+        background: ACENTO, color: "#fff", padding: "12px 14px",
+        display: "flex", alignItems: "flex-start", gap: 10,
+        fontSize: 13.5, lineHeight: 1.45, boxShadow: SOMBRA_SUAVE,
+      }}
+    >
+      <span style={{ flex: 1 }}>{texto}</span>
+      <button
+        type="button"
+        onClick={onCerrar}
+        aria-label="Cerrar aviso"
+        style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", padding: 0, flexShrink: 0 }}
+      >
+        <X size={17} />
+      </button>
     </div>
   );
 }
@@ -3899,7 +3979,7 @@ function GrupoEstadistica({ titulo, filas }) {
   );
 }
 
-function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo, estilosMazo, onEstiloMazo }) {
+function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo, onCopiarMazo, estilosMazo, onEstiloMazo }) {
   const hoy = new Date().toISOString().slice(0, 10);
   // Mismo techo que se aplicará al pulsar, para que lo que anuncia el botón
   // sea exactamente lo que va a pasar.
@@ -4261,6 +4341,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
               onClick={() => seleccionarMazo(m)}
               onRenombrar={(nuevo) => onRenombrarMazo(m, nuevo)}
               onBorrar={() => onEliminarMazo(m)}
+              onCopiar={(destino) => onCopiarMazo(m, destino)}
               avisoBorrado={`¿Borrar "${m}" y sus ${s.total} tarjeta${s.total === 1 ? "" : "s"}? No se puede deshacer.`}
               otrosMazos={mazos.filter((x) => x !== m)}
               estilo={estiloDeMazo(indiceEstilos, m, CLAVES_ICONO_MAZO, CLAVES_COLOR_MAZO)}
@@ -4504,8 +4585,8 @@ function SelectorEstiloMazo({ icono, color, onGuardar, onCerrar }) {
   );
 }
 
-function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onRenombrar, onBorrar, avisoBorrado, otrosMazos, estilo, onEstilo }) {
-  const [modo, setModo] = useState("normal"); // normal | editando | enviando | confirmando
+function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onRenombrar, onBorrar, onCopiar, avisoBorrado, otrosMazos, estilo, onEstilo }) {
+  const [modo, setModo] = useState("normal"); // normal | editando | copiando | confirmando | estilo
   const [nombreNuevo, setNombreNuevo] = useState(titulo);
   const [procesando, setProcesando] = useState(false);
   const destinos = otrosMazos || [];
@@ -4547,30 +4628,34 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onR
     );
   }
 
-  // Enviar a otro mazo: se elige uno ya existente de una lista (sin escribir
-  // nada) y todas las tarjetas de este mazo pasan a formar parte de él —
-  // como `mazo` es solo una etiqueta compartida, "enviar" es simplemente
-  // renombrar este mazo para que coincida exactamente con el destino.
-  if (modo === "enviando") {
+  // COPIAR a otro mazo, no mudarse. Esto era un "enviar" que renombraba el
+  // mazo, así que las tarjetas desaparecían del de origen; se cambió a
+  // petición del usuario ("que no se borre del mazo original, simplemente se
+  // mande una copia"). La copia comparte la memoria de repaso con el original
+  // —van por el mismo `grupo_id`—, así que da igual en cuál la repases.
+  if (modo === "copiando") {
     return (
       <Card style={{ marginBottom: 8, padding: 12 }}>
-        <FieldLabel>Enviar todas las tarjetas de "{titulo}" a:</FieldLabel>
-        <select value={destinoElegido} onChange={(e) => setDestinoElegido(e.target.value)} style={{ ...styles.input, marginTop: 6, marginBottom: 10 }}>
+        <FieldLabel>Copiar las tarjetas de "{titulo}" a:</FieldLabel>
+        <select value={destinoElegido} onChange={(e) => setDestinoElegido(e.target.value)} style={{ ...styles.input, marginTop: 6, marginBottom: 8 }}>
           {destinos.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
+        <p style={{ fontSize: 12, color: TINTA_TENUE, margin: "0 0 10px", lineHeight: 1.45 }}>
+          "{titulo}" se queda como está. Las dos copias comparten el repaso: lo que contestes en una cuenta en la otra.
+        </p>
         <div style={{ display: "flex", gap: 8 }}>
           <button
             type="button"
             disabled={procesando || !destinoElegido}
             onClick={async () => {
               setProcesando(true);
-              const ok = await onRenombrar(destinoElegido);
+              const ok = await onCopiar(destinoElegido);
               setProcesando(false);
               if (ok) setModo("normal");
             }}
             style={{ ...styles.btnPrimary, flex: 1, opacity: procesando ? 0.7 : 1 }}
           >
-            {procesando ? "Enviando..." : `Enviar a "${destinoElegido}"`}
+            {procesando ? "Copiando..." : `Copiar a "${destinoElegido}"`}
           </button>
           <button type="button" onClick={() => setModo("normal")} style={styles.btnSecondary}>Cancelar</button>
         </div>
@@ -4627,8 +4712,8 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onR
         <Pencil size={14} />
       </button>
       {destinos.length > 0 && (
-        <button type="button" onClick={() => setModo("enviando")} title="Enviar a otro mazo" style={styles.filaCarpetaIconBtn}>
-          <FolderInput size={14} />
+        <button type="button" onClick={() => setModo("copiando")} title="Copiar a otro mazo" style={styles.filaCarpetaIconBtn}>
+          <Copy size={14} />
         </button>
       )}
       <button type="button" onClick={() => setModo("confirmando")} title="Borrar" style={styles.filaCarpetaIconBtn}>

@@ -338,6 +338,9 @@ export function lunesDeLaSemana(fecha) {
 // esto, la carga inicial dejaba la app en la ruedecita para siempre, sin
 // decir nada, que por fuera es idéntico a "la app no abre".
 export const ESPERA_MAX_CARGA_MS = 12000;
+// Una escritura es una sola ida y vuelta, así que no merece los 12 s de la
+// carga entera: pasado este plazo el botón deja de girar y se dice qué pasa.
+export const ESPERA_MAX_ESCRITURA_MS = 10000;
 
 export function conTiempoLimite(promesa, ms, mensaje) {
   let reloj;
@@ -345,6 +348,68 @@ export function conTiempoLimite(promesa, ms, mensaje) {
     reloj = setTimeout(() => rechazar(new Error(mensaje)), ms);
   });
   return Promise.race([promesa, limite]).finally(() => clearTimeout(reloj));
+}
+
+// Lo mismo pero para una ESCRITURA, que falla por motivos distintos a los de
+// la carga inicial y, sobre todo, tiene que decir en voz alta lo que antes se
+// tragaba: la estrella de favoritos no se ponía amarilla y nadie contaba por
+// qué. Aquí interesa distinguir los tres casos que de verdad pasan, porque
+// cada uno lo arregla una persona distinta en un sitio distinto.
+export function mensajeDeEscritura(error, queIba = "") {
+  const texto = (error && (error.message || error.details || error.hint)) || "";
+  const codigo = (error && error.code) || "";
+  const di = (frase) => (queIba ? `${queIba}: ${frase}` : frase);
+
+  if (/tardando|timeout|failed to fetch|networkerror|load failed/i.test(texto)) {
+    return di("el servidor no contesta. Comprueba tu conexión y vuelve a intentarlo.");
+  }
+  // 42501 es el rechazo de una política RLS. No es culpa de quien lo pulsa.
+  if (codigo === "42501" || /row-level security|permission denied|not authorized/i.test(texto)) {
+    return di("el servidor no deja guardarlo (permisos de la base de datos). Esto lo tiene que mirar Pablo.");
+  }
+  // 42P01 tabla que no existe, 42703 columna que no existe: una migración que
+  // está en el repositorio pero que nunca llegó a ejecutarse en Supabase.
+  if (codigo === "42P01" || codigo === "42703" || /does not exist|no existe/i.test(texto)) {
+    return di("falta algo en la base de datos (una tabla o una columna sin crear). Esto lo tiene que mirar Pablo.");
+  }
+  if (codigo === "23505" || /duplicate key|already exists/i.test(texto)) {
+    return di("eso ya estaba guardado.");
+  }
+  if (/jwt|api key|apikey|unauthorized|401/i.test(texto)) {
+    return di("el servidor ha rechazado la sesión. Prueba a salir y volver a entrar.");
+  }
+  return di(texto || "no se pudo guardar.");
+}
+
+// ---------- Copiar un mazo entero a otro ----------
+//
+// "Enviar a otro mazo" era un RENOMBRADO: las tarjetas cambiaban de etiqueta y
+// desaparecían del mazo de origen. El usuario quería lo contrario ("que no se
+// borre del mazo original, simplemente se mande una copia"), así que ahora se
+// insertan filas nuevas.
+//
+// La memoria se comparte por `grupo_id`: el progreso SM-2 va indexado por
+// `grupo_id || id`, así que dándole a la copia el grupo del original las dos
+// leen y escriben la MISMA fila de `flashcards_progreso` — repasas en un mazo
+// y el otro se entera. Es justo para lo que se añadió esa columna.
+//
+// Y no se duplica lo que ya está: copiar dos veces seguidas no deja la tarjeta
+// repetida en el destino, porque se compara por grupo y no por texto.
+export function copiasParaMazo(tarjetas, origen, destino) {
+  const deMazo = (f) => (f && f.mazo) || "General";
+  const grupo = (f) => f.grupo_id || f.id;
+  const yaEnDestino = new Set(
+    (tarjetas || []).filter((f) => deMazo(f) === destino).map(grupo)
+  );
+  return (tarjetas || [])
+    .filter((f) => deMazo(f) === origen && !yaEnDestino.has(grupo(f)))
+    .map((f) => ({
+      mazo: destino,
+      frontal: f.frontal,
+      posterior: f.posterior,
+      etiquetas: f.etiquetas || [],
+      grupo_id: grupo(f),
+    }));
 }
 
 // Lo que se le enseña al usuario. El mensaje técnico de supabase-js ("Failed
