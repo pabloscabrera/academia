@@ -412,6 +412,28 @@ export function copiasParaMazo(tarjetas, origen, destino) {
     }));
 }
 
+// Y lo mismo para UNA tarjeta suelta. Es el mismo criterio que arriba, y
+// existe aparte porque el botón de la tarjeta era un "Mover" de verdad —
+// cambiaba su `mazo` y desaparecía del de origen—, que es la queja que quedó
+// viva después de arreglar el envío del mazo entero: "se sigue eliminando".
+export function copiaDeTarjeta(tarjetas, id, destino) {
+  const lista = tarjetas || [];
+  const original = lista.find((f) => f && f.id === id);
+  if (!original) return null;
+  const grupo = original.grupo_id || original.id;
+  const yaEsta = lista.some(
+    (f) => ((f.mazo || "General") === destino) && (f.grupo_id || f.id) === grupo
+  );
+  if (yaEsta) return null;
+  return {
+    mazo: destino,
+    frontal: original.frontal,
+    posterior: original.posterior,
+    etiquetas: original.etiquetas || [],
+    grupo_id: grupo,
+  };
+}
+
 // Lo que se le enseña al usuario. El mensaje técnico de supabase-js ("Failed
 // to fetch") no le dice nada a nadie.
 export function mensajeDeCarga(error) {

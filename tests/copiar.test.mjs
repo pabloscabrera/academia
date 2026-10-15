@@ -66,3 +66,36 @@ test("un error raro se enseña tal cual en vez de tragárselo", () => {
   assert.match(mensajeDeEscritura({ message: "algo muy raro" }), /algo muy raro/);
   assert.match(mensajeDeEscritura(null), /no se pudo guardar/i);
 });
+
+// ---------- Una tarjeta suelta ----------
+import { copiaDeTarjeta } from "../src/logica.js";
+
+test("copiar una tarjeta la deja también en su mazo y comparte el grupo", () => {
+  const todas = [tarjeta("a", "Origen"), tarjeta("b", "Origen"), tarjeta("z", "Destino")];
+  const fila = copiaDeTarjeta(todas, "a", "Destino");
+  assert.equal(fila.mazo, "Destino");
+  assert.equal(fila.grupo_id, "a", "el grupo del original: así comparten el repaso");
+  assert.equal(fila.frontal, "Fa");
+  // El original no se toca: esta función solo dice qué insertar.
+  assert.equal(todas.find((f) => f.id === "a").mazo, "Origen");
+});
+
+test("si ya tenía grupo, la copia lo respeta", () => {
+  const fila = copiaDeTarjeta([tarjeta("a", "Origen", { grupo_id: "g9" })], "a", "Destino");
+  assert.equal(fila.grupo_id, "g9");
+});
+
+test("copiar la misma tarjeta dos veces al mismo mazo no la duplica", () => {
+  const todas = [tarjeta("a", "Origen"), tarjeta("copia", "Destino", { grupo_id: "a" })];
+  assert.equal(copiaDeTarjeta(todas, "a", "Destino"), null);
+});
+
+test("una tarjeta que no existe no inventa una copia", () => {
+  assert.equal(copiaDeTarjeta([tarjeta("a", "Origen")], "fantasma", "Destino"), null);
+  assert.equal(copiaDeTarjeta(null, "a", "Destino"), null);
+});
+
+test("las etiquetas viajan con la copia de una tarjeta suelta", () => {
+  const fila = copiaDeTarjeta([tarjeta("a", "Origen", { etiquetas: ["dsm", "pct"] })], "a", "D");
+  assert.deepEqual(fila.etiquetas, ["dsm", "pct"]);
+});
