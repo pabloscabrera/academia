@@ -146,6 +146,19 @@ create policy "flashcards_delete_propio" on public.flashcards
   for delete to authenticated using (auth.uid() = user_id);
 
 
+-- ------------------------------------------- 4. BORRAR EL PROGRESO HUÉRFANO
+-- `flashcards_progreso` tenía insert, select y update, pero NO delete. Un
+-- `delete` sin política no da error: afecta a 0 filas en silencio. Así que la
+-- limpieza que hace la app al borrar una tarjeta (quitar su progreso cuando ya
+-- no queda ninguna copia viva) no borraba nada y nadie se enteraba — ni
+-- siquiera el aviso nuevo de la app, porque para el servidor no hubo fallo.
+-- Comprobado en un Postgres local: con esas tres políticas y sin la de delete,
+-- la fila sobrevive al borrado; con esta, se va.
+drop policy if exists "flashcards_progreso_delete_propio" on public.flashcards_progreso;
+create policy "flashcards_progreso_delete_propio" on public.flashcards_progreso
+  for delete to authenticated using (auth.uid() = user_id);
+
+
 -- ============================ COMPROBACIONES ================================
 -- Pega estas tres tablas en el chat.
 
