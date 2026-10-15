@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Activity, Award, Baby, BookOpen, Brain, Check, ChevronDown, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, Flag, Flame, FolderInput, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, Palette, Pencil, Percent, Plus, Puzzle, Search, Settings, Sparkles, Star, Stethoscope, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
+import { Activity, Award, Baby, BookOpen, Brain, Check, ChevronDown, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, Flag, Flame, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, Palette, Pencil, Percent, Plus, Puzzle, Search, Settings, Sparkles, Star, Stethoscope, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
 import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, sinFila, filasPendientes, CONFLICTO } from "./colaPendientes";
@@ -11,7 +11,7 @@ import {
   MAX_EDAD_TIRADA_MS, reconstruirTirada, agruparAciertos,
   cursosDeRuleta, elegirPreguntaRuleta, reconstruirRuleta,
   calcularSM2, MAX_INTERVALO, dentroDelHorizonte, ordenarPorPrioridad, colaDeRepaso, reinsertarEnSesion,
-  mensajeDeEscritura, copiasParaMazo,
+  mensajeDeEscritura, copiasParaMazo, copiaDeTarjeta,
   tarjetasDistintas, parsearEtiquetas, lunesDeLaSemana,
   ESPERA_MAX_CARGA_MS, ESPERA_MAX_ESCRITURA_MS, conTiempoLimite, mensajeDeCarga,
   hayQueDescargar, selloDeFilas,
@@ -844,6 +844,25 @@ export default function AcademiaPIR() {
     return ok && data ? data.length : 0;
   };
 
+  // Una tarjeta suelta a otro mazo, también copiando. El botón de la tarjeta
+  // era un "Mover" literal (`update` del campo `mazo`), así que desaparecía
+  // del mazo de origen: es la queja que quedó viva tras arreglar el envío del
+  // mazo entero, "se sigue eliminando". Misma regla que allí — la copia lleva
+  // el `grupo_id` del original, así que las dos comparten el repaso.
+  const copiarFlashcard = async (id, destino) => {
+    const fila = copiaDeTarjeta(flashcards, id, destino);
+    if (!fila) {
+      setAviso(`"${destino}" ya tiene esa tarjeta.`);
+      return false;
+    }
+    const { ok, data } = await escribir(
+      `Copiar la tarjeta a "${destino}"`,
+      supabase.from("flashcards").insert([fila]).select()
+    );
+    if (ok && data && data[0]) setFlashcards((prev) => [...prev, data[0]]);
+    return ok;
+  };
+
   // Copiar un mazo entero a otro SIN vaciar el de origen. Antes esto era un
   // renombrado (las tarjetas se mudaban), y lo que se pedía era lo contrario.
   // La copia lleva el `grupo_id` del original, así que las dos comparten la
@@ -1031,6 +1050,7 @@ export default function AcademiaPIR() {
               onRenombrarMazo={renombrarMazo}
               onEliminarMazo={eliminarMazo}
               onCopiarMazo={copiarMazo}
+              onCopiarFlashcard={copiarFlashcard}
               estilosMazo={estilosMazo}
               onEstiloMazo={guardarEstiloMazo}
             />
@@ -3979,7 +3999,7 @@ function GrupoEstadistica({ titulo, filas }) {
   );
 }
 
-function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo, onCopiarMazo, estilosMazo, onEstiloMazo }) {
+function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo, onCopiarMazo, onCopiarFlashcard, estilosMazo, onEstiloMazo }) {
   const hoy = new Date().toISOString().slice(0, 10);
   // Mismo techo que se aplicará al pulsar, para que lo que anuncia el botón
   // sea exactamente lo que va a pasar.
@@ -4484,7 +4504,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
               />
             </div>
             {tarjetasFiltradas.map((f) => (
-              <FlashcardEditableCard key={f.id} f={f} onUpdate={onUpdate} onDelete={onDelete} mazos={mazos} etiquetasExistentes={todasLasEtiquetas} />
+              <FlashcardEditableCard key={f.id} f={f} onUpdate={onUpdate} onDelete={onDelete} onCopiar={onCopiarFlashcard} mazos={mazos} etiquetasExistentes={todasLasEtiquetas} />
             ))}
           </div>
         )}
@@ -4929,7 +4949,7 @@ function ImportarFlashcards({ onAddBulk, mazoFijo, etiquetasExistentes }) {
   );
 }
 
-function FlashcardEditableCard({ f, onUpdate, onDelete, mazos, etiquetasExistentes }) {
+function FlashcardEditableCard({ f, onUpdate, onDelete, onCopiar, mazos, etiquetasExistentes }) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [moviendo, setMoviendo] = useState(false);
@@ -4953,7 +4973,7 @@ function FlashcardEditableCard({ f, onUpdate, onDelete, mazos, etiquetasExistent
   const mover = async () => {
     if (!mazoDestino) return;
     setSaving(true);
-    const ok = await onUpdate(f.id, { mazo: mazoDestino });
+    const ok = await onCopiar(f.id, mazoDestino);
     setSaving(false);
     if (ok) setMoviendo(false);
   };
@@ -4967,13 +4987,16 @@ function FlashcardEditableCard({ f, onUpdate, onDelete, mazos, etiquetasExistent
   if (moviendo) {
     return (
       <Card style={{ marginBottom: 10, borderLeft: "3px solid #8A5A9E" }}>
-        <FieldLabel>Mover esta tarjeta a:</FieldLabel>
-        <select value={mazoDestino} onChange={(e) => setMazoDestino(e.target.value)} style={{ ...styles.input, marginTop: 6, marginBottom: 10 }}>
+        <FieldLabel>Copiar esta tarjeta a:</FieldLabel>
+        <select value={mazoDestino} onChange={(e) => setMazoDestino(e.target.value)} style={{ ...styles.input, marginTop: 6, marginBottom: 8 }}>
           {otrosMazos.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
+        <p style={{ fontSize: 12, color: TINTA_TENUE, margin: "0 0 10px", lineHeight: 1.45 }}>
+          Se queda también donde está. Las dos comparten el repaso: lo que contestes en una cuenta en la otra.
+        </p>
         <div style={{ display: "flex", gap: 8 }}>
           <button type="button" onClick={mover} disabled={saving || !mazoDestino} style={{ ...styles.btnPrimary, flex: 1, opacity: saving ? 0.7 : 1 }}>
-            {saving ? "Moviendo..." : `Mover a "${mazoDestino}"`}
+            {saving ? "Copiando..." : `Copiar a "${mazoDestino}"`}
           </button>
           <button type="button" onClick={() => setMoviendo(false)} style={styles.btnSecondary}>Cancelar</button>
         </div>
@@ -5021,7 +5044,7 @@ function FlashcardEditableCard({ f, onUpdate, onDelete, mazos, etiquetasExistent
             </button>
             {otrosMazos.length > 0 && (
               <button type="button" onClick={() => setMoviendo(true)} style={styles.btnSecondary}>
-                <FolderInput size={13} style={{ marginRight: 4 }} /> Mover
+                <Copy size={13} style={{ marginRight: 4 }} /> Copiar
               </button>
             )}
             {confirmarBorrar ? (
