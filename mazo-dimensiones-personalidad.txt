@@ -1,0 +1,25 @@
+Labilidad emocional;Emocionalidad negativa
+Ansiedad;Emocionalidad negativa
+Ansiedad de separación;Emocionalidad negativa
+Sumisión;Emocionalidad negativa
+Perseveración;Emocionalidad negativa
+Retraimiento;Desapego
+Evitación de la intimidad;Desapego
+Anhedonia;Desapego
+Depresividad;Desapego
+Suspicacia;Desapego
+Afectividad restringida;Desapego
+Manipulación;Antagonismo
+Deshonestidad;Antagonismo
+Grandiosidad;Antagonismo
+Búsqueda de atención;Antagonismo
+Insensibilidad;Antagonismo
+Hostilidad;Antagonismo
+Irresponsabilidad;Desinhibición
+Impulsividad;Desinhibición
+Distractibilidad;Desinhibición
+Temeridad;Desinhibición
+Rigidez perfeccionista;Desinhibición
+Creencias inusuales;Psicoticismo
+Excentricidad;Psicoticismo
+Desregulación cognitiva y perceptiva;Psicoticismo
