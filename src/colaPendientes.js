@@ -22,10 +22,15 @@ export function colaVacia() {
 // Un fallo de red, no un rechazo del servidor. Un error de permisos o de
 // datos no se encola: repetirlo más tarde fallaría igual y taparía el fallo
 // de verdad.
+//
+// "tardando" cuenta como fallo de red a propósito: es el texto de nuestro
+// propio plazo de espera (`conTiempoLimite`), y un servidor que no contesta es
+// exactamente el caso que hay que encolar. Sin esta palabra, poner plazo a una
+// escritura TIRA la respuesta en vez de guardarla para luego.
 export function esFalloDeRed(error) {
   if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
   const mensaje = (error && (error.message || error.msg)) || "";
-  return /failed to fetch|networkerror|network request failed|load failed|fetch failed|timeout/i.test(mensaje);
+  return /failed to fetch|networkerror|network request failed|load failed|fetch failed|timeout|tardando/i.test(mensaje);
 }
 
 export function leerCola(nombre) {

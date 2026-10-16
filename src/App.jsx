@@ -787,20 +787,53 @@ export default function AcademiaPIR() {
       creado_en: new Date().toISOString(),
     };
     setRepasosFlashcards((prev) => [...prev, anotacion]);
-    supabase.from("flashcards_repasos").insert([anotacion]).then(({ error }) => {
+    // El progreso se aplica EN LOCAL antes de escribir, y no al volver la
+    // respuesta. Dos motivos: la pantalla no tiene por qué esperar a Supabase
+    // para pasar de tarjeta, y lo que se marca "Otra vez" vuelve dentro de la
+    // misma sesión — si la copia local aún no se hubiera enterado, ese segundo
+    // repaso calcularía el intervalo desde el estado de antes de fallar y la
+    // tarjeta se iría a un mes en vez de quedarse en el primer peldaño.
+    setFlashcardsProgreso((prev) => [...prev.filter((p) => p.flashcard_id !== flashcardId), fila]);
+    // Las DOS escrituras llevan plazo. Sin él, una petición que no contesta no
+    // falla nunca: supabase-js no trae plazo propio, así que el `await` de
+    // abajo se quedaba esperando para siempre y con él la sesión entera — era
+    // el "se queda pillado en una y no avanza". Reproducido en un navegador
+    // con el servidor mudo, y comprobado después con `tests/repaso-no-se-atasca.mjs`.
+    conTiempoLimite(
+      Promise.resolve(supabase.from("flashcards_repasos").insert([anotacion])),
+      ESPERA_MAX_ESCRITURA_MS,
+      "El servidor está tardando demasiado"
+    ).then(({ error }) => {
       if (!error) return;
       if (esFalloDeRed(error)) encolar("flashcards_repasos", anotacion.id, anotacion);
       // Si la tabla aún no existe, no se encola: reintentarlo fallaría igual.
       else console.error("No se pudo anotar el repaso:", error.message);
+    }).catch((err) => {
+      if (esFalloDeRed(err)) encolar("flashcards_repasos", anotacion.id, anotacion);
+      else console.error("No se pudo anotar el repaso:", err);
     });
 
     try {
-      const { data, error } = await supabase.from("flashcards_progreso").upsert(fila, { onConflict: "name,flashcard_id" }).select();
+      const { data, error } = await conTiempoLimite(
+        Promise.resolve(supabase.from("flashcards_progreso").upsert(fila, { onConflict: "name,flashcard_id" }).select()),
+        ESPERA_MAX_ESCRITURA_MS,
+        "El servidor está tardando demasiado"
+      );
       if (error) throw error;
       if (data && data[0]) setFlashcardsProgreso((prev) => [...prev.filter((p) => p.flashcard_id !== flashcardId), data[0]]);
     } catch (err) {
-      if (!esFalloDeRed(err)) { console.error("No se pudo guardar el repaso de la flashcard:", err); return; }
-      setFlashcardsProgreso((prev) => [...prev.filter((p) => p.flashcard_id !== flashcardId), fila]);
+      if (!esFalloDeRed(err)) {
+        // Un rechazo del servidor (permisos, una columna que falta) ya no se
+        // queda en la consola: desde un móvil no hay consola que mirar, y
+        // callarlo es lo que hacía parecer que el repaso se guardaba. Y se
+        // deshace lo aplicado en local, porque aquí no se ha guardado nada:
+        // dejarlo puesto y avisar a la vez diría dos cosas contrarias.
+        setFlashcardsProgreso((prev) => (previo
+          ? prev.map((p) => (p.flashcard_id === flashcardId ? previo : p))
+          : prev.filter((p) => p.flashcard_id !== flashcardId)));
+        setAviso(mensajeDeEscritura(err, "Guardar el repaso de la tarjeta"));
+        return;
+      }
       encolar("flashcards_progreso", flashcardId, fila);
     }
   };
@@ -813,15 +846,16 @@ export default function AcademiaPIR() {
     if (f.posterior !== undefined) cambios.posterior = f.posterior;
     if (f.mazo !== undefined) cambios.mazo = f.mazo;
     if (f.etiquetas !== undefined) cambios.etiquetas = f.etiquetas;
-    const { data, error } = await supabase
-      .from("flashcards")
-      .update(cambios)
-      .eq("id", id)
-      .select();
-    if (!error && data && data[0]) {
+    // Por `escribir`, que resuelve siempre: si no, "Corregir esta tarjeta" se
+    // queda en "Guardando..." para siempre cuando el servidor no contesta.
+    const { ok, data } = await escribir(
+      "Guardar los cambios de la tarjeta",
+      supabase.from("flashcards").update(cambios).eq("id", id).select()
+    );
+    if (ok && data && data[0]) {
       setFlashcards((prev) => prev.map((p) => (p.id === id ? data[0] : p)));
     }
-    return !error;
+    return ok;
   };
 
   const addFlashcard = async (f) => {
@@ -4154,12 +4188,21 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     setEditandoCarta(null);
   };
 
-  const calificar = async (calidad) => {
+  const calificar = (calidad) => {
     if (enviando) return;
-    setEnviando(true);
-    const carta = sesion[idx];
-    await onRepaso(carta.grupo_id || carta.id, calidad);
-    setEnviando(false);
+    const carta = sesion && sesion[idx];
+    if (!carta) return;
+    // La sesión NO espera al servidor. Antes se bloqueaba hasta que la
+    // escritura volviera, y una petición sin respuesta no vuelve nunca
+    // (supabase-js no trae plazo propio), así que la tarjeta se quedaba
+    // "pillada y sin avanzar" con los cuatro botones muertos. Guardar es cosa
+    // de `onRepaso`, que aplica el repaso en local al momento, encola lo que
+    // no pudo subir y avisa de lo que el servidor rechaza — nada de eso
+    // necesita que quien estudia se quede mirando la pantalla. Pulsar es una
+    // decisión que ya está tomada.
+    Promise.resolve(onRepaso(carta.grupo_id || carta.id, calidad)).catch((err) => {
+      console.error("No se pudo guardar la calificación:", err);
+    });
     // Lo fallado o lo que ha costado se cuela otra vez en esta misma sesión,
     // unas cuantas tarjetas más adelante. La cola crece sobre la marcha: el
     // feedback cambia lo que viene después, no solo una fecha para mañana.
