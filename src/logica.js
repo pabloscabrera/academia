@@ -889,30 +889,65 @@ export function estiloTrasRenombrar(estilos, viejo, nuevo) {
 //                    anterior a que existiera `flashcards_repasos` y con lo más
 //                    viejo que la ventana que se descarga. Pintarlo de gris
 //                    sería mentir: esa tarjeta sí se ha repasado.
-//   0 | 3 | 4 | 5  — la calificación del repaso más reciente.
+//   0 | 3 | 4 | 5  — el resumen de TODAS sus respuestas, no la última.
 //
-// Se va rellenando solo: en cuanto una tarjeta se repasa otra vez, pasa a tener
-// calificación.
-export function ultimaCalificacionPorTarjeta(repasos) {
-  const ultima = new Map();
-  for (const r of repasos || []) {
-    if (!r || !r.flashcard_id || typeof r.calidad !== "number") continue;
-    const previo = ultima.get(r.flashcard_id);
-    // Sin `creado_en` se queda la primera vista, que es mejor que tirar la fila.
-    if (!previo || String(r.creado_en || "") > String(previo.creado_en || "")) {
-      ultima.set(r.flashcard_id, { calidad: r.calidad, creado_en: r.creado_en });
-    }
+// **Por qué una media y no el último botón.** Era el último, y eso mentía: lo
+// que fallas vuelve a salir dentro de la misma sesión (ver `reinsertarEnSesion`),
+// así que contestabas "Otra vez" y tres tarjetas después, con la respuesta
+// todavía en la cabeza, "Bien" — y la tarjeta quedaba verde, idéntica a otra
+// que te supiste a la primera. Lo dijo el usuario tal cual: "es normal que
+// ponga bien por la repetición a corto plazo, pero no es real que esté
+// clasificado como verde igual que una que he acertado a la primera".
+//
+// La media es exponencial: cada respuesta pesa `PESO_ULTIMO` y el resto queda
+// para lo que ya había. Esa forma es la que hace lo que se pedía, y conviene
+// ver los números antes de tocar el peso:
+//
+//   sesión 1: "Otra vez" (0) y luego "Bien" (4)  -> 0, luego 2,0  -> ROJO
+//   sesión 2: "Bien" (4)                         -> 3,0           -> Difícil
+//   sesión 3: "Bien" (4)                         -> 3,5           -> Bien
+//   y de ahí va acercándose a 4; para llegar a verde hay que pulsar "Fácil".
+//
+// O sea: recuperarla en la misma sesión NO la limpia, y recuperarla en sesiones
+// distintas sí, subiendo un escalón cada vez. Que es exactamente lo que se
+// pidió ("ir haciendo la media y poner un color menos del difícil, y así").
+export const PESO_ULTIMO = 0.5;
+
+export function mediaCalificacionPorTarjeta(repasos, peso = PESO_ULTIMO) {
+  // El orden importa: una media exponencial depende de en qué orden llegaron,
+  // y las filas no vienen ordenadas por fuerza.
+  const validos = (repasos || [])
+    .filter((r) => r && r.flashcard_id && typeof r.calidad === "number")
+    .slice()
+    .sort((a, b) => String(a.creado_en || "").localeCompare(String(b.creado_en || "")));
+  const medias = new Map();
+  for (const r of validos) {
+    const previo = medias.get(r.flashcard_id);
+    // La primera respuesta no se promedia con nada: una tarjeta acertada a la
+    // primera con "Fácil" vale 5 y sale verde, como debe ser.
+    medias.set(r.flashcard_id, previo === undefined ? r.calidad : peso * r.calidad + (1 - peso) * previo);
   }
-  const m = new Map();
-  for (const [id, v] of ultima) m.set(id, v.calidad);
-  return m;
+  return medias;
 }
 
-export function estadoCuadricula(tarjeta, progresoPorId, ultimas) {
+// De la media continua al color. Los cortes NO son el redondeo al valor más
+// cercano: con eso, el 2,0 del ejemplo de arriba caería en "Difícil" y el caso
+// que motivó todo esto seguiría sin salir rojo. El color **se gana**, así que
+// cada escalón pide llegar hasta él.
+export function bucketDeMedia(media) {
+  if (typeof media !== "number" || Number.isNaN(media)) return null;
+  if (media >= 4.5) return 5;
+  if (media >= 3.5) return 4;
+  if (media >= 3) return 3;
+  return 0;
+}
+
+export function estadoCuadricula(tarjeta, progresoPorId, medias) {
   const clave = tarjeta && (tarjeta.grupo_id || tarjeta.id);
   const progreso = progresoPorId && progresoPorId[clave];
   // Una fila de progreso sin repeticiones es una tarjeta que aún no ha salido.
   if (!progreso || !progreso.ultima_revision) return "nueva";
-  const calidad = ultimas && ultimas.get ? ultimas.get(clave) : undefined;
-  return typeof calidad === "number" ? calidad : "sin-registro";
+  const bucket = bucketDeMedia(medias && medias.get ? medias.get(clave) : undefined);
+  return bucket === null ? "sin-registro" : bucket;
 }
+

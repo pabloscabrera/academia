@@ -9,7 +9,7 @@ import {
   hayQueDescargar, selloDeFilas, MAX_EDAD_CACHE_MS,
   preguntaUsable, bancoUsable,
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar,
-  ultimaCalificacionPorTarjeta, estadoCuadricula,
+  mediaCalificacionPorTarjeta, bucketDeMedia, estadoCuadricula,
 } from "../src/logica.js";
 
 test("esExamen distingue una edición de examen de una asignatura suelta", () => {
@@ -585,22 +585,76 @@ test("renombrar un mazo sin estilo no mueve nada", () => {
   assert.deepEqual(estiloTrasRenombrar(e, "A", "B"), { mover: false, estilo: null });
 });
 
-// --- Cuadrícula por última calificación ------------------------------------
+// --- Cuadrícula: la media de TODAS las respuestas, no la última ------------
 
-test("de varios repasos de una tarjeta se queda el más reciente", () => {
-  const m = ultimaCalificacionPorTarjeta([
-    { flashcard_id: "a", calidad: 0, creado_en: "2026-10-01T10:00:00Z" },
-    { flashcard_id: "a", calidad: 4, creado_en: "2026-10-05T10:00:00Z" },
-    { flashcard_id: "a", calidad: 3, creado_en: "2026-10-03T10:00:00Z" },
-    { flashcard_id: "b", calidad: 5, creado_en: "2026-10-02T10:00:00Z" },
+const rep = (id, calidad, creado_en) => ({ flashcard_id: id, calidad, creado_en });
+
+test("el caso que motivó esto: fallar y recuperarla en la misma sesión NO deja verde", () => {
+  // "Otra vez" y, tres tarjetas después, "Bien" — con la respuesta todavía en
+  // la cabeza. Antes quedaba verde, idéntica a una acertada a la primera.
+  const m = mediaCalificacionPorTarjeta([
+    rep("a", 0, "2026-10-01T10:00:00Z"),
+    rep("a", 4, "2026-10-01T10:03:00Z"),
   ]);
-  assert.equal(m.get("a"), 4);
-  assert.equal(m.get("b"), 5);
+  assert.equal(m.get("a"), 2);
+  assert.equal(bucketDeMedia(m.get("a")), 0, "tiene que salir ROJO al acabar la sesión");
+});
+
+test("y en sesiones siguientes sube un escalón cada vez, no de golpe", () => {
+  const repasos = [rep("a", 0, "2026-10-01T10:00:00Z"), rep("a", 4, "2026-10-01T10:03:00Z")];
+  const paso = (dia) => {
+    repasos.push(rep("a", 4, `2026-10-0${dia}T10:00:00Z`));
+    return bucketDeMedia(mediaCalificacionPorTarjeta(repasos).get("a"));
+  };
+  assert.equal(paso(2), 3, "segunda sesión: Difícil");
+  assert.equal(paso(3), 4, "tercera: Bien");
+  assert.equal(paso(4), 4, "y se queda en Bien: el verde se gana con 'Fácil'");
+});
+
+test("acertada a la primera con Fácil sale verde, que es el contraste", () => {
+  const m = mediaCalificacionPorTarjeta([rep("a", 5, "2026-10-01T10:00:00Z")]);
+  assert.equal(bucketDeMedia(m.get("a")), 5);
+});
+
+test("el orden manda, y las filas no vienen ordenadas por fuerza", () => {
+  const desordenado = mediaCalificacionPorTarjeta([
+    rep("a", 4, "2026-10-05T10:00:00Z"),
+    rep("a", 0, "2026-10-01T10:00:00Z"),
+  ]);
+  const ordenado = mediaCalificacionPorTarjeta([
+    rep("a", 0, "2026-10-01T10:00:00Z"),
+    rep("a", 4, "2026-10-05T10:00:00Z"),
+  ]);
+  assert.equal(desordenado.get("a"), ordenado.get("a"));
+  assert.equal(ordenado.get("a"), 2);
+});
+
+test("una racha de fallos hunde la media aunque la última sea buena", () => {
+  const m = mediaCalificacionPorTarjeta([
+    rep("a", 0, "2026-10-01T10:00:00Z"),
+    rep("a", 0, "2026-10-02T10:00:00Z"),
+    rep("a", 0, "2026-10-03T10:00:00Z"),
+    rep("a", 5, "2026-10-04T10:00:00Z"),
+  ]);
+  assert.equal(m.get("a"), 2.5);
+  assert.equal(bucketDeMedia(m.get("a")), 0);
+});
+
+test("los cortes del color NO son el redondeo al más cercano", () => {
+  // Con redondeo al valor más cercano, 2 caería en 3 (Difícil) y el caso de
+  // arriba no saldría rojo. El color se gana.
+  assert.equal(bucketDeMedia(2.9), 0);
+  assert.equal(bucketDeMedia(3), 3);
+  assert.equal(bucketDeMedia(3.49), 3);
+  assert.equal(bucketDeMedia(3.5), 4);
+  assert.equal(bucketDeMedia(4.49), 4);
+  assert.equal(bucketDeMedia(4.5), 5);
+  assert.equal(bucketDeMedia(undefined), null);
 });
 
 test("filas sin id o sin calidad no cuentan", () => {
-  const m = ultimaCalificacionPorTarjeta([
-    null, { calidad: 4 }, { flashcard_id: "a" }, { flashcard_id: "b", calidad: 4, creado_en: "2026-10-01T00:00:00Z" },
+  const m = mediaCalificacionPorTarjeta([
+    null, { calidad: 4 }, { flashcard_id: "a" }, rep("b", 4, "2026-10-01T00:00:00Z"),
   ]);
   assert.equal(m.size, 1);
   assert.equal(m.get("b"), 4);
@@ -608,7 +662,7 @@ test("filas sin id o sin calidad no cuentan", () => {
 
 test("una calificación de 0 (Otra vez) no se confunde con ausencia", () => {
   // El fallo clásico: `if (!calidad)` trataría el 0 como "sin dato".
-  const m = ultimaCalificacionPorTarjeta([{ flashcard_id: "a", calidad: 0, creado_en: "2026-10-01T00:00:00Z" }]);
+  const m = mediaCalificacionPorTarjeta([rep("a", 0, "2026-10-01T00:00:00Z")]);
   const prog = { a: { ultima_revision: "2026-10-01T00:00:00Z" } };
   assert.equal(estadoCuadricula({ id: "a" }, prog, m), 0);
 });
@@ -625,7 +679,7 @@ test("repasada pero sin repaso en lo cargado NO es gris, es sin-registro", () =>
 });
 
 test("se usa grupo_id cuando lo hay, igual que el progreso", () => {
-  const m = ultimaCalificacionPorTarjeta([{ flashcard_id: "g1", calidad: 5, creado_en: "2026-10-01T00:00:00Z" }]);
+  const m = mediaCalificacionPorTarjeta([rep("g1", 5, "2026-10-01T00:00:00Z")]);
   const prog = { g1: { ultima_revision: "2026-10-01T00:00:00Z" } };
   assert.equal(estadoCuadricula({ id: "otra", grupo_id: "g1" }, prog, m), 5);
 });
