@@ -16,7 +16,7 @@ import {
   ESPERA_MAX_CARGA_MS, ESPERA_MAX_ESCRITURA_MS, conTiempoLimite, mensajeDeCarga,
   hayQueDescargar, selloDeFilas,
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar,
-  ultimaCalificacionPorTarjeta, estadoCuadricula,
+  mediaCalificacionPorTarjeta, estadoCuadricula,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -3512,14 +3512,18 @@ const TANDA_CUADRICULA = 60;
 const ORDEN_CUADRICULA = { 0: 0, 3: 1, 4: 2, 5: 3, "sin-registro": 4, nueva: 5 };
 
 function CuadriculaTarjetas({ tarjetas, progresoPorId, repasos }) {
-  const ultimas = useMemo(() => ultimaCalificacionPorTarjeta(repasos), [repasos]);
+  const medias = useMemo(() => mediaCalificacionPorTarjeta(repasos), [repasos]);
   const porCalidad = Object.fromEntries(CALIFICACIONES_FLASHCARD.map((c) => [c.calidad, c]));
   const celdas = useMemo(() => {
-    const lista = tarjetas.map((t) => ({ t, estado: estadoCuadricula(t, progresoPorId, ultimas) }));
+    const lista = tarjetas.map((t) => ({
+      t,
+      estado: estadoCuadricula(t, progresoPorId, medias),
+      media: medias.get(t.grupo_id || t.id),
+    }));
     // `sort` es estable en JS moderno, así que dentro de cada color se mantiene
     // el orden del mazo.
     return lista.sort((a, b) => ORDEN_CUADRICULA[a.estado] - ORDEN_CUADRICULA[b.estado]);
-  }, [tarjetas, progresoPorId, ultimas]);
+  }, [tarjetas, progresoPorId, medias]);
   const [visibles, setVisibles] = useState(TANDA_CUADRICULA);
   useEffect(() => { setVisibles(TANDA_CUADRICULA); }, [tarjetas, repasos]);
 
@@ -3553,7 +3557,8 @@ function CuadriculaTarjetas({ tarjetas, progresoPorId, repasos }) {
     <Card style={{ marginBottom: 14 }}>
       <h3 style={styles.h3}>Tarjeta a tarjeta</h3>
       <p style={{ fontSize: 12.5, color: TINTA_SUAVE, margin: "0 0 14px" }}>
-        La franja de arriba es el último botón que pulsaste en cada una. Primero las que peor llevas.
+        La franja resume <strong>todas</strong> tus respuestas en cada tarjeta, no la última: fallar
+        y recuperarla al rato no la deja en verde. El verde se gana a base de sesiones. Primero las que peor llevas.
       </p>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
         {leyenda.map((clave) => (
@@ -3570,10 +3575,12 @@ function CuadriculaTarjetas({ tarjetas, progresoPorId, repasos }) {
           gap: 10,
         }}
       >
-        {celdas.slice(0, visibles).map(({ t, estado }) => (
+        {celdas.slice(0, visibles).map(({ t, estado, media }) => (
           <div
             key={t.id}
-            title={`${t.frontal}\n\n${t.posterior}\n\n— ${etiquetaDe(estado)}`}
+            title={`${t.frontal}\n\n${t.posterior}\n\n— ${etiquetaDe(estado)}${
+              typeof media === "number" ? ` (media ${media.toFixed(1).replace(".", ",")} de 5)` : ""
+            }`}
             style={{
               border: `1px solid ${RAYA}`,
               borderRadius: 10,
