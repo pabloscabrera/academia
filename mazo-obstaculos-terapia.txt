@@ -1,0 +1,27 @@
+Hablar sobre la alianza directamente con él, explicando su importancia y significado en psicoterapia.;Relación terapéutica
+Dar y pedir feedback sobre la relación que mantienen. ¿Qué está sucediendo entre clínico y consultante?;Relación terapéutica
+Invertir más tiempo en explorar su experiencia (cómo se siente con respecto a la terapia o qué dificultades se encuentra, por ejemplo).;Relación terapéutica
+Discutir experiencias compartidas.;Relación terapéutica
+Revisar si hay acuerdo en las metas y tareas terapéuticas.;Relación terapéutica
+Aclarar posibles malentendidos.;Relación terapéutica
+Dar más feedback positivo.;Relación terapéutica
+Usar más comunicaciones empáticas.;Relación terapéutica
+Discutir si el estilo del clínico encaja con sus necesidades.;Relación terapéutica
+Trabajar con la transferencia.;Relación terapéutica
+Discutir con el consultante directamente su motivación para el cambio.;Motivación para el cambio
+Dar y recibir feedback sobre su motivación.;Motivación para el cambio
+Ajustar los objetivos y las tareas para que sean desafiantes, pero no demasiado difíciles de conseguir.;Motivación para el cambio
+Conversar acerca de las consecuencias de cambiar/no cambiar.;Motivación para el cambio
+Conversar acerca del proceso de cambio y de las habilidades específicas que pueden ser de ayuda.;Motivación para el cambio
+Derivar a terapia grupal.;Escaso apoyo social
+Derivar a tratamiento con biofeedback.;Escaso apoyo social
+Derivar a entrenamiento en asertividad.;Escaso apoyo social
+Ensayar situaciones sociales en sesión.;Escaso apoyo social
+Asignar tareas relacionadas con este aspecto.;Escaso apoyo social
+Valorar las creencias sobre sí mismo.;Escaso apoyo social
+Incluir en las sesiones a otras personas significativas.;Escaso apoyo social
+Animar a realizar actividades con otras personas.;Escaso apoyo social
+Trabajar aspectos relacionados con la confianza hacia los demás.;Escaso apoyo social
+Animar a implicarse en organizaciones en las que es frecuente la interacción social.;Escaso apoyo social
+Consultar fuentes relevantes y cambiar el enfoque.;Formulación del caso
+Derivar a consulta con un psiquiatra.;Medicación
