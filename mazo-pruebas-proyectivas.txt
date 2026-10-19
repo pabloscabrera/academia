@@ -1,0 +1,24 @@
+Test de Rorschach;Estructural
+Z Test de Zulliger;Estructural
+Test de Holtzman;Estructural
+Test de Apercepción Temática (TAT) de Murray;Temática
+CAT;Temática
+CAT-S;Temática
+CAT-A;Temática
+CAT-H;Temática
+Test Pata Negra de Corman;Temática
+Test de los cuentos de hadas;Temática
+Test de Frustración de Rosenzweig;Temática
+Test Relaciones Objetales de Phillipson;Temática
+Test del dibujo de dos figuras humanas;Expresiva
+Test del dibujo de la persona bajo la lluvia;Expresiva
+Test de la casa y el pueblo;Expresiva
+Test del árbol;Expresiva
+Test de la casa, árbol y persona de Buck;Expresiva
+Test del pueblo;Constructiva
+Juego del mundo;Constructiva
+Test de la aldea imaginaria de Mucchielli;Constructiva
+Caja de juego diagnóstico-terapéutico de Efron;Constructiva
+Fábulas de Düss;Asociativa
+Asociación de palabras de Jung;Asociativa
+Frases incompletas de Kelly y Fisher;Asociativa
