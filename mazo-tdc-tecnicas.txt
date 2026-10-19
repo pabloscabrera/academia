@@ -1,0 +1,10 @@
+Mindfulness.;Grupal
+Análisis de situaciones.;Grupal
+Identificación de emociones.;Grupal
+Función de emoción en un contexto.;Grupal
+Técnicas cognitivo-conductuales.;Grupal
+Análisis funcional de la conducta.;Individual
+Uso de metáforas.;Individual
+Solución de problemas.;Individual
+Manejo de contingencias.;Individual
+Intención paradójica.;Individual
