@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Activity, Award, Baby, BookOpen, Brain, Check, ChevronDown, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, Flag, Flame, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, Palette, Pencil, Percent, Plus, Puzzle, Search, Settings, Sparkles, Star, Stethoscope, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
+import { Activity, Award, Baby, BookOpen, Brain, Check, ChevronDown, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, Flag, Flame, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, Palette, Pencil, Percent, Plus, Puzzle, RotateCw, Search, Settings, Sparkles, Star, Stethoscope, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
 import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, sinFila, filasPendientes, CONFLICTO } from "./colaPendientes";
@@ -455,6 +455,18 @@ export default function AcademiaPIR() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
+  // Un aviso de conexión deja de ser cierto en cuanto vuelve la red, así que
+  // se retira solo: tenerlo ahí diría que sigues sin cobertura cuando ya la
+  // tienes. Lo que NO arregla reconectar (permisos, una tabla que falta) se
+  // queda hasta que una escritura salga bien o se recargue. Y si al volver la
+  // red la siguiente escritura falla otra vez, el aviso vuelve a aparecer por
+  // su cuenta, que es justo lo que se pidió.
+  useEffect(() => {
+    const alVolverLaRed = () => setAviso((actual) => (actual && actual.red ? null : actual));
+    window.addEventListener("online", alVolverLaRed);
+    return () => window.removeEventListener("online", alVolverLaRed);
+  }, []);
+
   const validarUsuario = (username) => {
     const limpio = (username || "").trim();
     if (!limpio) return "Escribe un nombre de usuario.";
@@ -740,10 +752,15 @@ export default function AcademiaPIR() {
         "El servidor está tardando demasiado"
       );
       if (res && res.error) throw res.error;
+      // Si esto ha salido bien, el aviso que hubiera ya no describe nada: es
+      // el "se quita el mensaje si funciona" sin tener que recargar. La forma
+      // funcional devuelve el mismo valor cuando no hay aviso, así que React
+      // no vuelve a dibujar el árbol entero en cada escritura.
+      setAviso((actual) => (actual ? null : actual));
       return { ok: true, data: res && res.data };
     } catch (err) {
       console.error(queIba, err);
-      setAviso(mensajeDeEscritura(err, queIba));
+      setAviso({ texto: mensajeDeEscritura(err, queIba), red: esFalloDeRed(err) });
       return { ok: false, error: err };
     }
   };
@@ -831,7 +848,7 @@ export default function AcademiaPIR() {
         setFlashcardsProgreso((prev) => (previo
           ? prev.map((p) => (p.flashcard_id === flashcardId ? previo : p))
           : prev.filter((p) => p.flashcard_id !== flashcardId)));
-        setAviso(mensajeDeEscritura(err, "Guardar el repaso de la tarjeta"));
+        setAviso({ texto: mensajeDeEscritura(err, "Guardar el repaso de la tarjeta"), red: false });
         return;
       }
       encolar("flashcards_progreso", flashcardId, fila);
@@ -886,7 +903,7 @@ export default function AcademiaPIR() {
   const copiarFlashcard = async (id, destino) => {
     const fila = copiaDeTarjeta(flashcards, id, destino);
     if (!fila) {
-      setAviso(`"${destino}" ya tiene esa tarjeta.`);
+      setAviso({ texto: `"${destino}" ya tiene esa tarjeta.`, red: false });
       return false;
     }
     const { ok, data } = await escribir(
@@ -905,7 +922,7 @@ export default function AcademiaPIR() {
   const copiarMazo = async (origen, destino) => {
     const filas = copiasParaMazo(flashcards, origen, destino);
     if (filas.length === 0) {
-      setAviso(`"${destino}" ya tiene todas las tarjetas de "${origen}".`);
+      setAviso({ texto: `"${destino}" ya tiene todas las tarjetas de "${origen}".`, red: false });
       return false;
     }
     const { ok, data } = await escribir(
@@ -1139,7 +1156,7 @@ export default function AcademiaPIR() {
   return (
     <div style={{ ...styles.app, background: ajustes.fondo, zoom: ajustes.escala, "--font-display": fuenteActual.familia }}>
       {contenido}
-      {aviso && <BarraAviso texto={aviso} onCerrar={() => setAviso(null)} />}
+      {aviso && <BarraAviso texto={aviso.texto} />}
       {mostrarAjustes && <AjustesPanel ajustes={ajustes} setAjustes={setAjustes} onClose={() => setMostrarAjustes(false)} />}
       {insigniaDesbloqueada && <InsigniaDesbloqueadaModal insignia={insigniaDesbloqueada} onClose={() => setInsigniaDesbloqueada(null)} />}
     </div>
@@ -1151,25 +1168,48 @@ export default function AcademiaPIR() {
 // `pantallaCompleta`), porque el Banco y el Ranking son pantallas completas y
 // un aviso por debajo no se vería — que es justo el caso de la estrella de
 // favoritos, que vive dentro del Banco.
-function BarraAviso({ texto, onCerrar }) {
+//
+// Llevaba una X para cerrarlo y **no se podía pulsar**: la barra va pegada al
+// borde de arriba, y desde el icono de la pantalla de inicio ese borde es la
+// hora y la batería de iOS, que se dibujan encima. De ahí el `env(
+// safe-area-inset-top)`: la barra sigue arriba, pero su contenido empieza por
+// debajo del hueco del sistema. (`index.html` ya trae `viewport-fit=cover`,
+// que es lo que hace que esa variable valga algo.)
+//
+// Y la X se cambia por **recargar**, que es lo que de verdad hacía falta: con
+// la conexión caída cerrar el aviso no arregla nada, mientras que volver a
+// cargar reintenta la carga entera — y lo que se hubiera respondido no se
+// pierde, porque la tirada y lo pendiente de subir viven en `localStorage`.
+// No hace falta botón de cerrar: el aviso se retira él solo cuando vuelve la
+// red o cuando la siguiente escritura sale bien.
+function BarraAviso({ texto }) {
   return (
     <div
       role="alert"
       style={{
         position: "fixed", left: 0, right: 0, top: 0, zIndex: 60,
-        background: ACENTO, color: "#fff", padding: "12px 14px",
-        display: "flex", alignItems: "flex-start", gap: 10,
+        background: ACENTO, color: "#fff",
+        paddingTop: "max(12px, env(safe-area-inset-top))",
+        paddingBottom: 12, paddingLeft: 14, paddingRight: 14,
+        display: "flex", alignItems: "center", gap: 12,
         fontSize: 13.5, lineHeight: 1.45, boxShadow: SOMBRA_SUAVE,
       }}
     >
       <span style={{ flex: 1 }}>{texto}</span>
       <button
         type="button"
-        onClick={onCerrar}
-        aria-label="Cerrar aviso"
-        style={{ background: "none", border: "none", color: "#fff", cursor: "pointer", padding: 0, flexShrink: 0 }}
+        onClick={() => window.location.reload()}
+        aria-label="Recargar la página"
+        style={{
+          display: "flex", alignItems: "center", gap: 6, flexShrink: 0,
+          minHeight: 40, padding: "0 13px", borderRadius: 999,
+          background: "rgba(255,255,255,0.16)", border: "1.5px solid rgba(255,255,255,0.7)",
+          color: "#fff", cursor: "pointer", fontSize: 13.5, fontWeight: 600,
+          fontFamily: "inherit",
+        }}
       >
-        <X size={17} />
+        <RotateCw size={16} />
+        Recargar
       </button>
     </div>
   );
