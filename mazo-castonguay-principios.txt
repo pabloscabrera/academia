@@ -1,0 +1,19 @@
+Características de las personas asociadas a mejoría registrada tras el tratamiento.;Pronóstico
+Nivel socioeconómico.;Pronóstico
+Estilo de apego.;Pronóstico
+Expectativas.;Pronóstico
+Motivación.;Pronóstico
+Gravedad del caso.;Pronóstico
+Características de las personas presentes ANTES de la terapia y que interaccionan con ella, influyendo en su eficacia.;Moderadores
+Preferencias del paciente.;Moderadores
+Estilo de afrontamiento.;Moderadores
+Conductas presentes durante la terapia que influyen en los resultados.;Proceso
+Participación activa.;Proceso
+Resistencia a la terapia.;Proceso
+Elementos de la interacción entre el cliente y el clínico que facilitan o interfieren con el cambio.;Relación terapéutica
+Empatía del terapeuta.;Relación terapéutica
+Capacidad de reparar rupturas en la alianza.;Relación terapéutica
+Uso adecuado de autorrevelaciones.;Relación terapéutica
+Conductas del clínico llevadas a cabo durante el tratamiento que facilitan o dificultan el cambio.;Intervenciones del terapeuta
+Que el clínico sea más o menos flexible.;Intervenciones del terapeuta
+Que el clínico dé y reciba feedback preciso del desarrollo de la terapia.;Intervenciones del terapeuta
