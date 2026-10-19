@@ -1,0 +1,30 @@
+Vulnerabilidad;Neuroticismo
+Ansiedad;Neuroticismo
+Depresión;Neuroticismo
+Hostilidad;Neuroticismo
+Impulsividad;Neuroticismo
+Ansiedad social;Neuroticismo
+Cordialidad;Extraversión
+Asertividad;Extraversión
+Gregarismo;Extraversión
+Actividad;Extraversión
+Búsqueda de emociones;Extraversión
+Emociones positivas;Extraversión
+Sensibilidad a los demás;Afabilidad
+Confianza;Afabilidad
+Franqueza;Afabilidad
+Altruismo;Afabilidad
+Actitud conciliadora;Afabilidad
+Modestia;Afabilidad
+Competencia;Tesón
+Orden;Tesón
+Sentido del deber;Tesón
+Necesidad de logro;Tesón
+Autodisciplina;Tesón
+Deliberación;Tesón
+Fantasía;Apertura mental
+Estética;Apertura mental
+Sentimientos;Apertura mental
+Valores;Apertura mental
+Ideas;Apertura mental
+Acción;Apertura mental
