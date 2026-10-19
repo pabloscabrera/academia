@@ -1,0 +1,21 @@
+Individual;Inicial/Final
+Involucrar en el tratamiento.;Inicial
+Determinar capacidad de mentalización.;Inicial
+Formulación del caso.;Inicial
+Análisis de relaciones interpersonales y su dinámica.;Inicial
+Análisis del relato de situaciones sociales y emocionales.;Inicial
+Análisis de patrones de relaciones.;Inicial
+Escucha activa.;Inicial
+Individual y grupal;Media
+Fomentar la mentalización.;Media
+Afianzar relación terapéutica.;Media
+Clarificación y desafío.;Media
+Reaseguración y empatía.;Media
+«Párate, escucha, mira».;Media
+«Párate, rebobina, explora».;Media
+Interpretación en términos causales de lo que refiere el cliente.;Media
+Contraste con percepción del terapeuta sobre la relación.;Media
+Preparar el final de la terapia atendiendo a sensación de pérdida.;Final
+Mantenimiento de logros.;Final
+Mentalización de la transferencia y contratransferencia.;Final
+Análisis de los patrones actuales de relaciones.;Final
