@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Activity, Award, Baby, BookOpen, Brain, Check, ChevronDown, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, Flag, Flame, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, Palette, Pencil, Percent, Plus, Puzzle, RotateCw, Search, Settings, Sparkles, Star, Stethoscope, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
+import { Activity, Award, Baby, BookOpen, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, Flag, Flame, Folder, FolderOpen, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, MoreHorizontal, Palette, Pencil, Percent, Plus, Puzzle, RotateCw, Search, Settings, Sparkles, Star, Stethoscope, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
 import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, sinFila, filasPendientes, CONFLICTO } from "./colaPendientes";
@@ -16,6 +16,7 @@ import {
   ESPERA_MAX_CARGA_MS, ESPERA_MAX_ESCRITURA_MS, conTiempoLimite, mensajeDeCarga,
   hayQueDescargar, selloDeFilas,
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar,
+  carpetaDeMazo, carpetasExistentes, agruparMazosEnCarpetas,
   mediaCalificacionPorTarjeta, estadoCuadricula,
 } from "./logica";
 
@@ -953,17 +954,24 @@ export default function AcademiaPIR() {
   // El estilo es decorativo, así que si falla no se avisa ni se deshace nada:
   // el mazo se queda con el aspecto que tuviera. Lo que no puede pasar es que
   // un fallo aquí impida renombrar o borrar, de ahí que vaya por su cuenta.
-  const guardarEstiloMazo = async (mazo, { icono, color }) => {
-    const fila = { mazo, icono: icono || null, color: color || null };
+  // Guarda los ajustes de un mazo: su icono, su color y su carpeta. Los tres
+  // van en la misma fila de `mazos_estilo`, así que esta función los escribe
+  // juntos — y por eso quien solo cambia la carpeta tiene que pasar también el
+  // icono y el color que ya tenía, o los borraría sin querer.
+  const guardarEstiloMazo = async (mazo, { icono, color, carpeta }) => {
+    const nombreCarpeta = (carpeta || "").trim() || null;
+    const fila = { mazo, icono: icono || null, color: color || null, carpeta: nombreCarpeta };
     setEstilosMazo((prev) => {
       const sinEse = prev.filter((e) => e.mazo !== mazo);
-      return icono || color ? [...sinEse, fila] : sinEse;
+      return icono || color || nombreCarpeta ? [...sinEse, fila] : sinEse;
     });
-    const { ok } = !icono && !color
+    const { ok } = !icono && !color && !nombreCarpeta
       // Quitar las dos cosas es volver al aspecto por defecto: se borra la
       // fila en vez de dejarla con los dos campos a nulo.
-      ? await escribir(`Quitar el color de "${mazo}"`, supabase.from("mazos_estilo").delete().eq("mazo", mazo))
-      : await escribir(`Guardar el color de "${mazo}"`, supabase.from("mazos_estilo").upsert(fila, { onConflict: "user_id,mazo" }));
+      // Sin icono, sin color y sin carpeta no queda nada que guardar: se borra
+      // la fila en vez de dejarla con los tres campos a nulo.
+      ? await escribir(`Quitar los ajustes de "${mazo}"`, supabase.from("mazos_estilo").delete().eq("mazo", mazo))
+      : await escribir(`Guardar los ajustes de "${mazo}"`, supabase.from("mazos_estilo").upsert(fila, { onConflict: "user_id,mazo" }));
     return ok;
   };
 
@@ -4100,6 +4108,10 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
 
   const indiceEstilos = useMemo(() => indiceEstilosMazo(estilosMazo), [estilosMazo]);
 
+  // La raíz: las carpetas delante y los mazos sin carpeta detrás.
+  const agrupacion = useMemo(() => agruparMazosEnCarpetas(mazos, indiceEstilos), [mazos, indiceEstilos]);
+  const nombresCarpetas = useMemo(() => carpetasExistentes(mazos, indiceEstilos), [mazos, indiceEstilos]);
+
   const statsPorMazo = useMemo(() => {
     const m = new Map();
     flashcards.forEach((f) => {
@@ -4121,6 +4133,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
   const [mostrandoLista, setMostrandoLista] = useState(true); // listado de mazos vs. vista de repaso
   const [vista, setVista] = useState("repaso"); // dentro de un mazo: repasar o ver estadísticas
   const [mazoActivo, setMazoActivo] = useState(null); // mazo exacto seleccionado para repasar/ver
+  const [carpetaAbierta, setCarpetaAbierta] = useState(null); // carpeta que se está mirando en la rejilla
 
   // Si borras el mazo que tenías abierto, deja de existir en `mazos` —
   // vuelve al listado en vez de quedarse mirando un mazo fantasma.
@@ -4152,6 +4165,14 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
   // "porcentajes y DSM-5" a la vez casi siempre daría cero tarjetas, y lo
   // que se quiere es repasar esos dos temas juntos.
   const [etiquetasActivas, setEtiquetasActivas] = useState([]);
+
+  // Una carpeta existe solo mientras algún mazo la nombre, así que al sacar el
+  // último (o renombrarlo, o borrarlo) hay que salir de ella: si no, te
+  // quedarías mirando una rejilla vacía sin saber por qué.
+  useEffect(() => {
+    if (carpetaAbierta && !nombresCarpetas.includes(carpetaAbierta)) setCarpetaAbierta(null);
+  }, [carpetaAbierta, nombresCarpetas]);
+
 
   // Para elegir al etiquetar se ofrecen TODAS las que ya usas (da igual el
   // mazo); para filtrar, solo las que existen en lo que estás mirando.
@@ -4426,39 +4447,73 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     : flashcardsFiltradas;
 
   if (mostrandoLista) {
+    const mazosDeLaCarpeta = carpetaAbierta
+      ? (agrupacion.carpetas.find((c) => c.nombre === carpetaAbierta) || { mazos: [] }).mazos
+      : [];
+    // El mismo cuadro sirve en la raíz y dentro de una carpeta: lo único que
+    // cambia es de qué lista sale.
+    const cuadroDeMazo = (m) => {
+      const st = statsPorMazo.get(m) || { total: 0, pendientes: 0 };
+      return (
+        <FilaMazoEditable
+          key={m}
+          icono={Layers}
+          titulo={m}
+          subtitulo={`${st.total} tarjeta${st.total === 1 ? "" : "s"}`}
+          badge={st.pendientes > 0 ? st.pendientes : null}
+          onClick={() => seleccionarMazo(m)}
+          onRenombrar={(nuevo) => onRenombrarMazo(m, nuevo)}
+          onBorrar={() => onEliminarMazo(m)}
+          onCopiar={(destino) => onCopiarMazo(m, destino)}
+          avisoBorrado={`¿Borrar "${m}" y sus ${st.total} tarjeta${st.total === 1 ? "" : "s"}? No se puede deshacer.`}
+          otrosMazos={mazos.filter((x) => x !== m)}
+          estilo={estiloDeMazo(indiceEstilos, m, CLAVES_ICONO_MAZO, CLAVES_COLOR_MAZO)}
+          onEstilo={onEstiloMazo ? (nuevo) => onEstiloMazo(m, nuevo) : null}
+          carpeta={carpetaDeMazo(indiceEstilos, m)}
+          carpetasDisponibles={nombresCarpetas}
+        />
+      );
+    };
     return (
       <div>
         <SectionTitle
           title="Flashcards"
-          subtitle={`Tu mazo privado — ${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"} en ${mazos.length} mazo${mazos.length === 1 ? "" : "s"}`}
+          subtitle={`Tu mazo privado — ${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"} en ${mazos.length} mazo${mazos.length === 1 ? "" : "s"}${nombresCarpetas.length > 0 ? ` y ${nombresCarpetas.length} carpeta${nombresCarpetas.length === 1 ? "" : "s"}` : ""}`}
         />
-        <FilaNavegacion
-          icono={Layers}
-          titulo="Todas las tarjetas"
-          subtitulo={`${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"} en total`}
-          badge={pendientesTotal > 0 ? `${pendientesTotal} hoy` : null}
-          onClick={seleccionarTodas}
-        />
-        {mazos.map((m) => {
-          const s = statsPorMazo.get(m) || { total: 0, pendientes: 0 };
-          return (
-            <FilaMazoEditable
-              key={m}
+        {carpetaAbierta ? (
+          <>
+            <button type="button" onClick={() => setCarpetaAbierta(null)} style={{ ...styles.btnSecondary, marginBottom: 12 }}>
+              <ChevronLeft size={15} /> Carpetas
+            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <FolderOpen size={18} color={TINTA_SUAVE} />
+              <span style={{ fontSize: 16, fontWeight: 700, color: TINTA, fontFamily: "var(--font-display)" }}>{carpetaAbierta}</span>
+            </div>
+            <div style={styles.rejillaMazos}>{mazosDeLaCarpeta.map(cuadroDeMazo)}</div>
+          </>
+        ) : (
+          <>
+            <FilaNavegacion
               icono={Layers}
-              titulo={m}
-              subtitulo={`${s.total} tarjeta${s.total === 1 ? "" : "s"}`}
-              badge={s.pendientes > 0 ? `${s.pendientes} hoy` : null}
-              onClick={() => seleccionarMazo(m)}
-              onRenombrar={(nuevo) => onRenombrarMazo(m, nuevo)}
-              onBorrar={() => onEliminarMazo(m)}
-              onCopiar={(destino) => onCopiarMazo(m, destino)}
-              avisoBorrado={`¿Borrar "${m}" y sus ${s.total} tarjeta${s.total === 1 ? "" : "s"}? No se puede deshacer.`}
-              otrosMazos={mazos.filter((x) => x !== m)}
-              estilo={estiloDeMazo(indiceEstilos, m, CLAVES_ICONO_MAZO, CLAVES_COLOR_MAZO)}
-              onEstilo={onEstiloMazo ? (nuevo) => onEstiloMazo(m, nuevo) : null}
+              titulo="Todas las tarjetas"
+              subtitulo={`${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"} en total`}
+              badge={pendientesTotal > 0 ? `${pendientesTotal} hoy` : null}
+              onClick={seleccionarTodas}
             />
-          );
-        })}
+            <div style={styles.rejillaMazos}>
+              {agrupacion.carpetas.map((c) => (
+                <TarjetaCarpeta
+                  key={c.nombre}
+                  nombre={c.nombre}
+                  mazos={c.mazos.length}
+                  pendientes={c.mazos.reduce((n, m) => n + ((statsPorMazo.get(m) || {}).pendientes || 0), 0)}
+                  onClick={() => setCarpetaAbierta(c.nombre)}
+                />
+              ))}
+              {agrupacion.sueltos.map(cuadroDeMazo)}
+            </div>
+          </>
+        )}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
           <NuevaFlashcard onAdd={onAdd} textoBoton="Nuevo mazo" etiquetasExistentes={todasLasEtiquetas} />
           <ImportarFlashcards onAddBulk={onAddBulk} etiquetasExistentes={todasLasEtiquetas} />
@@ -4695,12 +4750,19 @@ function SelectorEstiloMazo({ icono, color, onGuardar, onCerrar }) {
   );
 }
 
-function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onRenombrar, onBorrar, onCopiar, avisoBorrado, otrosMazos, estilo, onEstilo }) {
-  const [modo, setModo] = useState("normal"); // normal | editando | copiando | confirmando | estilo
+// Un mazo, dibujado como cuadro de la rejilla. Tocarlo lo abre; el botón de
+// los tres puntos despliega debajo las acciones (renombrar, carpeta, copiar,
+// color, borrar), que antes vivían como iconos sueltos en la fila. En un
+// cuadro de ~110 px no caben cinco iconos y además compiten con el gesto
+// principal, que es entrar.
+function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onRenombrar, onBorrar, onCopiar, avisoBorrado, otrosMazos, estilo, onEstilo, carpeta, carpetasDisponibles }) {
+  const [modo, setModo] = useState("normal"); // normal | acciones | editando | copiando | confirmando | estilo | carpeta
   const [nombreNuevo, setNombreNuevo] = useState(titulo);
   const [procesando, setProcesando] = useState(false);
   const destinos = otrosMazos || [];
   const [destinoElegido, setDestinoElegido] = useState(destinos[0] || "");
+  const [carpetaElegida, setCarpetaElegida] = useState(carpeta || "");
+  const [carpetaNueva, setCarpetaNueva] = useState("");
   // Sin estilo guardado se dibuja como siempre: el icono que llegue por prop y
   // el color de tinta por defecto.
   const est = estilo || { icono: null, color: null };
@@ -4709,7 +4771,7 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onR
 
   if (modo === "editando") {
     return (
-      <Card style={{ marginBottom: 8, padding: 12 }}>
+      <Card style={{ ...styles.panelMazo, marginBottom: 8, padding: 12 }}>
         <input
           value={nombreNuevo}
           onChange={(e) => setNombreNuevo(e.target.value)}
@@ -4745,7 +4807,7 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onR
   // —van por el mismo `grupo_id`—, así que da igual en cuál la repases.
   if (modo === "copiando") {
     return (
-      <Card style={{ marginBottom: 8, padding: 12 }}>
+      <Card style={{ ...styles.panelMazo, marginBottom: 8, padding: 12 }}>
         <FieldLabel>Copiar las tarjetas de "{titulo}" a:</FieldLabel>
         <select value={destinoElegido} onChange={(e) => setDestinoElegido(e.target.value)} style={{ ...styles.input, marginTop: 6, marginBottom: 8 }}>
           {destinos.map((d) => <option key={d} value={d}>{d}</option>)}
@@ -4775,7 +4837,7 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onR
 
   if (modo === "confirmando") {
     return (
-      <Card style={{ marginBottom: 8, padding: 12, borderColor: ACENTO }}>
+      <Card style={{ ...styles.panelMazo, marginBottom: 8, padding: 12, borderColor: ACENTO }}>
         <p style={{ fontSize: 13, color: TINTA, margin: "0 0 10px" }}>{avisoBorrado}</p>
         <div style={{ display: "flex", gap: 8 }}>
           <button
@@ -4794,42 +4856,118 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onR
 
   if (modo === "estilo") {
     return (
-      <SelectorEstiloMazo
-        icono={est.icono}
-        color={est.color}
-        onGuardar={(nuevo) => onEstilo(nuevo)}
-        onCerrar={() => setModo("normal")}
-      />
+      <div style={styles.panelMazo}>
+        <SelectorEstiloMazo
+          icono={est.icono}
+          color={est.color}
+          // El icono y el color se guardan junto con la carpeta que ya
+          // tuviera: las tres cosas son una sola fila, y mandar solo dos
+          // borraría la tercera.
+          onGuardar={(nuevo) => onEstilo({ ...nuevo, carpeta })}
+          onCerrar={() => setModo("normal")}
+        />
+      </div>
+    );
+  }
+
+  // Meter el mazo en una carpeta es escribir un nombre al lado, nada más: no
+  // se mueve ninguna tarjeta ni cambia nada de lo guardado. Por eso se puede
+  // sacar y volver a meter sin consecuencias.
+  if (modo === "carpeta") {
+    const disponibles = carpetasDisponibles || [];
+    const destino = (carpetaNueva.trim() || carpetaElegida || "").trim();
+    return (
+      <Card style={{ ...styles.panelMazo, marginBottom: 8, padding: 12 }}>
+        <FieldLabel>Carpeta de "{titulo}"</FieldLabel>
+        {disponibles.length > 0 && (
+          <select value={carpetaElegida} onChange={(e) => { setCarpetaElegida(e.target.value); setCarpetaNueva(""); }} style={{ ...styles.input, marginTop: 6, marginBottom: 8 }}>
+            <option value="">Sin carpeta</option>
+            {disponibles.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
+        <input
+          value={carpetaNueva}
+          onChange={(e) => setCarpetaNueva(e.target.value)}
+          placeholder={disponibles.length > 0 ? "…o escribe una carpeta nueva" : "Nombre de la carpeta"}
+          style={{ ...styles.input, marginBottom: 8 }}
+        />
+        <p style={{ fontSize: 12, color: TINTA_TENUE, margin: "0 0 10px", lineHeight: 1.45 }}>
+          Las tarjetas no se tocan: la carpeta solo cambia dónde se ve el mazo. Una carpeta existe mientras algún mazo esté en ella.
+        </p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            disabled={procesando}
+            onClick={async () => {
+              setProcesando(true);
+              const ok = await onEstilo({ icono: est.icono, color: est.color, carpeta: destino });
+              setProcesando(false);
+              if (ok !== false) { setCarpetaNueva(""); setModo("normal"); }
+            }}
+            style={{ ...styles.btnPrimary, flex: 1, opacity: procesando ? 0.7 : 1 }}
+          >
+            {procesando ? "Guardando..." : destino ? `Mover a "${destino}"` : "Dejar sin carpeta"}
+          </button>
+          <button type="button" onClick={() => { setCarpetaElegida(carpeta || ""); setCarpetaNueva(""); setModo("normal"); }} style={styles.btnSecondary}>Cancelar</button>
+        </div>
+      </Card>
+    );
+  }
+
+  if (modo === "acciones") {
+    return (
+      <Card style={{ ...styles.panelMazo, marginBottom: 8, padding: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <span style={styles.filaCarpetaIcono}><IconoMazo size={17} color={tinte || undefined} /></span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={styles.filaCarpetaTitulo}>{titulo}</div>
+            {carpeta && <div style={styles.filaCarpetaSubtitulo}>En "{carpeta}"</div>}
+          </div>
+          <button type="button" onClick={() => setModo("normal")} aria-label="Cerrar" style={styles.filaCarpetaIconBtn}><X size={16} /></button>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button type="button" onClick={() => setModo("carpeta")} style={styles.btnSecondary}><Folder size={14} /> Carpeta</button>
+          <button type="button" onClick={() => setModo("editando")} style={styles.btnSecondary}><Pencil size={14} /> Renombrar</button>
+          {onEstilo && <button type="button" onClick={() => setModo("estilo")} style={styles.btnSecondary}><Palette size={14} /> Color e icono</button>}
+          {destinos.length > 0 && <button type="button" onClick={() => setModo("copiando")} style={styles.btnSecondary}><Copy size={14} /> Copiar a otro</button>}
+          <button type="button" onClick={() => setModo("confirmando")} style={{ ...styles.btnSecondary, color: ACENTO, borderColor: ACENTO }}><Trash2 size={14} /> Borrar</button>
+        </div>
+      </Card>
     );
   }
 
   return (
-    <div style={{ ...styles.filaCarpeta, ...(tinte ? { borderLeft: `4px solid ${tinte}` } : {}) }}>
-      <button type="button" onClick={onClick} style={styles.filaCarpetaBoton}>
-        <span style={styles.filaCarpetaIcono}><IconoMazo size={17} color={tinte || undefined} /></span>
-        <span style={{ flex: 1, minWidth: 0 }}>
-          <div style={styles.filaCarpetaTitulo}>{titulo}</div>
-          {subtitulo && <div style={styles.filaCarpetaSubtitulo}>{subtitulo}</div>}
+    <div style={{ position: "relative" }}>
+      <button
+        type="button"
+        onClick={onClick}
+        style={{ ...styles.tarjetaMazo, ...(tinte ? { borderColor: tinte } : {}) }}
+      >
+        <span style={{ ...styles.tarjetaMazoIcono, ...(tinte ? { color: tinte } : {}) }}>
+          <IconoMazo size={21} color={tinte || undefined} />
         </span>
-        {badge != null && <span style={styles.filaCarpetaBadge}>{badge}</span>}
+        <span style={styles.tarjetaMazoTitulo}>{titulo}</span>
+        {subtitulo && <span style={styles.tarjetaMazoSub}>{subtitulo}</span>}
       </button>
-      {onEstilo && (
-        <button type="button" onClick={() => setModo("estilo")} title="Color e icono" style={styles.filaCarpetaIconBtn}>
-          <Palette size={14} />
-        </button>
-      )}
-      <button type="button" onClick={() => setModo("editando")} title="Renombrar" style={styles.filaCarpetaIconBtn}>
-        <Pencil size={14} />
+      {badge != null && <span style={styles.tarjetaMazoBadge}>{badge}</span>}
+      <button type="button" onClick={() => setModo("acciones")} aria-label={`Opciones de ${titulo}`} style={styles.tarjetaMazoMas}>
+        <MoreHorizontal size={15} />
       </button>
-      {destinos.length > 0 && (
-        <button type="button" onClick={() => setModo("copiando")} title="Copiar a otro mazo" style={styles.filaCarpetaIconBtn}>
-          <Copy size={14} />
-        </button>
-      )}
-      <button type="button" onClick={() => setModo("confirmando")} title="Borrar" style={styles.filaCarpetaIconBtn}>
-        <Trash2 size={14} />
+    </div>
+  );
+}
+
+// Una carpeta en la rejilla. No tiene acciones propias porque no es una
+// entidad: se crea al meter el primer mazo y desaparece al sacar el último.
+function TarjetaCarpeta({ nombre, mazos, pendientes, onClick }) {
+  return (
+    <div style={{ position: "relative" }}>
+      <button type="button" onClick={onClick} style={{ ...styles.tarjetaMazo, background: "#F7F4EC" }}>
+        <span style={{ ...styles.tarjetaMazoIcono, background: "#EAE4D6" }}><Folder size={21} /></span>
+        <span style={styles.tarjetaMazoTitulo}>{nombre}</span>
+        <span style={styles.tarjetaMazoSub}>{mazos} mazo{mazos === 1 ? "" : "s"}</span>
       </button>
-      <ChevronRight size={16} color="#9B9689" />
+      {pendientes > 0 && <span style={styles.tarjetaMazoBadge}>{pendientes}</span>}
     </div>
   );
 }
@@ -5441,6 +5579,24 @@ const styles = {
   filaCarpetaSubtitulo: { fontSize: 12, color: "#9B9689", marginTop: 2 },
   filaCarpetaBadge: { fontSize: 12, fontWeight: 700, color: TINTA_SUAVE, background: "#F2EFE7", borderRadius: 20, padding: "4px 10px", whiteSpace: "nowrap" },
   filaCarpetaIconBtn: { display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 8, border: "none", background: "none", color: "#9B9689", cursor: "pointer", flexShrink: 0 },
+  // Rejilla de mazos y carpetas. Tres por fila, como se pidió, y con un tope
+  // de ancho para que en un iPad no se conviertan en tres cuadrados enormes:
+  // "grandes tmp excesivo para verlas bien".
+  rejillaMazos: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, maxWidth: 560, marginBottom: 12 },
+  // Esquinas muy redondeadas y cuadrado, al estilo de los iconos de iOS. El
+  // cuadrado es lo que hace que la rejilla se lea como una rejilla y no como
+  // una lista de tres columnas.
+  tarjetaMazo: { position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 7, aspectRatio: "1 / 1", width: "100%", padding: "10px 8px", background: "#fff", border: `1.5px solid ${RAYA}`, borderRadius: 22, cursor: "pointer", font: "inherit", color: "inherit", textAlign: "center", overflow: "hidden" },
+  tarjetaMazoIcono: { display: "flex", alignItems: "center", justifyContent: "center", width: 42, height: 42, borderRadius: 13, background: "#F2EFE7", color: "#8A5A9E", flexShrink: 0 },
+  // Dos líneas y corta: "Técnicas de entrevista" no cabe de una, y dejar que
+  // crezca descuadraría la fila entera.
+  tarjetaMazoTitulo: { fontSize: 12.5, fontWeight: 700, color: TINTA, lineHeight: 1.25, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", width: "100%" },
+  tarjetaMazoSub: { fontSize: 10.5, color: "#9B9689", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", width: "100%" },
+  tarjetaMazoBadge: { position: "absolute", top: 7, left: 7, fontSize: 10, fontWeight: 700, color: "#fff", background: ACENTO, borderRadius: 20, padding: "2px 7px", whiteSpace: "nowrap" },
+  tarjetaMazoMas: { position: "absolute", top: 3, right: 3, display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 9, border: "none", background: "none", color: "#9B9689", cursor: "pointer" },
+  // Los paneles (renombrar, copiar, carpeta, borrar) viven DENTRO de la
+  // rejilla, así que ocupan la fila entera en vez de meterse en un tercio.
+  panelMazo: { gridColumn: "1 / -1" },
   rachaDiasChip: { display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: TINTA_TENUE, background: "#F2EFE7", borderRadius: 20, padding: "5px 10px" },
   rachaDiasChipActiva: { color: ACENTO, background: ACENTO_SUAVE },
   modalOverlay: { position: "fixed", inset: 0, background: "rgba(30,28,24,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 },

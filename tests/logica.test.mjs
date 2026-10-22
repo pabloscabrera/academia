@@ -9,6 +9,7 @@ import {
   hayQueDescargar, selloDeFilas, MAX_EDAD_CACHE_MS,
   preguntaUsable, bancoUsable,
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar,
+  carpetaDeMazo, carpetasExistentes, agruparMazosEnCarpetas,
   mediaCalificacionPorTarjeta, bucketDeMedia, estadoCuadricula,
 } from "../src/logica.js";
 
@@ -567,7 +568,7 @@ test("filas basura no entran en el índice", () => {
 test("al renombrar, el estilo sigue al mazo", () => {
   const e = indiceEstilosMazo([{ mazo: "Viejo", icono: "Brain", color: "oro" }]);
   assert.deepEqual(estiloTrasRenombrar(e, "Viejo", "Nuevo"),
-    { mover: true, estilo: { icono: "Brain", color: "oro" } });
+    { mover: true, estilo: { icono: "Brain", color: "oro", carpeta: null } });
 });
 
 test("al fundir dos mazos manda el estilo del destino", () => {
@@ -682,4 +683,65 @@ test("se usa grupo_id cuando lo hay, igual que el progreso", () => {
   const m = mediaCalificacionPorTarjeta([rep("g1", 5, "2026-10-01T00:00:00Z")]);
   const prog = { g1: { ultima_revision: "2026-10-01T00:00:00Z" } };
   assert.equal(estadoCuadricula({ id: "otra", grupo_id: "g1" }, prog, m), 5);
+});
+
+
+// ---------------------------------------------------------------------------
+// Carpetas de mazos
+// ---------------------------------------------------------------------------
+const estilosDePrueba = () => indiceEstilosMazo([
+  { mazo: "Young", carpeta: "Psicoterapias" },
+  { mazo: "TDC", carpeta: "Psicoterapias", icono: "Brain", color: "acento" },
+  { mazo: "Big Five", carpeta: "Personalidad" },
+  { mazo: "Porcentajes", icono: "Percent" },
+  { mazo: "Proyectivas", carpeta: "   " },
+]);
+
+test("carpetaDeMazo devuelve la carpeta, y null cuando no hay o está en blanco", () => {
+  const e = estilosDePrueba();
+  assert.equal(carpetaDeMazo(e, "Young"), "Psicoterapias");
+  // Tiene fila (icono) pero no carpeta.
+  assert.equal(carpetaDeMazo(e, "Porcentajes"), null);
+  // Una carpeta de solo espacios no es una carpeta: si no, saldría un cajón
+  // sin nombre en la pantalla.
+  assert.equal(carpetaDeMazo(e, "Proyectivas"), null);
+  // Sin fila ninguna.
+  assert.equal(carpetaDeMazo(e, "Inexistente"), null);
+});
+
+test("las carpetas salen de los mazos que existen, no de una lista aparte", () => {
+  const e = estilosDePrueba();
+  assert.deepEqual(carpetasExistentes(["Young", "TDC", "Big Five", "Porcentajes"], e), ["Personalidad", "Psicoterapias"]);
+  // Y si el último mazo de una carpeta ya no está, la carpeta desaparece sola:
+  // esto es lo que garantiza que no haya carpetas vacías que limpiar.
+  assert.deepEqual(carpetasExistentes(["Young", "TDC", "Porcentajes"], e), ["Psicoterapias"]);
+  assert.deepEqual(carpetasExistentes([], e), []);
+});
+
+test("agruparMazosEnCarpetas: carpetas ordenadas delante, lo suelto detrás", () => {
+  const e = estilosDePrueba();
+  const { carpetas, sueltos } = agruparMazosEnCarpetas(["Porcentajes", "TDC", "Big Five", "Young", "Proyectivas"], e);
+  assert.deepEqual(carpetas.map((c) => c.nombre), ["Personalidad", "Psicoterapias"]);
+  assert.deepEqual(carpetas[0].mazos, ["Big Five"]);
+  // Dentro de la carpeta también van en orden alfabético.
+  assert.deepEqual(carpetas[1].mazos, ["TDC", "Young"]);
+  // "Proyectivas" tiene carpeta en blanco, así que cuenta como suelto.
+  assert.deepEqual(sueltos, ["Porcentajes", "Proyectivas"]);
+});
+
+test("sin ninguna carpeta puesta, todo queda suelto y la pantalla se ve como antes", () => {
+  const e = indiceEstilosMazo([{ mazo: "Young", icono: "Brain" }]);
+  const { carpetas, sueltos } = agruparMazosEnCarpetas(["Young", "TDC"], e);
+  assert.deepEqual(carpetas, []);
+  assert.deepEqual(sueltos, ["TDC", "Young"]);
+});
+
+test("la carpeta sigue al mazo al renombrarlo", () => {
+  // `estiloTrasRenombrar` mueve la fila entera, así que la carpeta viaja con
+  // el icono y el color sin tener que acordarse de ella aparte.
+  const e = estilosDePrueba();
+  const { mover, estilo } = estiloTrasRenombrar(e, "TDC", "TDC de Linehan");
+  assert.equal(mover, true);
+  assert.equal(estilo.carpeta, "Psicoterapias");
+  assert.equal(estilo.icono, "Brain");
 });

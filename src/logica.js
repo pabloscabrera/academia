@@ -852,7 +852,7 @@ export function indiceEstilosMazo(filas) {
   const m = new Map();
   for (const f of filas || []) {
     if (!f || typeof f.mazo !== "string") continue;
-    m.set(f.mazo, { icono: f.icono || null, color: f.color || null });
+    m.set(f.mazo, { icono: f.icono || null, color: f.color || null, carpeta: f.carpeta || null });
   }
   return m;
 }
@@ -870,6 +870,60 @@ export function estiloDeMazo(estilos, mazo, iconosValidos, coloresValidos) {
 // es renombrarlo para que coincida con el destino, así que el destino puede ya
 // tener estilo propio: en ese caso manda el suyo y el del origen se descarta,
 // que es lo que uno espera al fundir dos mazos en uno.
+// ---------------------------------------------------------------------------
+// Carpetas de mazos
+// ---------------------------------------------------------------------------
+// Con trece mazos la lista vertical ya no se lee de un vistazo, así que se
+// agrupan. La decisión que mantiene esto simple —y que es lo que lo separa del
+// intento de carpetas que hubo que retirar— es que **una carpeta no es una
+// entidad**: es el nombre que un mazo lleva escrito al lado, en la misma fila
+// de `mazos_estilo` donde ya viven su icono y su color.
+//
+// De ahí salen tres cosas gratis, sin código que las vigile:
+//   · no puede haber carpetas vacías (existen porque algún mazo las nombra),
+//   · no hay nada que "mover" ni que borrar en cascada,
+//   · quitar la carpeta de un mazo es escribir null, no deshacer una relación.
+//
+// Y lo que NO se hace, a propósito: ni carpetas dentro de carpetas, ni un mazo
+// en dos carpetas. Un solo nivel, como se pidió.
+export function carpetaDeMazo(estilos, mazo) {
+  const guardado = (estilos && estilos.get && estilos.get(mazo)) || null;
+  const nombre = guardado && typeof guardado.carpeta === "string" ? guardado.carpeta.trim() : "";
+  return nombre || null;
+}
+
+// Las carpetas que de verdad hay ahora mismo, sacadas de los mazos que existen
+// y no de una lista aparte: si el último mazo de "Psicoterapias" se borra o
+// sale de ella, la carpeta deja de aparecer sin que nadie la limpie.
+export function carpetasExistentes(mazos, estilos) {
+  const vistas = new Set();
+  for (const m of mazos || []) {
+    const c = carpetaDeMazo(estilos, m);
+    if (c) vistas.add(c);
+  }
+  return [...vistas].sort((a, b) => a.localeCompare(b, "es"));
+}
+
+// Devuelve lo que la pantalla pinta en la raíz: primero las carpetas (en orden
+// alfabético, con sus mazos dentro también ordenados) y después los mazos que
+// no están en ninguna. Las carpetas van delante a propósito: son los cajones, y
+// lo suelto es lo que todavía no has colocado.
+export function agruparMazosEnCarpetas(mazos, estilos) {
+  const lista = [...(mazos || [])].sort((a, b) => a.localeCompare(b, "es"));
+  const porCarpeta = new Map();
+  const sueltos = [];
+  for (const m of lista) {
+    const c = carpetaDeMazo(estilos, m);
+    if (!c) { sueltos.push(m); continue; }
+    if (!porCarpeta.has(c)) porCarpeta.set(c, []);
+    porCarpeta.get(c).push(m);
+  }
+  const carpetas = [...porCarpeta.entries()]
+    .map(([nombre, suyos]) => ({ nombre, mazos: suyos }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  return { carpetas, sueltos };
+}
+
 export function estiloTrasRenombrar(estilos, viejo, nuevo) {
   const origen = (estilos && estilos.get && estilos.get(viejo)) || null;
   const destinoYaTiene = !!(estilos && estilos.get && estilos.get(nuevo));
