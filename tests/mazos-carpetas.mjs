@@ -4,7 +4,7 @@
 //   npm run build && node tests/mazos-carpetas.mjs
 //
 // Qué se comprueba, y por qué cada cosa:
-//  1. A 390 px (un iPhone) la rejilla tiene EXACTAMENTE tres columnas y la
+//  1. A 390 px (un iPhone) la rejilla tiene EXACTAMENTE cinco columnas y la
 //     página no se ensancha. Lo segundo ya pasó una vez con la cabecera y la
 //     comprobación que vale es `scrollWidth`, no mirar la captura.
 //  2. Los cuadros son cuadrados, con esquinas muy redondeadas, y miden lo
@@ -67,28 +67,38 @@ await esperar(1200);
 const rejilla = pagina.locator("div").filter({ hasText: /^/ }).locator("css=div").first();
 const medidas = await pagina.evaluate(() => {
   const g = [...document.querySelectorAll("div")].find((d) => getComputedStyle(d).display === "grid"
-    && getComputedStyle(d).gridTemplateColumns.split(" ").length === 3);
+    && getComputedStyle(d).gridTemplateColumns.split(" ").length === 5);
   if (!g) return null;
   const cs = getComputedStyle(g);
-  const cuadro = g.querySelector("button");
+  const cuadro = g.querySelector("[data-cuadro]");
   const r = cuadro.getBoundingClientRect();
   const rc = getComputedStyle(cuadro);
+  // El nombre va DEBAJO del cuadro, fuera: hay que ver que se pinta y que no
+  // queda recortado, que es justo lo que pasaba metiéndolo dentro.
+  const etiqueta = g.querySelector("button > span:last-child");
+  const re = etiqueta.getBoundingClientRect();
   return {
     columnas: cs.gridTemplateColumns.split(" ").length,
     hijos: g.children.length,
     ancho: Math.round(r.width), alto: Math.round(r.height),
     radio: rc.borderRadius,
+    nombre: etiqueta.textContent.trim(),
+    altoNombre: Math.round(re.height),
     desbordaPagina: document.documentElement.scrollWidth > window.innerWidth,
   };
 });
 console.log("1) rejilla a 390 px ->", JSON.stringify(medidas));
 if (!medidas) fallos.push("[390] no se encontró ninguna rejilla de 3 columnas");
 else {
-  if (medidas.columnas !== 3) fallos.push(`[390] la rejilla tiene ${medidas.columnas} columnas, no 3`);
+  if (medidas.columnas !== 5) fallos.push(`[390] la rejilla tiene ${medidas.columnas} columnas, no 5`);
   if (medidas.desbordaPagina) fallos.push("[390] la página se ensancha con la rejilla puesta");
   if (Math.abs(medidas.ancho - medidas.alto) > 2) fallos.push(`[390] los cuadros no son cuadrados: ${medidas.ancho}x${medidas.alto}`);
-  if (medidas.ancho < 80) fallos.push(`[390] los cuadros miden ${medidas.ancho} px, demasiado poco`);
+  // Cinco por fila en un iPhone deja cuadros pequeños a la fuerza; lo que se
+  // vigila es que sigan siendo tocables (Apple recomienda 44 px de lado).
+  if (medidas.ancho < 44) fallos.push(`[390] los cuadros miden ${medidas.ancho} px: por debajo del mínimo tocable`);
   if (parseInt(medidas.radio, 10) < 14) fallos.push(`[390] las esquinas no están redondeadas: ${medidas.radio}`);
+  if (!medidas.nombre) fallos.push("[390] el cuadro no enseña el nombre del mazo");
+  if (medidas.altoNombre < 11) fallos.push(`[390] el nombre queda recortado: ${medidas.altoNombre} px de alto`);
 }
 
 // Siete mazos, de los que TRES están en carpetas (Young y TDC en
@@ -102,7 +112,7 @@ await pagina.getByRole("button", { name: /Psicoterapias/ }).first().click();
 await esperar(700);
 const dentro = await pagina.evaluate(() => {
   const g = [...document.querySelectorAll("div")].find((d) => getComputedStyle(d).display === "grid"
-    && getComputedStyle(d).gridTemplateColumns.split(" ").length === 3);
+    && getComputedStyle(d).gridTemplateColumns.split(" ").length === 5);
   return g ? [...g.querySelectorAll("button")].map((b) => b.textContent.trim()).filter((t) => t) : [];
 });
 console.log("3) dentro de la carpeta ->", JSON.stringify(dentro));
@@ -132,24 +142,64 @@ await pagina.setViewportSize({ width: 820, height: 1100 });
 await esperar(800);
 const iPad = await pagina.evaluate(() => {
   const g = [...document.querySelectorAll("div")].find((d) => getComputedStyle(d).display === "grid"
-    && getComputedStyle(d).gridTemplateColumns.split(" ").length === 3);
+    && getComputedStyle(d).gridTemplateColumns.split(" ").length === 5);
   if (!g) return null;
-  const r = g.querySelector("button").getBoundingClientRect();
-  return { columnas: 3, ancho: Math.round(r.width), desborda: document.documentElement.scrollWidth > window.innerWidth };
+  const r = g.querySelector("[data-cuadro]").getBoundingClientRect();
+  return { columnas: getComputedStyle(g).gridTemplateColumns.split(" ").length, ancho: Math.round(r.width), desborda: document.documentElement.scrollWidth > window.innerWidth };
 });
 console.log("5) a 820 px ->", JSON.stringify(iPad));
 if (!iPad) fallos.push("[820] desapareció la rejilla");
 else {
-  if (iPad.ancho > 220) fallos.push(`[820] los cuadros se van a ${iPad.ancho} px, demasiado grandes`);
+  if (iPad.columnas !== 5) fallos.push(`[820] la rejilla tiene ${iPad.columnas} columnas, no 5`);
+  if (iPad.ancho > 200) fallos.push(`[820] los cuadros se van a ${iPad.ancho} px, demasiado grandes`);
   if (iPad.desborda) fallos.push("[820] la página se ensancha");
 }
 
+// ---------- 6: ARRASTRAR un mazo suelto hasta una carpeta ----------
+// Esto es lo que no se puede comprobar de ninguna otra forma: que el pulsado
+// largo coja el cuadro, que soltarlo sobre la carpeta escriba, y que un toque
+// normal NO arrastre.
 await pagina.setViewportSize({ width: 390, height: 844 });
-await esperar(500);
-await pagina.screenshot({ path: "/tmp/claude-0/-home-user-academia/0947b359-e7dd-5296-82b5-d7a3a69581c4/scratchpad/rejilla.png" });
+await pagina.goto(`http://localhost:${PUERTO}/`, { waitUntil: "domcontentloaded" });
+await esperar(5000);
+await pagina.getByRole("button", { name: /Flashcards/i }).first().click();
+await esperar(1200);
+enviados.length = 0;
+const centro = async (patron) => {
+  const c = await pagina.getByRole("button", { name: patron }).first().boundingBox();
+  return { x: c.x + c.width / 2, y: c.y + c.height / 2 };
+};
+const origen = await centro(/^Porcentajes/);
+const carpeta = await centro(/^Psicoterapias/);
+await pagina.mouse.move(origen.x, origen.y);
+await pagina.mouse.down();
+await esperar(500);                       // el pulsado largo son 320 ms
+for (let i = 1; i <= 6; i++) {
+  await pagina.mouse.move(origen.x + (carpeta.x - origen.x) * i / 6, origen.y + (carpeta.y - origen.y) * i / 6);
+  await esperar(40);
+}
+const hayFantasma = await pagina.evaluate(() => !!document.querySelector('div[style*="translate(-50%, -50%)"]'));
+await pagina.mouse.up();
+await esperar(1200);
+console.log("6) arrastre -> fantasma:", hayFantasma, "| enviado:", JSON.stringify(enviados));
+if (!hayFantasma) fallos.push("[arrastre] no apareció el cuadro que sigue al dedo");
+const trasArrastrar = enviados.length ? JSON.parse(enviados[enviados.length - 1].cuerpo || "{}") : null;
+if (!trasArrastrar || trasArrastrar.mazo !== "Porcentajes" || trasArrastrar.carpeta !== "Psicoterapias") {
+  fallos.push(`[arrastre] soltar sobre la carpeta no la guardó: ${JSON.stringify(trasArrastrar)}`);
+}
+await pagina.screenshot({ path: "/tmp/claude-0/-home-user-academia/0947b359-e7dd-5296-82b5-d7a3a69581c4/scratchpad/rejilla5.png" });
+
+// Y un toque normal sigue abriendo el mazo, no arrastra.
+enviados.length = 0;
+await pagina.getByRole("button", { name: /^TBM/ }).first().click();
+await esperar(900);
+const abrioElMazo = (await pagina.locator("body").innerText()).includes("Empezar repaso");
+console.log("6) toque normal abre el mazo ->", abrioElMazo, "| escrituras:", enviados.length);
+if (!abrioElMazo) fallos.push("[toque] un toque normal ya no abre el mazo");
+if (enviados.length > 0) fallos.push("[toque] un toque normal escribió en mazos_estilo");
 
 console.log("ERRORES JS:", errores.length ? errores.join(" | ") : "ninguno");
 await navegador.close(); servidor.kill();
 if (errores.length) fallos.push("errores de JavaScript: " + errores.join(" | "));
 if (fallos.length) { console.error("\nFALLA:\n- " + fallos.join("\n- ")); process.exit(1); }
-console.log("\nOK: tres columnas, cuadros cuadrados y redondeados, carpetas que se abren y ajustes que no se pisan.");
+console.log("\nOK: cinco columnas sin desbordar, carpetas que se abren, arrastre que guarda y toque que no arrastra.");

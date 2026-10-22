@@ -10,6 +10,7 @@ import {
   preguntaUsable, bancoUsable,
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar,
   carpetaDeMazo, carpetasExistentes, agruparMazosEnCarpetas,
+  interpretarSoltar, FUERA_DE_CARPETAS,
   mediaCalificacionPorTarjeta, bucketDeMedia, estadoCuadricula,
 } from "../src/logica.js";
 
@@ -744,4 +745,19 @@ test("la carpeta sigue al mazo al renombrarlo", () => {
   assert.equal(mover, true);
   assert.equal(estilo.carpeta, "Psicoterapias");
   assert.equal(estilo.icono, "Brain");
+});
+
+test("soltar un mazo: solo se escribe cuando de verdad cambia de sitio", () => {
+  // Entra en una carpeta.
+  assert.deepEqual(interpretarSoltar("Psicoterapias", null), { cambia: true, carpeta: "Psicoterapias" });
+  // Sale de ella.
+  assert.deepEqual(interpretarSoltar(FUERA_DE_CARPETAS, "Psicoterapias"), { cambia: true, carpeta: null });
+  // Cambia de carpeta.
+  assert.deepEqual(interpretarSoltar("Personalidad", "Psicoterapias"), { cambia: true, carpeta: "Personalidad" });
+  // Las dos que NO deben escribir nada: soltarlo donde ya estaba...
+  assert.deepEqual(interpretarSoltar("Psicoterapias", "Psicoterapias"), { cambia: false, carpeta: "Psicoterapias" });
+  // ...y sacar fuera uno que ya estaba fuera.
+  assert.deepEqual(interpretarSoltar(FUERA_DE_CARPETAS, null), { cambia: false, carpeta: null });
+  // Soltar en el aire (sin destino) tampoco toca nada.
+  assert.deepEqual(interpretarSoltar(null, "Psicoterapias"), { cambia: false, carpeta: "Psicoterapias" });
 });

@@ -96,7 +96,12 @@ await esperar(4500);
 await pagina.getByRole("button", { name: /Flashcards/i }).first().click();
 await esperar(1200);
 const antes = await pagina.locator("body").innerText();
-await pagina.locator('button[title="Copiar a otro mazo"]').first().click();
+// Desde que los mazos se pintan como cuadros en rejilla, las acciones viven
+// dentro del panel de los tres puntos: en un cuadro de 65 px no cabían cinco
+// iconos. Ver el punto de la rejilla en CLAUDE.md.
+await pagina.getByRole("button", { name: /Opciones de Porcentajes/ }).first().click();
+await esperar(500);
+await pagina.getByRole("button", { name: /Copiar a otro/ }).first().click();
 await esperar(700);
 await pagina.locator("select").first().selectOption("Young").catch(() => {});
 await esperar(300);
@@ -107,7 +112,9 @@ console.log("3) INSERTADO:", JSON.stringify(insertados));
 console.log("3) lista de mazos antes:", JSON.stringify(antes.match(/Porcentajes\n[^\n]*|Young\n[^\n]*/g)));
 console.log("3) lista de mazos después:", JSON.stringify(despues.match(/Porcentajes\n[^\n]*|Young\n[^\n]*/g)));
 // 4) Quitar el color de un mazo con la tabla sin crear.
-await pagina.locator('button[title="Color e icono"]').first().click();
+await pagina.getByRole("button", { name: /Opciones de Porcentajes/ }).first().click();
+await esperar(500);
+await pagina.getByRole("button", { name: /Color e icono/ }).first().click();
 await esperar(700);
 await pagina.getByRole("button", { name: /^Guardar$/ }).first().click();
 await esperar(2500);

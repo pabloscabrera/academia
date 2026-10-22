@@ -924,6 +924,23 @@ export function agruparMazosEnCarpetas(mazos, estilos) {
   return { carpetas, sueltos };
 }
 
+// Arrastrar un mazo y soltarlo: qué significa cada sitio donde se puede
+// soltar. Es lo único del arrastre que se puede probar sin navegador, y
+// conviene tenerlo aparte porque las dos reglas que evitan escrituras inútiles
+// son fáciles de olvidar: soltar un mazo en la carpeta donde YA está, y
+// soltar fuera uno que ya estaba fuera, no cambian nada y no deben mandar
+// nada al servidor.
+export const FUERA_DE_CARPETAS = "__fuera__";
+
+export function interpretarSoltar(destino, carpetaActual) {
+  const actual = carpetaActual || null;
+  if (!destino) return { cambia: false, carpeta: actual };
+  if (destino === FUERA_DE_CARPETAS) return { cambia: actual !== null, carpeta: null };
+  const limpio = destino.trim();
+  if (!limpio) return { cambia: false, carpeta: actual };
+  return { cambia: limpio !== actual, carpeta: limpio };
+}
+
 export function estiloTrasRenombrar(estilos, viejo, nuevo) {
   const origen = (estilos && estilos.get && estilos.get(viejo)) || null;
   const destinoYaTiene = !!(estilos && estilos.get && estilos.get(nuevo));
