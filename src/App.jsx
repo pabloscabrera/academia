@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Activity, Award, Baby, BookOpen, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, Flag, Flame, Folder, FolderOpen, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, MoreHorizontal, Palette, Pencil, Percent, Plus, Puzzle, RotateCw, Search, Settings, Sparkles, Star, Stethoscope, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
+import { Activity, Award, Baby, BookOpen, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, Flag, Flame, Folder, FolderOpen, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, MoreHorizontal, FolderPlus, Palette, Pencil, Percent, Plus, Puzzle, RotateCw, Search, Settings, Sparkles, Star, Stethoscope, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
 import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, sinFila, filasPendientes, CONFLICTO } from "./colaPendientes";
@@ -16,7 +16,7 @@ import {
   ESPERA_MAX_CARGA_MS, ESPERA_MAX_ESCRITURA_MS, conTiempoLimite, mensajeDeCarga,
   hayQueDescargar, selloDeFilas,
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar,
-  carpetaDeMazo, carpetasExistentes, agruparMazosEnCarpetas,
+  carpetaDeMazo, carpetasExistentes, agruparMazosEnCarpetas, interpretarSoltar, FUERA_DE_CARPETAS,
   mediaCalificacionPorTarjeta, estadoCuadricula,
 } from "./logica";
 
@@ -4165,6 +4165,13 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
   // "porcentajes y DSM-5" a la vez casi siempre daría cero tarjetas, y lo
   // que se quiere es repasar esos dos temas juntos.
   const [etiquetasActivas, setEtiquetasActivas] = useState([]);
+  // Arrastrar un mazo a una carpeta. `arrastrando` solo existe para PINTAR
+  // (el cuadro que sigue al dedo y la carpeta resaltada); lo que decide vive
+  // en el ref, porque los oyentes del documento se vuelven a registrar a
+  // mitad del gesto y con estado se quedarían con una copia vieja.
+  const [arrastrando, setArrastrando] = useState(null); // { mazo, x, y }
+  const [destinoHover, setDestinoHover] = useState(null);
+  const arrastreRef = useRef({ mazo: null, inicio: null, activo: false, temporizador: null, destino: null, finEn: 0 });
 
   // Una carpeta existe solo mientras algún mazo la nombre, así que al sacar el
   // último (o renombrarlo, o borrarlo) hay que salir de ella: si no, te
@@ -4172,6 +4179,101 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
   useEffect(() => {
     if (carpetaAbierta && !nombresCarpetas.includes(carpetaAbierta)) setCarpetaAbierta(null);
   }, [carpetaAbierta, nombresCarpetas]);
+
+  const soltarArrastre = () => {
+    const a = arrastreRef.current;
+    if (a.temporizador) clearTimeout(a.temporizador);
+    const eraActivo = a.activo;
+    arrastreRef.current = { mazo: null, inicio: null, activo: false, temporizador: null, destino: null, finEn: eraActivo ? Date.now() : 0 };
+    setArrastrando(null);
+    setDestinoHover(null);
+  };
+
+  // Un solo par de oyentes en el documento, no en cada cuadro: el dedo se sale
+  // del cuadro en cuanto empieza a moverse.
+  useEffect(() => {
+    const mover = (e) => {
+      const a = arrastreRef.current;
+      if (!a.mazo) return;
+      if (!a.activo) {
+        // Todavía esperando el pulsado largo: si el dedo se mueve, esto era un
+        // desplazamiento de la página y no un arrastre.
+        const d = Math.hypot(e.clientX - a.inicio.x, e.clientY - a.inicio.y);
+        if (d > TOLERANCIA_ARRASTRE) soltarArrastre();
+        return;
+      }
+      setArrastrando({ mazo: a.mazo, x: e.clientX, y: e.clientY });
+      // Qué hay debajo del dedo. `closest` sube hasta la carpeta o la zona de
+      // sacar; el cuadro que se arrastra no es destino de nada.
+      const bajo = document.elementFromPoint(e.clientX, e.clientY);
+      const zona = bajo && bajo.closest ? bajo.closest("[data-destino]") : null;
+      const destino = zona ? zona.getAttribute("data-destino") : null;
+      a.destino = destino;
+      setDestinoHover(destino);
+    };
+    const levantar = async () => {
+      const a = arrastreRef.current;
+      const mazo = a.mazo, destino = a.destino, activo = a.activo;
+      soltarArrastre();
+      if (!activo || !mazo) return;
+      const { cambia, carpeta } = interpretarSoltar(destino, carpetaDeMazo(indiceEstilos, mazo));
+      if (!cambia || !onEstiloMazo) return;
+      const est = estiloDeMazo(indiceEstilos, mazo, CLAVES_ICONO_MAZO, CLAVES_COLOR_MAZO);
+      await onEstiloMazo(mazo, { ...est, carpeta });
+    };
+    document.addEventListener("pointermove", mover);
+    document.addEventListener("pointerup", levantar);
+    document.addEventListener("pointercancel", soltarArrastre);
+    return () => {
+      document.removeEventListener("pointermove", mover);
+      document.removeEventListener("pointerup", levantar);
+      document.removeEventListener("pointercancel", soltarArrastre);
+    };
+  }, [indiceEstilos, onEstiloMazo]);
+
+  // Mientras se arrastra hay que impedir que la página se desplace. Funciona
+  // porque el pulsado largo exige el dedo quieto: cuando esto se registra, el
+  // navegador todavía no ha empezado a desplazar, y entonces sí deja
+  // cancelarlo. La dependencia es el booleano y no el objeto, o se añadiría y
+  // se quitaría el oyente en cada movimiento del dedo.
+  useEffect(() => {
+    if (!arrastrando) return undefined;
+    const bloquear = (e) => e.preventDefault();
+    document.addEventListener("touchmove", bloquear, { passive: false });
+    return () => document.removeEventListener("touchmove", bloquear);
+  }, [!!arrastrando]);
+
+  const empezarArrastre = (mazo) => (e) => {
+    if (e.button != null && e.button !== 0) return;
+    const a = arrastreRef.current;
+    if (a.temporizador) clearTimeout(a.temporizador);
+    a.mazo = mazo;
+    a.inicio = { x: e.clientX, y: e.clientY };
+    a.activo = false;
+    a.destino = null;
+    a.temporizador = setTimeout(() => {
+      arrastreRef.current.activo = true;
+      setArrastrando({ mazo, x: a.inicio.x, y: a.inicio.y });
+    }, MS_PARA_ARRASTRAR);
+  };
+
+  // Tras soltar, el navegador manda además un click sobre el cuadro: sin esto
+  // acabar de arrastrar te metería dentro del mazo.
+  const abrirSiNoArrastraba = (mazo) => () => {
+    if (Date.now() - arrastreRef.current.finEn < 350) return;
+    seleccionarMazo(mazo);
+  };
+
+  // Crear una carpeta es poner su nombre a los mazos elegidos. Hace falta al
+  // menos uno: una carpeta vacía no existiría al recargar, porque las
+  // carpetas no se guardan en ningún sitio aparte.
+  const crearCarpeta = async (nombre, elegidos) => {
+    for (const m of elegidos) {
+      const est = estiloDeMazo(indiceEstilos, m, CLAVES_ICONO_MAZO, CLAVES_COLOR_MAZO);
+      await onEstiloMazo(m, { ...est, carpeta: nombre });
+    }
+    return true;
+  };
 
 
   // Para elegir al etiquetar se ofrecen TODAS las que ya usas (da igual el
@@ -4461,7 +4563,9 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
           titulo={m}
           subtitulo={`${st.total} tarjeta${st.total === 1 ? "" : "s"}`}
           badge={st.pendientes > 0 ? st.pendientes : null}
-          onClick={() => seleccionarMazo(m)}
+          onClick={abrirSiNoArrastraba(m)}
+          onPointerDown={onEstiloMazo ? empezarArrastre(m) : null}
+          atenuada={arrastrando && arrastrando.mazo === m}
           onRenombrar={(nuevo) => onRenombrarMazo(m, nuevo)}
           onBorrar={() => onEliminarMazo(m)}
           onCopiar={(destino) => onCopiarMazo(m, destino)}
@@ -4489,10 +4593,16 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
               <FolderOpen size={18} color={TINTA_SUAVE} />
               <span style={{ fontSize: 16, fontWeight: 700, color: TINTA, fontFamily: "var(--font-display)" }}>{carpetaAbierta}</span>
             </div>
+            {arrastrando && (
+              <div data-destino={FUERA_DE_CARPETAS} style={{ ...styles.zonaSacar, ...(destinoHover === FUERA_DE_CARPETAS ? styles.destinoActivo : {}) }}>
+                <FolderOpen size={16} /> Suelta aquí para sacarlo de "{carpetaAbierta}"
+              </div>
+            )}
             <div style={styles.rejillaMazos}>{mazosDeLaCarpeta.map(cuadroDeMazo)}</div>
           </>
         ) : (
           <>
+            {onEstiloMazo && mazos.length > 0 && <NuevaCarpeta mazos={mazos} carpetaDe={(m) => carpetaDeMazo(indiceEstilos, m)} onCrear={crearCarpeta} />}
             <FilaNavegacion
               icono={Layers}
               titulo="Todas las tarjetas"
@@ -4508,6 +4618,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
                   mazos={c.mazos.length}
                   pendientes={c.mazos.reduce((n, m) => n + ((statsPorMazo.get(m) || {}).pendientes || 0), 0)}
                   onClick={() => setCarpetaAbierta(c.nombre)}
+                  resaltada={destinoHover === c.nombre}
                 />
               ))}
               {agrupacion.sueltos.map(cuadroDeMazo)}
@@ -4518,6 +4629,12 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
           <NuevaFlashcard onAdd={onAdd} textoBoton="Nuevo mazo" etiquetasExistentes={todasLasEtiquetas} />
           <ImportarFlashcards onAddBulk={onAddBulk} etiquetasExistentes={todasLasEtiquetas} />
         </div>
+        {arrastrando && (
+          <div style={{ ...styles.tarjetaMazoFantasma, left: arrastrando.x, top: arrastrando.y }}>
+            <div style={{ ...styles.tarjetaMazoCuadro, width: 40, margin: "0 auto 5px", borderRadius: 12 }}><Layers size={16} /></div>
+            <div style={{ ...styles.tarjetaMazoTitulo, fontSize: 10.5 }}>{arrastrando.mazo}</div>
+          </div>
+        )}
       </div>
     );
   }
@@ -4750,12 +4867,18 @@ function SelectorEstiloMazo({ icono, color, onGuardar, onCerrar }) {
   );
 }
 
+// Cuánto hay que mantener el dedo quieto sobre un cuadro para "cogerlo". Es
+// lo que permite que la página siga desplazándose con normalidad: si el dedo
+// se mueve antes de ese tiempo, es un desplazamiento y el arrastre se cancela.
+const MS_PARA_ARRASTRAR = 320;
+const TOLERANCIA_ARRASTRE = 10;
+
 // Un mazo, dibujado como cuadro de la rejilla. Tocarlo lo abre; el botón de
 // los tres puntos despliega debajo las acciones (renombrar, carpeta, copiar,
 // color, borrar), que antes vivían como iconos sueltos en la fila. En un
 // cuadro de ~110 px no caben cinco iconos y además compiten con el gesto
 // principal, que es entrar.
-function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onRenombrar, onBorrar, onCopiar, avisoBorrado, otrosMazos, estilo, onEstilo, carpeta, carpetasDisponibles }) {
+function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onPointerDown, atenuada, onRenombrar, onBorrar, onCopiar, avisoBorrado, otrosMazos, estilo, onEstilo, carpeta, carpetasDisponibles }) {
   const [modo, setModo] = useState("normal"); // normal | acciones | editando | copiando | confirmando | estilo | carpeta
   const [nombreNuevo, setNombreNuevo] = useState(titulo);
   const [procesando, setProcesando] = useState(false);
@@ -4941,13 +5064,14 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onR
       <button
         type="button"
         onClick={onClick}
-        style={{ ...styles.tarjetaMazo, ...(tinte ? { borderColor: tinte } : {}) }}
+        onPointerDown={onPointerDown}
+        title={subtitulo ? `${titulo} — ${subtitulo}` : titulo}
+        style={{ ...styles.tarjetaMazo, ...(atenuada ? styles.tarjetaMazoArrastrada : {}) }}
       >
-        <span style={{ ...styles.tarjetaMazoIcono, ...(tinte ? { color: tinte } : {}) }}>
-          <IconoMazo size={21} color={tinte || undefined} />
+        <span data-cuadro style={{ ...styles.tarjetaMazoCuadro, ...(tinte ? { borderColor: tinte, color: tinte } : {}) }}>
+          <IconoMazo size={20} color={tinte || undefined} />
         </span>
         <span style={styles.tarjetaMazoTitulo}>{titulo}</span>
-        {subtitulo && <span style={styles.tarjetaMazoSub}>{subtitulo}</span>}
       </button>
       {badge != null && <span style={styles.tarjetaMazoBadge}>{badge}</span>}
       <button type="button" onClick={() => setModo("acciones")} aria-label={`Opciones de ${titulo}`} style={styles.tarjetaMazoMas}>
@@ -4957,15 +5081,81 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onR
   );
 }
 
+// Crear una carpeta = ponerle su nombre a unos cuantos mazos. **Pide al menos
+// uno a propósito**: las carpetas no se guardan en ningún sitio aparte, existen
+// porque algún mazo las nombra, así que una carpeta vacía no sobreviviría a
+// recargar. Decirlo aquí es mejor que dejar que se cree y desaparezca sola.
+function NuevaCarpeta({ mazos, carpetaDe, onCrear }) {
+  const [abierto, setAbierto] = useState(false);
+  const [nombre, setNombre] = useState("");
+  const [elegidos, setElegidos] = useState([]);
+  const [guardando, setGuardando] = useState(false);
+
+  if (!abierto) {
+    return (
+      <button type="button" onClick={() => setAbierto(true)} style={{ ...styles.btnSecondary, marginBottom: 10 }}>
+        <FolderPlus size={15} /> Nueva carpeta
+      </button>
+    );
+  }
+
+  const alternar = (m) => setElegidos((prev) => (prev.includes(m) ? prev.filter((x) => x !== m) : [...prev, m]));
+  const listo = nombre.trim() && elegidos.length > 0 && !guardando;
+
+  return (
+    <Card style={{ marginBottom: 10, padding: 12 }}>
+      <FieldLabel>Nombre de la carpeta</FieldLabel>
+      <input value={nombre} onChange={(e) => setNombre(e.target.value)} autoFocus placeholder="Psicoterapias" style={{ ...styles.input, marginTop: 6, marginBottom: 10 }} />
+      <FieldLabel>¿Qué mazos van dentro?</FieldLabel>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "8px 0 10px" }}>
+        {mazos.map((m) => {
+          const suya = carpetaDe(m);
+          return (
+            <button
+              key={m}
+              type="button"
+              onClick={() => alternar(m)}
+              title={suya ? `Ahora está en "${suya}"` : "Ahora está suelto"}
+              style={{ ...styles.chipEtiqueta, ...(elegidos.includes(m) ? styles.chipEtiquetaActiva : {}) }}
+            >
+              {m}
+            </button>
+          );
+        })}
+      </div>
+      <p style={{ fontSize: 12, color: TINTA_TENUE, margin: "0 0 10px", lineHeight: 1.45 }}>
+        Luego puedes arrastrar más mazos a la carpeta, o sacarlos. Las tarjetas no se tocan.
+      </p>
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          type="button"
+          disabled={!listo}
+          onClick={async () => {
+            setGuardando(true);
+            await onCrear(nombre.trim(), elegidos);
+            setGuardando(false);
+            setNombre(""); setElegidos([]); setAbierto(false);
+          }}
+          style={{ ...styles.btnPrimary, flex: 1, opacity: listo ? 1 : 0.6 }}
+        >
+          {guardando ? "Creando..." : "Crear carpeta"}
+        </button>
+        <button type="button" onClick={() => { setAbierto(false); setNombre(""); setElegidos([]); }} style={styles.btnSecondary}>Cancelar</button>
+      </div>
+    </Card>
+  );
+}
+
 // Una carpeta en la rejilla. No tiene acciones propias porque no es una
 // entidad: se crea al meter el primer mazo y desaparece al sacar el último.
-function TarjetaCarpeta({ nombre, mazos, pendientes, onClick }) {
+function TarjetaCarpeta({ nombre, mazos, pendientes, onClick, resaltada }) {
   return (
-    <div style={{ position: "relative" }}>
-      <button type="button" onClick={onClick} style={{ ...styles.tarjetaMazo, background: "#F7F4EC" }}>
-        <span style={{ ...styles.tarjetaMazoIcono, background: "#EAE4D6" }}><Folder size={21} /></span>
+    <div style={{ position: "relative" }} data-destino={nombre}>
+      <button type="button" onClick={onClick} title={`${nombre} — ${mazos} mazo${mazos === 1 ? "" : "s"}`} style={styles.tarjetaMazo}>
+        <span data-cuadro style={{ ...styles.tarjetaMazoCuadro, background: "#EFEADC", ...(resaltada ? styles.destinoActivo : {}) }}>
+          <Folder size={20} />
+        </span>
         <span style={styles.tarjetaMazoTitulo}>{nombre}</span>
-        <span style={styles.tarjetaMazoSub}>{mazos} mazo{mazos === 1 ? "" : "s"}</span>
       </button>
       {pendientes > 0 && <span style={styles.tarjetaMazoBadge}>{pendientes}</span>}
     </div>
@@ -5582,18 +5772,31 @@ const styles = {
   // Rejilla de mazos y carpetas. Tres por fila, como se pidió, y con un tope
   // de ancho para que en un iPad no se conviertan en tres cuadrados enormes:
   // "grandes tmp excesivo para verlas bien".
-  rejillaMazos: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, maxWidth: 560, marginBottom: 12 },
+  // `minmax(0, 1fr)` y no `1fr` a secas: con `1fr` la columna no puede
+  // encoger por debajo del contenido, así que un nombre largo ensancha la
+  // página entera — el mismo fallo que tuvo la cabecera en su día.
+  rejillaMazos: { display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 8, maxWidth: 820, marginBottom: 12 },
   // Esquinas muy redondeadas y cuadrado, al estilo de los iconos de iOS. El
   // cuadrado es lo que hace que la rejilla se lea como una rejilla y no como
   // una lista de tres columnas.
-  tarjetaMazo: { position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 7, aspectRatio: "1 / 1", width: "100%", padding: "10px 8px", background: "#fff", border: `1.5px solid ${RAYA}`, borderRadius: 22, cursor: "pointer", font: "inherit", color: "inherit", textAlign: "center", overflow: "hidden" },
-  tarjetaMazoIcono: { display: "flex", alignItems: "center", justifyContent: "center", width: 42, height: 42, borderRadius: 13, background: "#F2EFE7", color: "#8A5A9E", flexShrink: 0 },
+  // Como en la pantalla de inicio de iOS: el cuadro redondeado es SOLO el
+  // icono y el nombre va debajo, fuera. Con cinco por fila el cuadro mide
+  // ~63 px en un iPhone y ahí dentro no cabe ningún nombre — la primera
+  // versión los metía dentro y el texto quedaba recortado sin que ninguna
+  // comprobación lo dijera; se vio mirando la captura.
+  tarjetaMazo: { display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: "100%", padding: 0, background: "none", border: "none", cursor: "pointer", font: "inherit", color: "inherit", textAlign: "center" },
+  tarjetaMazoCuadro: { display: "flex", alignItems: "center", justifyContent: "center", aspectRatio: "1 / 1", width: "100%", background: "#fff", border: `1.5px solid ${RAYA}`, borderRadius: 18, color: "#8A5A9E" },
   // Dos líneas y corta: "Técnicas de entrevista" no cabe de una, y dejar que
   // crezca descuadraría la fila entera.
-  tarjetaMazoTitulo: { fontSize: 12.5, fontWeight: 700, color: TINTA, lineHeight: 1.25, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", width: "100%" },
-  tarjetaMazoSub: { fontSize: 10.5, color: "#9B9689", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", width: "100%" },
-  tarjetaMazoBadge: { position: "absolute", top: 7, left: 7, fontSize: 10, fontWeight: 700, color: "#fff", background: ACENTO, borderRadius: 20, padding: "2px 7px", whiteSpace: "nowrap" },
-  tarjetaMazoMas: { position: "absolute", top: 3, right: 3, display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 9, border: "none", background: "none", color: "#9B9689", cursor: "pointer" },
+  tarjetaMazoTitulo: { fontSize: 10, fontWeight: 600, color: TINTA, lineHeight: 1.25, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", width: "100%", wordBreak: "break-word" },
+  tarjetaMazoBadge: { position: "absolute", top: -4, left: -4, fontSize: 9, fontWeight: 700, color: "#fff", background: ACENTO, borderRadius: 20, padding: "1px 5px", whiteSpace: "nowrap" },
+  tarjetaMazoMas: { position: "absolute", top: -6, right: -6, display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: 8, border: "none", background: "none", color: "#9B9689", cursor: "pointer" },
+  // El cuadro mientras se arrastra, y el hueco que deja detrás.
+  tarjetaMazoFantasma: { position: "fixed", zIndex: 70, pointerEvents: "none", width: 86, padding: "8px 6px", background: "#fff", border: `1.5px solid ${RAYA_FUERTE}`, borderRadius: 18, boxShadow: "0 10px 24px rgba(30,28,24,0.22)", textAlign: "center", transform: "translate(-50%, -50%) scale(1.06)", opacity: 0.95 },
+  tarjetaMazoArrastrada: { opacity: 0.35 },
+  // La carpeta (o la zona de sacar) sobre la que estás soltando.
+  destinoActivo: { borderColor: ACENTO, background: ACENTO_SUAVE },
+  zonaSacar: { gridColumn: "1 / -1", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "14px 10px", border: `2px dashed ${RAYA_FUERTE}`, borderRadius: 16, color: TINTA_SUAVE, fontSize: 13, fontWeight: 700, marginBottom: 10 },
   // Los paneles (renombrar, copiar, carpeta, borrar) viven DENTRO de la
   // rejilla, así que ocupan la fila entera en vez de meterse en un tercio.
   panelMazo: { gridColumn: "1 / -1" },
