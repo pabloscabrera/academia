@@ -367,6 +367,13 @@ export function mensajeDeEscritura(error, queIba = "") {
   if (codigo === "42501" || /row-level security|permission denied|not authorized/i.test(texto)) {
     return di("el servidor no deja guardarlo (permisos de la base de datos). Esto lo tiene que mirar Pablo.");
   }
+  // PGRST204: la columna EXISTE, pero PostgREST (la capa REST de Supabase)
+  // sigue con el esquema de antes en memoria. Pasa justo después de ejecutar
+  // una migración y se arregla solo, así que no es lo mismo que "falta algo":
+  // decirlo como tal mandaría a mirar la base de datos cuando ya está bien.
+  if (codigo === "PGRST204" || /schema cache/i.test(texto)) {
+    return di("la base de datos acaba de cambiar y el servidor aún no se ha enterado. Vuelve a intentarlo en un minuto.");
+  }
   // 42P01 tabla que no existe, 42703 columna que no existe: una migración que
   // está en el repositorio pero que nunca llegó a ejecutarse en Supabase.
   if (codigo === "42P01" || codigo === "42703" || /does not exist|no existe/i.test(texto)) {

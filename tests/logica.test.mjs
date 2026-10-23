@@ -11,6 +11,7 @@ import {
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar,
   carpetaDeMazo, carpetasExistentes, agruparMazosEnCarpetas,
   interpretarSoltar, FUERA_DE_CARPETAS,
+  mensajeDeEscritura,
   mediaCalificacionPorTarjeta, bucketDeMedia, estadoCuadricula,
 } from "../src/logica.js";
 
@@ -760,4 +761,16 @@ test("soltar un mazo: solo se escribe cuando de verdad cambia de sitio", () => {
   assert.deepEqual(interpretarSoltar(FUERA_DE_CARPETAS, null), { cambia: false, carpeta: null });
   // Soltar en el aire (sin destino) tampoco toca nada.
   assert.deepEqual(interpretarSoltar(null, "Psicoterapias"), { cambia: false, carpeta: "Psicoterapias" });
+});
+
+test("el esquema recién cambiado no se confunde con una migración sin ejecutar", () => {
+  // PostgREST contesta esto en los segundos siguientes a un `alter table`: la
+  // columna está, lo que falta es que recargue. Mandar a "mirar la base de
+  // datos" sería mandar a mirar algo que ya está bien.
+  const m = mensajeDeEscritura(
+    { code: "PGRST204", message: "Could not find the 'carpeta' column of 'mazos_estilo' in the schema cache" },
+    "Guardar los ajustes"
+  );
+  assert.match(m, /aún no se ha enterado/);
+  assert.doesNotMatch(m, /falta algo/);
 });
