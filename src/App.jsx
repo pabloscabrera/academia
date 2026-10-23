@@ -10,7 +10,7 @@ import {
   retencionGlobal, retencionPorSemana, retencionPorIntervalo, RETENCION_OBJETIVO,
   MAX_EDAD_TIRADA_MS, reconstruirTirada, agruparAciertos,
   cursosDeRuleta, elegirPreguntaRuleta, reconstruirRuleta,
-  calcularSM2, MAX_INTERVALO, dentroDelHorizonte, ordenarPorPrioridad, colaDeRepaso, reinsertarEnSesion,
+  calcularSM2, MAX_INTERVALO, dentroDelHorizonte, ordenarPorPrioridad, colaDeRepaso, barajarEnBloques, reinsertarEnSesion,
   mensajeDeEscritura, copiasParaMazo, copiaDeTarjeta,
   tarjetasDistintas, parsearEtiquetas, lunesDeLaSemana,
   ESPERA_MAX_CARGA_MS, ESPERA_MAX_ESCRITURA_MS, conTiempoLimite, mensajeDeCarga,
@@ -4415,7 +4415,12 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     // haber contestado nada daría exactamente el mismo orden.
     const lista = colaDeRepaso(flashcardsFiltradas, progresoPorId, hoy);
     const cantidad = Math.max(1, Math.min(numTarjetas || 1, lista.length));
-    setSesion(mezclarTemas(lista.slice(0, cantidad), temaDeTarjeta));
+    // El corte decide QUIÉNES entran (por `ultima_revision`, así que la rueda
+    // da la vuelta entera antes de repetir ninguna) y `barajarEnBloques`
+    // decide EN QUÉ ORDEN salen: sin eso, las que están al mismo nivel salían
+    // siempre en la misma secuencia y lo que se aprendía era el orden.
+    const elegidas = barajarEnBloques(lista.slice(0, cantidad), progresoPorId, hoy);
+    setSesion(mezclarTemas(elegidas, temaDeTarjeta));
     setIdx(0);
     setRevelada(false);
     setResumen(null);
