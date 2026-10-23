@@ -4562,7 +4562,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
           icono={Layers}
           titulo={m}
           subtitulo={`${st.total} tarjeta${st.total === 1 ? "" : "s"}`}
-          badge={st.pendientes > 0 ? st.pendientes : null}
+          badge={st.pendientes > 0 ? `${st.pendientes} hoy` : null}
           onClick={abrirSiNoArrastraba(m)}
           onPointerDown={onEstiloMazo ? empezarArrastre(m) : null}
           atenuada={arrastrando && arrastrando.mazo === m}
@@ -4598,7 +4598,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
                 <FolderOpen size={16} /> Suelta aquí para sacarlo de "{carpetaAbierta}"
               </div>
             )}
-            <div style={styles.rejillaMazos}>{mazosDeLaCarpeta.map(cuadroDeMazo)}</div>
+            {mazosDeLaCarpeta.map(cuadroDeMazo)}
           </>
         ) : (
           <>
@@ -4610,7 +4610,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
               badge={pendientesTotal > 0 ? `${pendientesTotal} hoy` : null}
               onClick={seleccionarTodas}
             />
-            <div style={styles.rejillaMazos}>
+            <>
               {agrupacion.carpetas.map((c) => (
                 <TarjetaCarpeta
                   key={c.nombre}
@@ -4622,7 +4622,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
                 />
               ))}
               {agrupacion.sueltos.map(cuadroDeMazo)}
-            </div>
+            </>
           </>
         )}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
@@ -4631,8 +4631,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
         </div>
         {arrastrando && (
           <div style={{ ...styles.tarjetaMazoFantasma, left: arrastrando.x, top: arrastrando.y }}>
-            <div style={{ ...styles.tarjetaMazoCuadro, width: 40, margin: "0 auto 5px", borderRadius: 12 }}><Layers size={16} /></div>
-            <div style={{ ...styles.tarjetaMazoTitulo, fontSize: 10.5 }}>{arrastrando.mazo}</div>
+            {arrastrando.mazo}
           </div>
         )}
       </div>
@@ -4894,7 +4893,7 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
 
   if (modo === "editando") {
     return (
-      <Card style={{ ...styles.panelMazo, marginBottom: 8, padding: 12 }}>
+      <Card style={{ marginBottom: 8, padding: 12 }}>
         <input
           value={nombreNuevo}
           onChange={(e) => setNombreNuevo(e.target.value)}
@@ -4930,7 +4929,7 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
   // —van por el mismo `grupo_id`—, así que da igual en cuál la repases.
   if (modo === "copiando") {
     return (
-      <Card style={{ ...styles.panelMazo, marginBottom: 8, padding: 12 }}>
+      <Card style={{ marginBottom: 8, padding: 12 }}>
         <FieldLabel>Copiar las tarjetas de "{titulo}" a:</FieldLabel>
         <select value={destinoElegido} onChange={(e) => setDestinoElegido(e.target.value)} style={{ ...styles.input, marginTop: 6, marginBottom: 8 }}>
           {destinos.map((d) => <option key={d} value={d}>{d}</option>)}
@@ -4960,7 +4959,7 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
 
   if (modo === "confirmando") {
     return (
-      <Card style={{ ...styles.panelMazo, marginBottom: 8, padding: 12, borderColor: ACENTO }}>
+      <Card style={{ marginBottom: 8, padding: 12, borderColor: ACENTO }}>
         <p style={{ fontSize: 13, color: TINTA, margin: "0 0 10px" }}>{avisoBorrado}</p>
         <div style={{ display: "flex", gap: 8 }}>
           <button
@@ -4979,7 +4978,7 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
 
   if (modo === "estilo") {
     return (
-      <div style={styles.panelMazo}>
+      <div>
         <SelectorEstiloMazo
           icono={est.icono}
           color={est.color}
@@ -5000,7 +4999,7 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
     const disponibles = carpetasDisponibles || [];
     const destino = (carpetaNueva.trim() || carpetaElegida || "").trim();
     return (
-      <Card style={{ ...styles.panelMazo, marginBottom: 8, padding: 12 }}>
+      <Card style={{ marginBottom: 8, padding: 12 }}>
         <FieldLabel>Carpeta de "{titulo}"</FieldLabel>
         {disponibles.length > 0 && (
           <select value={carpetaElegida} onChange={(e) => { setCarpetaElegida(e.target.value); setCarpetaNueva(""); }} style={{ ...styles.input, marginTop: 6, marginBottom: 8 }}>
@@ -5039,7 +5038,7 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
 
   if (modo === "acciones") {
     return (
-      <Card style={{ ...styles.panelMazo, marginBottom: 8, padding: 12 }}>
+      <Card style={{ marginBottom: 8, padding: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
           <span style={styles.filaCarpetaIcono}><IconoMazo size={17} color={tinte || undefined} /></span>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -5060,23 +5059,29 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
   }
 
   return (
-    <div style={{ position: "relative" }}>
-      <button
-        type="button"
-        onClick={onClick}
-        onPointerDown={onPointerDown}
-        title={subtitulo ? `${titulo} — ${subtitulo}` : titulo}
-        style={{ ...styles.tarjetaMazo, ...(atenuada ? styles.tarjetaMazoArrastrada : {}) }}
-      >
-        <span data-cuadro style={{ ...styles.tarjetaMazoCuadro, ...(tinte ? { borderColor: tinte, color: tinte } : {}) }}>
-          <IconoMazo size={20} color={tinte || undefined} />
+    <div style={{
+      ...styles.filaCarpeta,
+      ...(tinte ? { borderLeft: `4px solid ${tinte}` } : {}),
+      ...(atenuada ? styles.tarjetaMazoArrastrada : {}),
+    }}>
+      <button type="button" onClick={onClick} onPointerDown={onPointerDown} style={styles.filaCarpetaBoton}>
+        <span style={{ ...styles.filaCarpetaIcono, ...(tinte ? { color: tinte } : {}) }}>
+          <IconoMazo size={18} />
         </span>
-        <span style={styles.tarjetaMazoTitulo}>{titulo}</span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <div style={styles.filaCarpetaTitulo}>{titulo}</div>
+          {subtitulo && <div style={styles.filaCarpetaSubtitulo}>{subtitulo}</div>}
+        </span>
+        {badge != null && <span style={styles.filaCarpetaBadge}>{badge}</span>}
       </button>
-      {badge != null && <span style={styles.tarjetaMazoBadge}>{badge}</span>}
-      <button type="button" onClick={() => setModo("acciones")} aria-label={`Opciones de ${titulo}`} style={styles.tarjetaMazoMas}>
-        <MoreHorizontal size={15} />
+      {/* Una sola "⋯" en vez de los cinco iconos sueltos que había: con los
+          mazos que hay ahora, cinco símbolos repetidos en cada fila es
+          exactamente el ruido del que se quejó el usuario. Dentro están todas
+          las acciones, con su nombre escrito. */}
+      <button type="button" onClick={() => setModo("acciones")} aria-label={`Opciones de ${titulo}`} style={styles.filaCarpetaIconBtn}>
+        <MoreHorizontal size={16} />
       </button>
+      <ChevronRight size={16} color="#9B9689" />
     </div>
   );
 }
@@ -5150,14 +5155,16 @@ function NuevaCarpeta({ mazos, carpetaDe, onCrear }) {
 // entidad: se crea al meter el primer mazo y desaparece al sacar el último.
 function TarjetaCarpeta({ nombre, mazos, pendientes, onClick, resaltada }) {
   return (
-    <div style={{ position: "relative" }} data-destino={nombre}>
-      <button type="button" onClick={onClick} title={`${nombre} — ${mazos} mazo${mazos === 1 ? "" : "s"}`} style={styles.tarjetaMazo}>
-        <span data-cuadro style={{ ...styles.tarjetaMazoCuadro, background: "#EFEADC", ...(resaltada ? styles.destinoActivo : {}) }}>
-          <Folder size={20} />
+    <div data-destino={nombre} style={{ ...styles.filaCarpeta, background: "#F7F4EC", ...(resaltada ? styles.destinoActivo : {}) }}>
+      <button type="button" onClick={onClick} style={styles.filaCarpetaBoton}>
+        <span style={styles.filaCarpetaIcono}><Folder size={18} /></span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <div style={styles.filaCarpetaTitulo}>{nombre}</div>
+          <div style={styles.filaCarpetaSubtitulo}>{mazos} mazo{mazos === 1 ? "" : "s"}</div>
         </span>
-        <span style={styles.tarjetaMazoTitulo}>{nombre}</span>
+        {pendientes > 0 && <span style={styles.filaCarpetaBadge}>{pendientes} hoy</span>}
       </button>
-      {pendientes > 0 && <span style={styles.tarjetaMazoBadge}>{pendientes}</span>}
+      <ChevronRight size={16} color="#9B9689" />
     </div>
   );
 }
@@ -5762,44 +5769,31 @@ const styles = {
   tabOrigenBtn: { flex: 1, padding: "11px 14px", borderRadius: 12, border: `1.5px solid ${RAYA}`, background: "#fff", color: TINTA_SUAVE, fontSize: 14, fontWeight: 600, cursor: "pointer" },
   tabOrigenActivo: { background: TINTA, borderColor: TINTA, color: "#fff" },
   tabOrigenActivoIA: { background: "#8A5A9E", borderColor: "#8A5A9E", color: "#fff" },
-  filaCarpeta: { display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "#fff", border: `1.5px solid ${RAYA}`, borderRadius: 12, padding: "12px 14px", cursor: "pointer", marginBottom: 8 },
+  // `boxSizing` aquí no es cosmética: con `width: 100%` más padding y borde, y
+  // sin un `border-box` global en el proyecto, cada fila sobresalía 31 px de su
+  // caja y ensanchaba la página. Venía de antes de la rejilla; lo cazó la
+  // comprobación de `scrollWidth` al volver a las filas.
+  filaCarpeta: { boxSizing: "border-box", display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "#fff", border: `1.5px solid ${RAYA}`, borderRadius: 12, padding: "12px 14px", cursor: "pointer", marginBottom: 8 },
   filaCarpetaBoton: { display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, margin: 0, font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" },
-  filaCarpetaIcono: { display: "flex", alignItems: "center", justifyContent: "center", width: 34, height: 34, borderRadius: 9, background: "#F2EFE7", color: "#8A5A9E", flexShrink: 0 },
+  filaCarpetaIcono: { display: "flex", alignItems: "center", justifyContent: "center", width: 22, flexShrink: 0, color: TINTA_TENUE },
   filaCarpetaTitulo: { fontSize: 15, fontWeight: 700, color: TINTA },
   filaCarpetaSubtitulo: { fontSize: 12, color: "#9B9689", marginTop: 2 },
   filaCarpetaBadge: { fontSize: 12, fontWeight: 700, color: TINTA_SUAVE, background: "#F2EFE7", borderRadius: 20, padding: "4px 10px", whiteSpace: "nowrap" },
   filaCarpetaIconBtn: { display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 8, border: "none", background: "none", color: "#9B9689", cursor: "pointer", flexShrink: 0 },
-  // Rejilla de mazos y carpetas. Tres por fila, como se pidió, y con un tope
-  // de ancho para que en un iPad no se conviertan en tres cuadrados enormes:
-  // "grandes tmp excesivo para verlas bien".
-  // `minmax(0, 1fr)` y no `1fr` a secas: con `1fr` la columna no puede
-  // encoger por debajo del contenido, así que un nombre largo ensancha la
-  // página entera — el mismo fallo que tuvo la cabecera en su día.
-  rejillaMazos: { display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 8, maxWidth: 820, marginBottom: 12 },
-  // Esquinas muy redondeadas y cuadrado, al estilo de los iconos de iOS. El
-  // cuadrado es lo que hace que la rejilla se lea como una rejilla y no como
-  // una lista de tres columnas.
-  // Como en la pantalla de inicio de iOS: el cuadro redondeado es SOLO el
-  // icono y el nombre va debajo, fuera. Con cinco por fila el cuadro mide
-  // ~63 px en un iPhone y ahí dentro no cabe ningún nombre — la primera
-  // versión los metía dentro y el texto quedaba recortado sin que ninguna
-  // comprobación lo dijera; se vio mirando la captura.
-  tarjetaMazo: { display: "flex", flexDirection: "column", alignItems: "center", gap: 5, width: "100%", padding: 0, background: "none", border: "none", cursor: "pointer", font: "inherit", color: "inherit", textAlign: "center" },
-  tarjetaMazoCuadro: { display: "flex", alignItems: "center", justifyContent: "center", aspectRatio: "1 / 1", width: "100%", background: "#fff", border: `1.5px solid ${RAYA}`, borderRadius: 18, color: "#8A5A9E" },
-  // Dos líneas y corta: "Técnicas de entrevista" no cabe de una, y dejar que
-  // crezca descuadraría la fila entera.
-  tarjetaMazoTitulo: { fontSize: 10, fontWeight: 600, color: TINTA, lineHeight: 1.25, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", width: "100%", wordBreak: "break-word" },
-  tarjetaMazoBadge: { position: "absolute", top: -4, left: -4, fontSize: 9, fontWeight: 700, color: "#fff", background: ACENTO, borderRadius: 20, padding: "1px 5px", whiteSpace: "nowrap" },
-  tarjetaMazoMas: { position: "absolute", top: -6, right: -6, display: "flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: 8, border: "none", background: "none", color: "#9B9689", cursor: "pointer" },
-  // El cuadro mientras se arrastra, y el hueco que deja detrás.
-  tarjetaMazoFantasma: { position: "fixed", zIndex: 70, pointerEvents: "none", width: 86, padding: "8px 6px", background: "#fff", border: `1.5px solid ${RAYA_FUERTE}`, borderRadius: 18, boxShadow: "0 10px 24px rgba(30,28,24,0.22)", textAlign: "center", transform: "translate(-50%, -50%) scale(1.06)", opacity: 0.95 },
+  // Un mazo es una FILA, no un cuadro en una rejilla. La rejilla de cinco se
+  // probó y se retiró a petición del usuario: "no me gusta cómo se ve la
+  // interfaz, parece demasiado IA... sobre todo por los símbolos y la forma
+  // de diferenciar cada uno". Veintiséis cuadros blancos iguales, con el
+  // mismo glifo morado repetido dentro de una pastilla de color, decoran sin
+  // informar — que es justo lo que hace que algo parezca generado. En fila,
+  // lo que distingue a un mazo es su NOMBRE, que se lee entero; el icono y el
+  // color quedan como marca discreta para quien se los haya puesto a mano.
+  // El cuadro que sigue al dedo al arrastrar, y el hueco que deja detrás.
+  tarjetaMazoFantasma: { position: "fixed", zIndex: 70, pointerEvents: "none", maxWidth: 220, padding: "8px 12px", background: "#fff", border: `1.5px solid ${RAYA_FUERTE}`, borderRadius: 12, boxShadow: "0 10px 24px rgba(30,28,24,0.22)", fontSize: 13.5, fontWeight: 700, color: TINTA, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", transform: "translate(-50%, -50%)", opacity: 0.95 },
   tarjetaMazoArrastrada: { opacity: 0.35 },
   // La carpeta (o la zona de sacar) sobre la que estás soltando.
   destinoActivo: { borderColor: ACENTO, background: ACENTO_SUAVE },
-  zonaSacar: { gridColumn: "1 / -1", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "14px 10px", border: `2px dashed ${RAYA_FUERTE}`, borderRadius: 16, color: TINTA_SUAVE, fontSize: 13, fontWeight: 700, marginBottom: 10 },
-  // Los paneles (renombrar, copiar, carpeta, borrar) viven DENTRO de la
-  // rejilla, así que ocupan la fila entera en vez de meterse en un tercio.
-  panelMazo: { gridColumn: "1 / -1" },
+  zonaSacar: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "14px 10px", border: `2px dashed ${RAYA_FUERTE}`, borderRadius: 14, color: TINTA_SUAVE, fontSize: 13, fontWeight: 700, marginBottom: 10 },
   rachaDiasChip: { display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: TINTA_TENUE, background: "#F2EFE7", borderRadius: 20, padding: "5px 10px" },
   rachaDiasChipActiva: { color: ACENTO, background: ACENTO_SUAVE },
   modalOverlay: { position: "fixed", inset: 0, background: "rgba(30,28,24,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 },

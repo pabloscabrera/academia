@@ -63,58 +63,60 @@ await esperar(5000);
 await pagina.getByRole("button", { name: /Flashcards/i }).first().click();
 await esperar(1200);
 
-// ---------- 1 y 2: la rejilla a 390 px ----------
-const rejilla = pagina.locator("div").filter({ hasText: /^/ }).locator("css=div").first();
+// ---------- 1 y 2: las filas a 390 px ----------
+// Se volvió de la rejilla de cinco a una fila por mazo: la rejilla "parecía
+// demasiado IA... sobre todo por los símbolos y la forma de diferenciar cada
+// uno". Lo que se vigila aquí es lo que esa queja implica: que el NOMBRE se
+// lea entero (es lo que distingue un mazo de otro) y que no haya vuelto la
+// pastilla de color repetida en cada fila.
 const medidas = await pagina.evaluate(() => {
-  const g = [...document.querySelectorAll("div")].find((d) => getComputedStyle(d).display === "grid"
-    && getComputedStyle(d).gridTemplateColumns.split(" ").length === 5);
-  if (!g) return null;
-  const cs = getComputedStyle(g);
-  const cuadro = g.querySelector("[data-cuadro]");
-  const r = cuadro.getBoundingClientRect();
-  const rc = getComputedStyle(cuadro);
-  // El nombre va DEBAJO del cuadro, fuera: hay que ver que se pinta y que no
-  // queda recortado, que es justo lo que pasaba metiéndolo dentro.
-  const etiqueta = g.querySelector("button > span:last-child");
-  const re = etiqueta.getBoundingClientRect();
+  const botones = [...document.querySelectorAll("button")];
+  const b = botones.find((x) => x.textContent.trim().startsWith("Porcentajes"));
+  if (!b) return null;
+  const fila = b.parentElement;
+  const r = fila.getBoundingClientRect();
+  const titulo = b.querySelector("span > div");
+  const glifo = b.querySelector("span");
+  const gs = getComputedStyle(glifo);
   return {
-    columnas: cs.gridTemplateColumns.split(" ").length,
-    hijos: g.children.length,
-    ancho: Math.round(r.width), alto: Math.round(r.height),
-    radio: rc.borderRadius,
-    nombre: etiqueta.textContent.trim(),
-    altoNombre: Math.round(re.height),
+    anchoFila: Math.round(r.width),
+    altoFila: Math.round(r.height),
+    anchoPagina: Math.round(document.body.getBoundingClientRect().width),
+    nombre: titulo ? titulo.textContent.trim() : "",
+    glifoConFondo: gs.backgroundColor !== "rgba(0, 0, 0, 0)" && gs.backgroundColor !== "transparent",
     desbordaPagina: document.documentElement.scrollWidth > window.innerWidth,
   };
 });
-console.log("1) rejilla a 390 px ->", JSON.stringify(medidas));
-if (!medidas) fallos.push("[390] no se encontró ninguna rejilla de 3 columnas");
+console.log("1) filas a 390 px ->", JSON.stringify(medidas));
+if (!medidas) fallos.push("[390] no se encontró la fila del mazo");
 else {
-  if (medidas.columnas !== 5) fallos.push(`[390] la rejilla tiene ${medidas.columnas} columnas, no 5`);
-  if (medidas.desbordaPagina) fallos.push("[390] la página se ensancha con la rejilla puesta");
-  if (Math.abs(medidas.ancho - medidas.alto) > 2) fallos.push(`[390] los cuadros no son cuadrados: ${medidas.ancho}x${medidas.alto}`);
-  // Cinco por fila en un iPhone deja cuadros pequeños a la fuerza; lo que se
-  // vigila es que sigan siendo tocables (Apple recomienda 44 px de lado).
-  if (medidas.ancho < 44) fallos.push(`[390] los cuadros miden ${medidas.ancho} px: por debajo del mínimo tocable`);
-  if (parseInt(medidas.radio, 10) < 14) fallos.push(`[390] las esquinas no están redondeadas: ${medidas.radio}`);
-  if (!medidas.nombre) fallos.push("[390] el cuadro no enseña el nombre del mazo");
-  if (medidas.altoNombre < 11) fallos.push(`[390] el nombre queda recortado: ${medidas.altoNombre} px de alto`);
+  // Una fila ocupa el ancho, no un quinto de él.
+  if (medidas.anchoFila < medidas.anchoPagina * 0.8) fallos.push(`[390] la fila mide ${medidas.anchoFila} px de ${medidas.anchoPagina}: no es una fila`);
+  if (medidas.altoFila > 90) fallos.push(`[390] la fila mide ${medidas.altoFila} px de alto: eso es un cuadro, no una fila`);
+  if (medidas.nombre !== "Porcentajes") fallos.push(`[390] el nombre no se lee entero: ${JSON.stringify(medidas.nombre)}`);
+  if (medidas.glifoConFondo) fallos.push("[390] el icono ha vuelto a ir dentro de una pastilla de color");
+  if (medidas.desbordaPagina) fallos.push("[390] la página se ensancha");
 }
 
 // Siete mazos, de los que TRES están en carpetas (Young y TDC en
 // "Psicoterapias", Big Five en "Personalidad"): en la raíz se ven 2 carpetas +
-// 4 sueltos = 6 cuadros. Lo que importa aquí es que los que están dentro de
-// una carpeta NO aparecen además sueltos.
-if (medidas && medidas.hijos !== 6) fallos.push(`[raíz] se esperaban 6 cuadros (2 carpetas + 4 sueltos) y hay ${medidas.hijos}`);
+// 4 sueltos. Lo que importa es que los que están dentro de una carpeta NO
+// aparezcan además sueltos.
+const enRaiz = await pagina.evaluate(() =>
+  [...document.querySelectorAll("button")].map((b) => b.textContent.trim()).filter((t) => /\d+\s*(tarjetas?|mazos?)/.test(t)));
+console.log("2) en la raíz ->", JSON.stringify(enRaiz));
+if (enRaiz.some((t) => t.startsWith("Young") || t.startsWith("TDC"))) {
+  fallos.push("[raíz] un mazo que está en una carpeta aparece además suelto");
+}
+if (!enRaiz.some((t) => t.startsWith("Psicoterapias")) || !enRaiz.some((t) => t.startsWith("Personalidad"))) {
+  fallos.push(`[raíz] faltan carpetas: ${JSON.stringify(enRaiz)}`);
+}
 
 // ---------- 3: abrir una carpeta ----------
 await pagina.getByRole("button", { name: /Psicoterapias/ }).first().click();
 await esperar(700);
-const dentro = await pagina.evaluate(() => {
-  const g = [...document.querySelectorAll("div")].find((d) => getComputedStyle(d).display === "grid"
-    && getComputedStyle(d).gridTemplateColumns.split(" ").length === 5);
-  return g ? [...g.querySelectorAll("button")].map((b) => b.textContent.trim()).filter((t) => t) : [];
-});
+const dentro = await pagina.evaluate(() =>
+  [...document.querySelectorAll("button")].map((b) => b.textContent.trim()).filter((t) => /\d+\s*tarjetas?/.test(t)));
 console.log("3) dentro de la carpeta ->", JSON.stringify(dentro));
 if (!(dentro.some((t) => t.includes("Young")) && dentro.some((t) => t.includes("TDC")))) {
   fallos.push(`[carpeta] no están sus dos mazos dentro: ${JSON.stringify(dentro)}`);
@@ -140,20 +142,13 @@ if (ultimo && (ultimo.icono !== "Brain" || ultimo.color !== "acento")) {
 // ---------- 5: en un iPad ----------
 await pagina.setViewportSize({ width: 820, height: 1100 });
 await esperar(800);
-const iPad = await pagina.evaluate(() => {
-  const g = [...document.querySelectorAll("div")].find((d) => getComputedStyle(d).display === "grid"
-    && getComputedStyle(d).gridTemplateColumns.split(" ").length === 5);
-  if (!g) return null;
-  const r = g.querySelector("[data-cuadro]").getBoundingClientRect();
-  return { columnas: getComputedStyle(g).gridTemplateColumns.split(" ").length, ancho: Math.round(r.width), desborda: document.documentElement.scrollWidth > window.innerWidth };
-});
+const iPad = await pagina.evaluate(() => ({
+  desborda: document.documentElement.scrollWidth > window.innerWidth,
+  filas: [...document.querySelectorAll("button")].filter((b) => /\d+\s*(tarjetas?|mazos?)/.test(b.textContent.trim())).length,
+}));
 console.log("5) a 820 px ->", JSON.stringify(iPad));
-if (!iPad) fallos.push("[820] desapareció la rejilla");
-else {
-  if (iPad.columnas !== 5) fallos.push(`[820] la rejilla tiene ${iPad.columnas} columnas, no 5`);
-  if (iPad.ancho > 200) fallos.push(`[820] los cuadros se van a ${iPad.ancho} px, demasiado grandes`);
-  if (iPad.desborda) fallos.push("[820] la página se ensancha");
-}
+if (iPad.desborda) fallos.push("[820] la página se ensancha");
+if (iPad.filas === 0) fallos.push("[820] no se ve ninguna fila");
 
 // ---------- 6: ARRASTRAR un mazo suelto hasta una carpeta ----------
 // Esto es lo que no se puede comprobar de ninguna otra forma: que el pulsado
@@ -202,4 +197,4 @@ console.log("ERRORES JS:", errores.length ? errores.join(" | ") : "ninguno");
 await navegador.close(); servidor.kill();
 if (errores.length) fallos.push("errores de JavaScript: " + errores.join(" | "));
 if (fallos.length) { console.error("\nFALLA:\n- " + fallos.join("\n- ")); process.exit(1); }
-console.log("\nOK: cinco columnas sin desbordar, carpetas que se abren, arrastre que guarda y toque que no arrastra.");
+console.log("\nOK: una fila por mazo sin desbordar, nombre entero, carpetas que se abren, arrastre que guarda y toque que no arrastra.");

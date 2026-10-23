@@ -45,6 +45,12 @@ begin
   end if;
 end $$;
 
+-- Sin esto, PostgREST (la capa REST de Supabase) sigue unos segundos con el
+-- esquema de antes en memoria y rechaza las escrituras con un
+-- "Could not find the 'carpeta' column ... in the schema cache" aunque la
+-- columna ya exista. Pasó de verdad.
+notify pgrst, 'reload schema';
+
 -- Comprobación para pegar en el chat: tiene que salir la columna `carpeta` y
 -- cuatro políticas (select, insert, update, delete).
 select column_name, data_type from information_schema.columns
