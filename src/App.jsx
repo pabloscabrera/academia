@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Activity, Award, Baby, BookOpen, Bookmark, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, FileText, Flag, Flame, Folder, FolderOpen, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, MoreHorizontal, FolderPlus, Palette, Pencil, Percent, Plus, Puzzle, RotateCw, Search, Settings, Sparkles, Star, Stethoscope, Tag, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
+import { Activity, ArrowDownUp, Award, Baby, BookOpen, Bookmark, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, FileText, Flag, Flame, Folder, FolderOpen, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, MoreHorizontal, FolderPlus, Palette, Pencil, Percent, Plus, Puzzle, RotateCw, Search, Settings, Sparkles, Star, Stethoscope, Tag, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
 import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, sinFila, filasPendientes, CONFLICTO } from "./colaPendientes";
@@ -17,6 +17,7 @@ import {
   hayQueDescargar, selloDeFilas,
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar, faltaColumnaCarpeta,
   carpetaDeMazo, carpetasExistentes, agruparMazosEnCarpetas, interpretarSoltar, FUERA_DE_CARPETAS,
+  CRITERIOS_ORDEN_MAZO, ordenarMazos, tasaDeFalloPorMazo,
   mediaCalificacionPorTarjeta, estadoCuadricula,
 } from "./logica";
 
@@ -172,6 +173,24 @@ function borrarTirada(nombre) {
 
 // El giro del día se guarda aquí, no solo en el estado de React: la ruleta
 // vive en un desplegable de la cabecera y cerrarlo desmonta el componente.
+// Cómo se ordena la lista de mazos. Es preferencia de aparato, como el tamaño
+// de letra o el color de fondo, así que va a `localStorage` y no a Supabase —
+// y no se guarda por usuario porque no es un dato suyo, es cómo mira él la
+// pantalla. Si lo guardado no es un criterio conocido (una versión vieja, o
+// alguien toqueteando), se cae al alfabético en vez de dejar la lista rara.
+const CLAVE_ORDEN_MAZOS = "pir-orden-mazos";
+const leerOrdenMazos = () => {
+  try {
+    const v = localStorage.getItem(CLAVE_ORDEN_MAZOS);
+    return CRITERIOS_ORDEN_MAZO.some((c) => c.clave === v) ? v : "alfabetico";
+  } catch {
+    return "alfabetico";
+  }
+};
+const guardarOrdenMazos = (v) => {
+  try { localStorage.setItem(CLAVE_ORDEN_MAZOS, v); } catch { /* en privado no deja; no pasa nada */ }
+};
+
 const claveRuleta = (nombre) => `pir-ruleta-${nombre}`;
 
 function leerRuletaGuardada(nombre) {
@@ -4123,15 +4142,27 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     return m;
   }, [progresoEnPlazo]);
 
+  // Este `useState` va ARRIBA, antes de los `useMemo`, y no abajo con los
+  // demás: los memos de la lista lo leen, y un hook que toca una variable
+  // declarada más abajo tumba la app entera con un "Cannot access ... before
+  // initialization" que ni `npm run build` ni `npm test` ven. Ya ha pasado dos
+  // veces en este componente.
+  const [orden, setOrden] = useState(leerOrdenMazos);
+
+  // Alfabético siempre: esta lista alimenta también los desplegables ("enviar
+  // a otro mazo", elegir mazos al crear una carpeta), y ahí lo que se busca es
+  // un nombre. El criterio elegido se aplica solo a la lista que se dibuja.
   const mazos = useMemo(
-    () => [...new Set(flashcards.map((f) => f.mazo || "General"))].sort((a, b) => a.localeCompare(b)),
+    () => [...new Set(flashcards.map((f) => f.mazo || "General"))].sort((a, b) => a.localeCompare(b, "es")),
     [flashcards]
   );
 
   const indiceEstilos = useMemo(() => indiceEstilosMazo(estilosMazo), [estilosMazo]);
 
-  // La raíz: las carpetas delante y los mazos sin carpeta detrás.
-  const agrupacion = useMemo(() => agruparMazosEnCarpetas(mazos, indiceEstilos), [mazos, indiceEstilos]);
+  // El % fallado de cada mazo, para el criterio "más/menos falladas". Sale de
+  // `flashcards_repasos`, que son los últimos 90 días: lo anterior no se
+  // descarga, así que un mazo que no se toca desde hace meses figura sin dato.
+  const fallosPorMazo = useMemo(() => tasaDeFalloPorMazo(flashcards, repasos), [flashcards, repasos]);
   const nombresCarpetas = useMemo(() => carpetasExistentes(mazos, indiceEstilos), [mazos, indiceEstilos]);
 
   const statsPorMazo = useMemo(() => {
@@ -4146,6 +4177,24 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     });
     return m;
   }, [flashcards, progresoPorId, hoy]);
+
+  // El orden elegido se aplica ANTES de agrupar, y `agruparMazosEnCarpetas`
+  // respeta el que reciba: si volviera a ordenar por su cuenta, elegir un
+  // criterio no cambiaría nada. Las carpetas siguen yendo por nombre — no
+  // tienen color ni fallos propios, y moverlas según lo que lleven dentro
+  // cambiaría la forma de la pantalla sin que uno haya tocado nada.
+  const mazosOrdenados = useMemo(
+    () => ordenarMazos(mazos, orden, {
+      stats: statsPorMazo, estilos: indiceEstilos, fallos: fallosPorMazo, colores: CLAVES_COLOR_MAZO,
+    }),
+    [mazos, orden, statsPorMazo, indiceEstilos, fallosPorMazo]
+  );
+
+  // La raíz: las carpetas delante y los mazos sin carpeta detrás.
+  const agrupacion = useMemo(
+    () => agruparMazosEnCarpetas(mazosOrdenados, indiceEstilos),
+    [mazosOrdenados, indiceEstilos]
+  );
 
   const pendientesTotal = useMemo(
     () => [...statsPorMazo.values()].reduce((acc, s) => acc + s.pendientes, 0),
@@ -4624,6 +4673,9 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
           </>
         ) : (
           <>
+            {mazos.length > 1 && (
+              <OrdenarMazos valor={orden} onCambiar={(v) => { setOrden(v); guardarOrdenMazos(v); }} />
+            )}
             {onEstiloMazo && mazos.length > 0 && <NuevaCarpeta mazos={mazos} carpetaDe={(m) => carpetaDeMazo(indiceEstilos, m)} onCrear={crearCarpeta} />}
             <FilaNavegacion
               icono={Layers}
@@ -5138,6 +5190,37 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
 // uno a propósito**: las carpetas no se guardan en ningún sitio aparte, existen
 // porque algún mazo las nombra, así que una carpeta vacía no sobreviviría a
 // recargar. Decirlo aquí es mejor que dejar que se cree y desaparezca sola.
+// Ordenar la lista de mazos. Un `<select>` pelado y no una fila de chips: son
+// ocho criterios, y ocho botones encima de la lista serían otra vez el ruido
+// del que venía la queja de que la pantalla "parecía demasiado IA". Aquí el
+// control tiene que desaparecer hasta que se busca.
+function OrdenarMazos({ valor, onCambiar }) {
+  const actual = CRITERIOS_ORDEN_MAZO.find((c) => c.clave === valor);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+      <ArrowDownUp size={15} color={TINTA_TENUE} />
+      <label htmlFor="orden-mazos" style={{ fontSize: 13, color: TINTA_SUAVE }}>Ordenar</label>
+      <select
+        id="orden-mazos"
+        value={valor}
+        onChange={(e) => onCambiar(e.target.value)}
+        style={{ ...styles.select, boxSizing: "border-box", flex: 1, minWidth: 0, padding: "7px 9px", fontSize: 13.5 }}
+      >
+        {CRITERIOS_ORDEN_MAZO.map((c) => (
+          <option key={c.clave} value={c.clave}>{c.etiqueta}</option>
+        ))}
+      </select>
+      {/* Lo que mide cada criterio no cabe en su nombre, y "más falladas" se
+          puede entender como el recuento de fallos cuando es el porcentaje. */}
+      {(valor === "mas-falladas" || valor === "menos-falladas") && (
+        <span style={{ fontSize: 11.5, color: TINTA_TENUE }} title="Porcentaje de repasos fallados en los últimos 90 días. Un mazo sin repasar aún no tiene dato y va al final.">
+          % de los últimos 90 días
+        </span>
+      )}
+    </div>
+  );
+}
+
 function NuevaCarpeta({ mazos, carpetaDe, onCrear }) {
   const [abierto, setAbierto] = useState(false);
   const [nombre, setNombre] = useState("");

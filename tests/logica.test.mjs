@@ -12,6 +12,7 @@ import {
   carpetaDeMazo, carpetasExistentes, agruparMazosEnCarpetas,
   interpretarSoltar, FUERA_DE_CARPETAS,
   mensajeDeEscritura, faltaColumnaCarpeta,
+  ordenarMazos, tasaDeFalloPorMazo,
   mediaCalificacionPorTarjeta, bucketDeMedia, estadoCuadricula,
 } from "../src/logica.js";
 
@@ -735,7 +736,10 @@ test("sin ninguna carpeta puesta, todo queda suelto y la pantalla se ve como ant
   const e = indiceEstilosMazo([{ mazo: "Young", icono: "Brain" }]);
   const { carpetas, sueltos } = agruparMazosEnCarpetas(["Young", "TDC"], e);
   assert.deepEqual(carpetas, []);
-  assert.deepEqual(sueltos, ["TDC", "Young"]);
+  // El orden es el que entra, no el alfabético: desde que la lista se puede
+  // ordenar por tarjetas, fallos o color, ordenar aquí dentro anularía esa
+  // elección. De eso se encarga `ordenarMazos`, antes de llamar aquí.
+  assert.deepEqual(sueltos, ["Young", "TDC"]);
 });
 
 test("la carpeta sigue al mazo al renombrarlo", () => {
@@ -791,4 +795,116 @@ test("se reconoce que lo que falta es la columna carpeta, y solo esa", () => {
   // Ni un fallo de permisos sobre la misma tabla y la misma columna.
   assert.equal(faltaColumnaCarpeta({ code: "42501", message: "new row violates row-level security policy for table mazos_estilo carpeta" }), false);
   assert.equal(faltaColumnaCarpeta(null), false);
+});
+
+// ---------- Ordenar la lista de mazos ----------
+
+const MAZOS_ORDEN = ["Zeta", "Alfa", "Media"];
+const STATS_ORDEN = new Map([
+  ["Zeta", { total: 50, pendientes: 1 }],
+  ["Alfa", { total: 5, pendientes: 9 }],
+  ["Media", { total: 20, pendientes: 0 }],
+]);
+
+test("ordenarMazos: alfabético en los dos sentidos", () => {
+  assert.deepEqual(ordenarMazos(MAZOS_ORDEN, "alfabetico"), ["Alfa", "Media", "Zeta"]);
+  assert.deepEqual(ordenarMazos(MAZOS_ORDEN, "alfabetico-inv"), ["Zeta", "Media", "Alfa"]);
+  // Un criterio que no existe (una preferencia vieja en localStorage) no puede
+  // dejar la lista en cualquier orden: se cae al alfabético.
+  assert.deepEqual(ordenarMazos(MAZOS_ORDEN, "lo-que-sea"), ["Alfa", "Media", "Zeta"]);
+});
+
+test("ordenarMazos: por tarjetas y por pendientes", () => {
+  const datos = { stats: STATS_ORDEN };
+  assert.deepEqual(ordenarMazos(MAZOS_ORDEN, "mas-tarjetas", datos), ["Zeta", "Media", "Alfa"]);
+  assert.deepEqual(ordenarMazos(MAZOS_ORDEN, "menos-tarjetas", datos), ["Alfa", "Media", "Zeta"]);
+  assert.deepEqual(ordenarMazos(MAZOS_ORDEN, "mas-pendientes", datos), ["Alfa", "Zeta", "Media"]);
+});
+
+test("ordenarMazos: no devuelve la lista original, la copia", () => {
+  const original = [...MAZOS_ORDEN];
+  const salida = ordenarMazos(MAZOS_ORDEN, "alfabetico");
+  assert.notEqual(salida, MAZOS_ORDEN);
+  assert.deepEqual(MAZOS_ORDEN, original, "ordenar no puede reordenar la lista que recibe");
+});
+
+test("ordenarMazos: lo que no tiene dato va al final en LOS DOS sentidos", () => {
+  // "Nuevo" no se ha repasado nunca. En "menos falladas" sería el primero si
+  // se contara como 0% — y eso premiaría no haberlo abierto.
+  const fallos = new Map([["Zeta", 0.8], ["Alfa", 0.1]]);
+  const datos = { fallos };
+  const lista = ["Zeta", "Alfa", "Nuevo"];
+  assert.deepEqual(ordenarMazos(lista, "mas-falladas", datos), ["Zeta", "Alfa", "Nuevo"]);
+  assert.deepEqual(ordenarMazos(lista, "menos-falladas", datos), ["Alfa", "Zeta", "Nuevo"]);
+});
+
+test("ordenarMazos: los empates se deshacen alfabéticamente, no al azar", () => {
+  const stats = new Map([
+    ["Zeta", { total: 10, pendientes: 0 }],
+    ["Alfa", { total: 10, pendientes: 0 }],
+    ["Media", { total: 10, pendientes: 0 }],
+  ]);
+  assert.deepEqual(ordenarMazos(["Zeta", "Media", "Alfa"], "mas-tarjetas", { stats }), ["Alfa", "Media", "Zeta"]);
+});
+
+test("ordenarMazos: por color agrupa siguiendo la paleta y deja los grises al final", () => {
+  const colores = ["tinta", "acento", "oro"];
+  const estilos = new Map([
+    ["Zeta", { icono: null, color: "acento", carpeta: null }],
+    ["Alfa", { icono: null, color: "oro", carpeta: null }],
+    ["Media", { icono: null, color: "acento", carpeta: null }],
+    // "Sin" no tiene color, y "Raro" tiene uno que ya no está en la paleta:
+    // los dos valen lo mismo, no hay sitio donde ponerlos.
+    ["Raro", { icono: null, color: "fucsia", carpeta: null }],
+  ]);
+  assert.deepEqual(
+    ordenarMazos(["Zeta", "Alfa", "Media", "Sin", "Raro"], "color", { estilos, colores }),
+    ["Media", "Zeta", "Alfa", "Raro", "Sin"]
+  );
+});
+
+test("la tasa de fallo es un porcentaje, no un recuento", () => {
+  // El mazo grande tiene MÁS fallos (8) pero falla menos (8 de 40 = 20%) que
+  // el pequeño (3 de 5 = 60%). Ordenar por recuento pondría arriba al grande
+  // solo por ser grande, que es justo lo que no se quiere.
+  const flashcards = [
+    ...Array.from({ length: 4 }, (_, i) => ({ id: `g${i}`, mazo: "Grande", grupo_id: null })),
+    { id: "p0", mazo: "Pequeño", grupo_id: null },
+  ];
+  const repasos = [
+    ...Array.from({ length: 40 }, (_, i) => ({ flashcard_id: "g0", acierto: i >= 8 })),
+    ...Array.from({ length: 5 }, (_, i) => ({ flashcard_id: "p0", acierto: i >= 3 })),
+  ];
+  const tasas = tasaDeFalloPorMazo(flashcards, repasos);
+  assert.equal(tasas.get("Grande"), 8 / 40);
+  assert.equal(tasas.get("Pequeño"), 3 / 5);
+  assert.deepEqual(
+    ordenarMazos(["Grande", "Pequeño"], "mas-falladas", { fallos: tasas }),
+    ["Pequeño", "Grande"]
+  );
+});
+
+test("los repasos de una tarjeta copiada cuentan en los dos mazos", () => {
+  // Copiar comparte `grupo_id` y con él el progreso, así que el repaso es uno
+  // solo y vale para los dos sitios donde está la tarjeta.
+  const flashcards = [
+    { id: "a", mazo: "Origen", grupo_id: "g" },
+    { id: "b", mazo: "Destino", grupo_id: "g" },
+  ];
+  const repasos = [{ flashcard_id: "g", acierto: false }, { flashcard_id: "g", acierto: true }];
+  const tasas = tasaDeFalloPorMazo(flashcards, repasos);
+  assert.equal(tasas.get("Origen"), 0.5);
+  assert.equal(tasas.get("Destino"), 0.5);
+});
+
+test("un mazo sin repasos no aparece en las tasas (no es un 0%)", () => {
+  const tasas = tasaDeFalloPorMazo([{ id: "a", mazo: "Virgen", grupo_id: null }], []);
+  assert.equal(tasas.get("Virgen"), undefined);
+});
+
+test("agruparMazosEnCarpetas respeta el orden que recibe", () => {
+  // Si volviera a ordenar por su cuenta, elegir un criterio no cambiaría nada.
+  const estilos = new Map([["Zeta", { icono: null, color: null, carpeta: null }]]);
+  const { sueltos } = agruparMazosEnCarpetas(["Zeta", "Alfa", "Media"], estilos);
+  assert.deepEqual(sueltos, ["Zeta", "Alfa", "Media"]);
 });
