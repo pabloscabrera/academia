@@ -11,7 +11,7 @@ import {
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar,
   carpetaDeMazo, carpetasExistentes, agruparMazosEnCarpetas,
   interpretarSoltar, FUERA_DE_CARPETAS,
-  mensajeDeEscritura,
+  mensajeDeEscritura, faltaColumnaCarpeta,
   mediaCalificacionPorTarjeta, bucketDeMedia, estadoCuadricula,
 } from "../src/logica.js";
 
@@ -771,6 +771,24 @@ test("el esquema recién cambiado no se confunde con una migración sin ejecutar
     { code: "PGRST204", message: "Could not find the 'carpeta' column of 'mazos_estilo' in the schema cache" },
     "Guardar los ajustes"
   );
+  // Las dos causas, porque desde el cliente no se distinguen. Lo que NO puede
+  // hacer es mandar a esperar y ya: esperar no ejecuta una migración.
+  assert.match(m, /no está en la base de datos/);
   assert.match(m, /aún no se ha enterado/);
-  assert.doesNotMatch(m, /falta algo/);
+  assert.doesNotMatch(m, /Vuelve a intentarlo en un minuto/);
+});
+
+test("se reconoce que lo que falta es la columna carpeta, y solo esa", () => {
+  const deLaCarpeta = {
+    code: "PGRST204",
+    message: "Could not find the 'carpeta' column of 'mazos_estilo' in the schema cache",
+  };
+  assert.equal(faltaColumnaCarpeta(deLaCarpeta), true);
+  assert.equal(faltaColumnaCarpeta({ code: "42703", message: 'column "carpeta" of relation "mazos_estilo" does not exist' }), true);
+  // Un PGRST204 de OTRA columna no vale: reintentar quitando `carpeta` no lo
+  // arreglaría y se habría perdido el dato sin que nadie se entere.
+  assert.equal(faltaColumnaCarpeta({ code: "PGRST204", message: "Could not find the 'icono' column of 'mazos_estilo' in the schema cache" }), false);
+  // Ni un fallo de permisos sobre la misma tabla y la misma columna.
+  assert.equal(faltaColumnaCarpeta({ code: "42501", message: "new row violates row-level security policy for table mazos_estilo carpeta" }), false);
+  assert.equal(faltaColumnaCarpeta(null), false);
 });
