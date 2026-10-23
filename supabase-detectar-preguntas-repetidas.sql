@@ -11,6 +11,13 @@
 --       Simulacro 3 -> PIR 23
 --   Más PIR 15, 16, 18, 19 y 20, transcritos aparte de sus PDF.
 --
+--   CUIDADO con una colisión de títulos: DOS academias numeran su documento
+--   "Simulacro 5". El de AMIR es PIR 21; el de APIR es PIR 20
+--   (supabase-pir20-preguntas.sql). Son exámenes DISTINTOS y van separados:
+--   el número de simulacro es de la academia, no de la edición. La consulta 2
+--   sirve aquí de comprobación — si PIR 20 y PIR 21 comparten pocas
+--   preguntas, está bien; un solapamiento casi total sería la alarma.
+--
 -- POR QUÉ IMPORTA UN DUPLICADO. No es que se vea feo: `preguntas_progreso` va
 -- por `id`, así que contestar una copia deja la otra a cero y vuelve a salir
 -- en "Pendientes" — nunca terminas el banco.
