@@ -367,12 +367,14 @@ export function mensajeDeEscritura(error, queIba = "") {
   if (codigo === "42501" || /row-level security|permission denied|not authorized/i.test(texto)) {
     return di("el servidor no deja guardarlo (permisos de la base de datos). Esto lo tiene que mirar Pablo.");
   }
-  // PGRST204: la columna EXISTE, pero PostgREST (la capa REST de Supabase)
-  // sigue con el esquema de antes en memoria. Pasa justo después de ejecutar
-  // una migración y se arregla solo, así que no es lo mismo que "falta algo":
-  // decirlo como tal mandaría a mirar la base de datos cuando ya está bien.
+  // PGRST204: PostgREST (la capa REST de Supabase) no encuentra esa columna en
+  // el esquema que tiene en memoria. Son DOS causas distintas y desde aquí no
+  // se pueden distinguir: o la columna no existe, o acaba de crearse y la copia
+  // en memoria es de antes. El mensaje decía solo lo segundo ("espera un
+  // minuto") y eso era peor que no decir nada cuando la causa era la primera:
+  // esperar no arregla una migración que nunca se ejecutó, así que lo nombra.
   if (codigo === "PGRST204" || /schema cache/i.test(texto)) {
-    return di("la base de datos acaba de cambiar y el servidor aún no se ha enterado. Vuelve a intentarlo en un minuto.");
+    return di("esa columna no está en la base de datos, o acaba de crearse y el servidor aún no se ha enterado. Esto lo tiene que mirar Pablo.");
   }
   // 42P01 tabla que no existe, 42703 columna que no existe: una migración que
   // está en el repositorio pero que nunca llegó a ejecutarse en Supabase.
@@ -386,6 +388,25 @@ export function mensajeDeEscritura(error, queIba = "") {
     return di("el servidor ha rechazado la sesión. Prueba a salir y volver a entrar.");
   }
   return di(texto || "no se pudo guardar.");
+}
+
+// ¿Este error es "la columna `carpeta` de `mazos_estilo` no está"?
+//
+// Importa porque esa columna la añade `supabase-mazos-carpeta.sql`, y mientras
+// esa migración no se haya ejecutado el `upsert` que guarda el estilo de un
+// mazo la lleva igualmente en el cuerpo — así que fallaba también al cambiar
+// SOLO el color, que no tiene nada que ver con las carpetas. Reconocerlo
+// permite reintentar sin ella y que el color se guarde con el esquema viejo.
+//
+// Se mira el nombre de la columna y el de la tabla, no solo el código: un
+// PGRST204 sobre otra columna cualquiera no debe colar por aquí y perder un
+// dato sin avisar. PostgREST lo manda como PGRST204 y Postgres como 42703.
+export function faltaColumnaCarpeta(err) {
+  if (!err) return false;
+  const codigo = err.code || "";
+  const texto = `${err.message || ""} ${err.details || ""}`;
+  if (codigo !== "PGRST204" && codigo !== "42703" && !/schema cache/i.test(texto)) return false;
+  return /carpeta/i.test(texto) && /mazos_estilo/i.test(texto);
 }
 
 // ---------- Copiar un mazo entero a otro ----------

@@ -15,7 +15,7 @@ import {
   tarjetasDistintas, parsearEtiquetas, lunesDeLaSemana,
   ESPERA_MAX_CARGA_MS, ESPERA_MAX_ESCRITURA_MS, conTiempoLimite, mensajeDeCarga,
   hayQueDescargar, selloDeFilas,
-  indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar,
+  indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar, faltaColumnaCarpeta,
   carpetaDeMazo, carpetasExistentes, agruparMazosEnCarpetas, interpretarSoltar, FUERA_DE_CARPETAS,
   mediaCalificacionPorTarjeta, estadoCuadricula,
 } from "./logica";
@@ -961,18 +961,40 @@ export default function AcademiaPIR() {
   const guardarEstiloMazo = async (mazo, { icono, color, carpeta }) => {
     const nombreCarpeta = (carpeta || "").trim() || null;
     const fila = { mazo, icono: icono || null, color: color || null, carpeta: nombreCarpeta };
+    const antes = estilosMazo;
     setEstilosMazo((prev) => {
       const sinEse = prev.filter((e) => e.mazo !== mazo);
       return icono || color || nombreCarpeta ? [...sinEse, fila] : sinEse;
     });
-    const { ok } = !icono && !color && !nombreCarpeta
-      // Quitar las dos cosas es volver al aspecto por defecto: se borra la
-      // fila en vez de dejarla con los dos campos a nulo.
+    const queIba = `Guardar los ajustes de "${mazo}"`;
+    const subir = (payload) =>
+      escribir(queIba, supabase.from("mazos_estilo").upsert(payload, { onConflict: "user_id,mazo" }));
+    let res;
+    if (!icono && !color && !nombreCarpeta) {
       // Sin icono, sin color y sin carpeta no queda nada que guardar: se borra
       // la fila en vez de dejarla con los tres campos a nulo.
-      ? await escribir(`Quitar los ajustes de "${mazo}"`, supabase.from("mazos_estilo").delete().eq("mazo", mazo))
-      : await escribir(`Guardar los ajustes de "${mazo}"`, supabase.from("mazos_estilo").upsert(fila, { onConflict: "user_id,mazo" }));
-    return ok;
+      res = await escribir(`Quitar los ajustes de "${mazo}"`, supabase.from("mazos_estilo").delete().eq("mazo", mazo));
+    } else {
+      res = await subir(fila);
+      // `carpeta` la añade supabase-mazos-carpeta.sql, y hasta que esa
+      // migración no se ejecute la columna no está. Como va SIEMPRE en el
+      // cuerpo, cambiar solo el color fallaba por una columna que ese cambio
+      // ni toca. Si no se está archivando en ninguna carpeta no hay nada que
+      // perder al quitarla, así que se reintenta sin ella y el color se
+      // guarda igual; el éxito del reintento borra el aviso del primer
+      // intento. Con carpeta NO se reintenta: guardar a medias y decir que
+      // todo fue bien es peor que el fallo, porque se pierde lo que se pidió.
+      if (!res.ok && !nombreCarpeta && faltaColumnaCarpeta(res.error)) {
+        const { carpeta: _sinUsar, ...sinCarpeta } = fila;
+        res = await subir(sinCarpeta);
+      }
+    }
+    // El color se aplicaba en local antes de escribir y no se deshacía nunca,
+    // así que un guardado fallido dejaba el mazo pintado como si hubiera
+    // funcionado y solo al recargar se veía que no. Eso es justo lo que hizo
+    // que un fallo real pareciera cosa de la pantalla.
+    if (!res.ok) setEstilosMazo(antes);
+    return res.ok;
   };
 
   const renombrarMazo = async (viejo, nuevo) => {
