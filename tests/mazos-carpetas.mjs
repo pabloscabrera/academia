@@ -123,6 +123,41 @@ if (!(dentro.some((t) => t.includes("Young")) && dentro.some((t) => t.includes("
 }
 if (dentro.some((t) => t.includes("Porcentajes"))) fallos.push("[carpeta] dentro se ve un mazo que no es suyo");
 
+// ---------- 3b: el color rellena la fila ENTERA, título incluido ----------
+// "Déjame rellenar a color todo el recuadro incluido el fondo del título".
+// Y la parte que no se puede comprobar mirando: que encima de ese color el
+// texto se siga leyendo. Se mide el contraste de verdad (WCAG), no se opina.
+const relleno = await pagina.evaluate(() => {
+  const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim().startsWith("TDC"));
+  if (!b) return null;
+  const fila = b.parentElement;
+  const titulo = b.querySelector("span > div");
+  const lee = (c) => c.match(/\d+/g).slice(0, 3).map(Number);
+  const lum = ([r, g, b2]) => {
+    const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b2);
+  };
+  const fondo = lee(getComputedStyle(fila).backgroundColor);
+  const tinta = lee(getComputedStyle(titulo).color);
+  const fondoTitulo = lee(getComputedStyle(titulo.parentElement).backgroundColor.includes("rgba(0, 0, 0, 0)")
+    ? getComputedStyle(fila).backgroundColor : getComputedStyle(titulo.parentElement).backgroundColor);
+  const l1 = lum(fondo), l2 = lum(tinta);
+  return {
+    fondoFila: fondo.join(","),
+    fondoDetrasDelTitulo: fondoTitulo.join(","),
+    colorTitulo: tinta.join(","),
+    contraste: Number(((Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)).toFixed(2)),
+  };
+});
+console.log("3b) relleno ->", JSON.stringify(relleno));
+if (!relleno) fallos.push("[relleno] no se encontró la fila de TDC");
+else {
+  // "acento" es #A6362B = 166,54,43.
+  if (relleno.fondoFila !== "166,54,43") fallos.push(`[relleno] la fila no está rellena del color elegido: ${relleno.fondoFila}`);
+  if (relleno.fondoDetrasDelTitulo !== "166,54,43") fallos.push(`[relleno] el color no llega detrás del título: ${relleno.fondoDetrasDelTitulo}`);
+  if (relleno.contraste < 4.5) fallos.push(`[relleno] el título no se lee sobre el color: contraste ${relleno.contraste}`);
+}
+
 // ---------- 4: guardar la carpeta sin perder icono ni color ----------
 await pagina.getByRole("button", { name: /Opciones de TDC/ }).first().click();
 await esperar(500);

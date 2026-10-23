@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Activity, Award, Baby, BookOpen, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, Flag, Flame, Folder, FolderOpen, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, MoreHorizontal, FolderPlus, Palette, Pencil, Percent, Plus, Puzzle, RotateCw, Search, Settings, Sparkles, Star, Stethoscope, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
+import { Activity, Award, Baby, BookOpen, Bookmark, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, FileText, Flag, Flame, Folder, FolderOpen, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, MoreHorizontal, FolderPlus, Palette, Pencil, Percent, Plus, Puzzle, RotateCw, Search, Settings, Sparkles, Star, Stethoscope, Tag, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
 import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, sinFila, filasPendientes, CONFLICTO } from "./colaPendientes";
@@ -4802,6 +4802,7 @@ function SelectorEstiloMazo({ icono, color, onGuardar, onCerrar }) {
   const [colorSel, setColorSel] = useState(color);
   const [guardando, setGuardando] = useState(false);
   const tinte = colorSel ? COLORES_MAZO[colorSel] : TINTA_SUAVE;
+  const IconoVista = (iconoSel && ICONOS_MAZO[iconoSel]) || Layers;
 
   return (
     <Card style={{ marginBottom: 8, padding: 14 }}>
@@ -4844,6 +4845,22 @@ function SelectorEstiloMazo({ icono, color, onGuardar, onCerrar }) {
             </button>
           );
         })}
+      </div>
+
+      {/* Una vista previa de la fila de verdad: el color rellena todo, así que
+          hay que poder verlo antes de guardar y no solo imaginarlo. */}
+      <FieldLabel>Así se verá</FieldLabel>
+      <div style={{
+        ...styles.filaCarpeta, marginTop: 8, marginBottom: 14, cursor: "default",
+        ...(colorSel ? { background: COLORES_MAZO[colorSel], borderColor: COLORES_MAZO[colorSel] } : {}),
+      }}>
+        <span style={{ ...styles.filaCarpetaIcono, ...(colorSel ? { color: "#fff" } : {}) }}>
+          <IconoVista size={18} />
+        </span>
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ ...styles.filaCarpetaTitulo, ...(colorSel ? { color: "#fff" } : {}) }}>Un mazo</div>
+          <div style={{ ...styles.filaCarpetaSubtitulo, ...(colorSel ? { color: "#fff", opacity: 0.85 } : {}) }}>12 tarjetas</div>
+        </span>
       </div>
 
       <div style={{ display: "flex", gap: 8 }}>
@@ -5058,30 +5075,39 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
     );
   }
 
+  // Con color elegido se rellena la FILA ENTERA, título incluido, y el texto
+  // pasa a blanco. Los ocho colores del catálogo son oscuros, y medido sobre
+  // blanco el peor (el oro) da 4,54:1 — por encima del 4,5 que hace falta
+  // para leer. Con crema en vez de blanco el oro se quedaba en 4,06, así que
+  // el texto de relleno es blanco y no crema; no es una preferencia.
+  const relleno = !!tinte;
+  const sobreColor = relleno ? "#fff" : null;
   return (
     <div style={{
       ...styles.filaCarpeta,
-      ...(tinte ? { borderLeft: `4px solid ${tinte}` } : {}),
+      ...(relleno ? { background: tinte, borderColor: tinte } : {}),
       ...(atenuada ? styles.tarjetaMazoArrastrada : {}),
     }}>
       <button type="button" onClick={onClick} onPointerDown={onPointerDown} style={styles.filaCarpetaBoton}>
-        <span style={{ ...styles.filaCarpetaIcono, ...(tinte ? { color: tinte } : {}) }}>
+        <span style={{ ...styles.filaCarpetaIcono, ...(relleno ? { color: sobreColor } : {}) }}>
           <IconoMazo size={18} />
         </span>
         <span style={{ flex: 1, minWidth: 0 }}>
-          <div style={styles.filaCarpetaTitulo}>{titulo}</div>
-          {subtitulo && <div style={styles.filaCarpetaSubtitulo}>{subtitulo}</div>}
+          <div style={{ ...styles.filaCarpetaTitulo, ...(relleno ? { color: sobreColor } : {}) }}>{titulo}</div>
+          {subtitulo && <div style={{ ...styles.filaCarpetaSubtitulo, ...(relleno ? { color: sobreColor, opacity: 0.85 } : {}) }}>{subtitulo}</div>}
         </span>
-        {badge != null && <span style={styles.filaCarpetaBadge}>{badge}</span>}
+        {badge != null && (
+          <span style={{ ...styles.filaCarpetaBadge, ...(relleno ? { color: sobreColor, background: "rgba(255,255,255,0.22)" } : {}) }}>{badge}</span>
+        )}
       </button>
       {/* Una sola "⋯" en vez de los cinco iconos sueltos que había: con los
           mazos que hay ahora, cinco símbolos repetidos en cada fila es
           exactamente el ruido del que se quejó el usuario. Dentro están todas
           las acciones, con su nombre escrito. */}
-      <button type="button" onClick={() => setModo("acciones")} aria-label={`Opciones de ${titulo}`} style={styles.filaCarpetaIconBtn}>
+      <button type="button" onClick={() => setModo("acciones")} aria-label={`Opciones de ${titulo}`} style={{ ...styles.filaCarpetaIconBtn, ...(relleno ? { color: sobreColor } : {}) }}>
         <MoreHorizontal size={16} />
       </button>
-      <ChevronRight size={16} color="#9B9689" />
+      <ChevronRight size={16} color={relleno ? sobreColor : "#9B9689"} />
     </div>
   );
 }
@@ -5750,9 +5776,18 @@ const COLORES_MAZO = {
   azul: "#2A5A8C",
   morado: "#6B3A7A",
 };
+// Primero los objetos de todos los días —los que uno usaría en un cuaderno— y
+// al final los de tema. El orden importa porque es lo que se ve al abrir el
+// selector, y la queja fue justo esa: "¿por qué haces iconos como una IA?".
+// Un cerebro, una diana y una pieza de puzle para una app de psicología es lo
+// que elige una máquina; un marcador o una etiqueta es lo que elige alguien.
+// **No se quita ninguno de los que ya había**: `estiloDeMazo` valida contra
+// este catálogo, así que retirar una clave dejaría sin icono a los mazos que
+// ya la tuvieran puesta.
 const ICONOS_MAZO = {
-  Layers, Brain, Heart, BookOpen, Stethoscope, Baby,
-  Users, MessageCircle, Puzzle, Percent, Activity, Target,
+  Layers, BookOpen, Bookmark, FileText, Tag, Star,
+  Flag, Clock, Pencil, Heart, Users, MessageCircle,
+  Percent, Brain, Stethoscope, Baby, Puzzle, Activity, Target,
 };
 const CLAVES_ICONO_MAZO = Object.keys(ICONOS_MAZO);
 const CLAVES_COLOR_MAZO = Object.keys(COLORES_MAZO);
