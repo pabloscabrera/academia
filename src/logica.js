@@ -937,7 +937,12 @@ export function carpetasExistentes(mazos, estilos) {
 // no están en ninguna. Las carpetas van delante a propósito: son los cajones, y
 // lo suelto es lo que todavía no has colocado.
 export function agruparMazosEnCarpetas(mazos, estilos) {
-  const lista = [...(mazos || [])].sort((a, b) => a.localeCompare(b, "es"));
+  // **Respeta el orden que recibe y no vuelve a ordenar.** Antes forzaba el
+  // alfabético aquí dentro, lo que dejaba sin efecto cualquier criterio
+  // elegido fuera (ver `ordenarMazos`). Las CARPETAS sí siguen yendo por
+  // nombre: no tienen color ni fecha propios, y moverlas de sitio según lo que
+  // lleven dentro haría que la lista cambiara de forma sin tocar nada.
+  const lista = [...(mazos || [])];
   const porCarpeta = new Map();
   const sueltos = [];
   for (const m of lista) {
@@ -950,6 +955,115 @@ export function agruparMazosEnCarpetas(mazos, estilos) {
     .map(([nombre, suyos]) => ({ nombre, mazos: suyos }))
     .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
   return { carpetas, sueltos };
+}
+
+// ---------- Ordenar la lista de mazos ----------
+//
+// Con veintitantos mazos el alfabético deja de responder a lo único que uno se
+// pregunta al abrir la pantalla: por dónde empiezo. La clave de cada criterio
+// viaja a `localStorage`, así que renombrarla deja la preferencia guardada sin
+// sentido y se cae al alfabético (que es lo correcto, pero conviene saberlo).
+export const CRITERIOS_ORDEN_MAZO = [
+  { clave: "alfabetico", etiqueta: "A - Z" },
+  { clave: "alfabetico-inv", etiqueta: "Z - A" },
+  { clave: "mas-pendientes", etiqueta: "Pendientes hoy" },
+  { clave: "mas-falladas", etiqueta: "Más falladas" },
+  { clave: "menos-falladas", etiqueta: "Menos falladas" },
+  { clave: "mas-tarjetas", etiqueta: "Más tarjetas" },
+  { clave: "menos-tarjetas", etiqueta: "Menos tarjetas" },
+  { clave: "color", etiqueta: "Por color" },
+];
+
+// El % de repasos fallados de cada mazo, con lo que haya en
+// `flashcards_repasos` (los últimos 90 días, que es lo que se descarga).
+//
+// **Se usa la TASA y no el número de fallos, y esto no es un detalle**: un mazo
+// de 96 tarjetas acumula más fallos que uno de 5 por el mero hecho de ser más
+// grande, así que ordenar por el recuento daría la lista de los mazos grandes
+// y no la de los que peor llevas, que es lo que se ha pedido.
+//
+// Un mazo sin repasos vale `null`, NO 0: no haber fallado nada por no haberlo
+// abierto nunca no es ir bien. `ordenarMazos` los manda al final en los dos
+// sentidos del criterio.
+//
+// Se cruza por `grupo_id || id`, que es lo que guarda
+// `flashcards_repasos.flashcard_id`. Una tarjeta copiada a dos mazos comparte
+// progreso, así que sus repasos cuentan en los dos: es lo coherente con que el
+// repaso sea común, no un efecto secundario.
+export function tasaDeFalloPorMazo(flashcards, repasos) {
+  const mazosDeClave = new Map();
+  for (const f of flashcards || []) {
+    if (!f) continue;
+    const clave = f.grupo_id || f.id;
+    if (clave == null) continue;
+    if (!mazosDeClave.has(clave)) mazosDeClave.set(clave, new Set());
+    mazosDeClave.get(clave).add(f.mazo || "General");
+  }
+  const cuenta = new Map();
+  for (const r of repasos || []) {
+    const suyos = r && mazosDeClave.get(r.flashcard_id);
+    if (!suyos) continue;
+    for (const m of suyos) {
+      if (!cuenta.has(m)) cuenta.set(m, { total: 0, fallos: 0 });
+      const c = cuenta.get(m);
+      c.total += 1;
+      if (r.acierto === false) c.fallos += 1;
+    }
+  }
+  const salida = new Map();
+  for (const [m, c] of cuenta) salida.set(m, c.total ? c.fallos / c.total : null);
+  return salida;
+}
+
+// Ordena los NOMBRES de los mazos. No toca nada más: la agrupación en carpetas
+// se hace después y respeta el orden que reciba.
+//
+// Dos reglas que valen para todos los criterios:
+//  - **Lo que no tiene dato va al final**, suba o baje el criterio. Un mazo sin
+//    estrenar no es ni el que mejor llevas ni el que peor: es que no consta.
+//    Colarlo arriba en "menos falladas" sería premiar no haberlo abierto.
+//  - **Los empates se deshacen por orden alfabético**, nunca dejándolos como
+//    vengan: la lista se dibuja muchas veces y un orden que baila es peor que
+//    uno discutible.
+export function ordenarMazos(mazos, criterio, datos = {}) {
+  const lista = [...(mazos || [])];
+  const { stats, estilos, fallos, colores } = datos;
+  const alfa = (a, b) => a.localeCompare(b, "es");
+  const campo = (m, cual) => {
+    const s = stats && stats.get ? stats.get(m) : null;
+    return s ? s[cual] || 0 : 0;
+  };
+  const porNumero = (valor, descendente) => (a, b) => {
+    const va = valor(a);
+    const vb = valor(b);
+    const faltaA = va == null || Number.isNaN(va);
+    const faltaB = vb == null || Number.isNaN(vb);
+    if (faltaA && faltaB) return alfa(a, b);
+    if (faltaA) return 1;
+    if (faltaB) return -1;
+    if (va !== vb) return descendente ? vb - va : va - vb;
+    return alfa(a, b);
+  };
+  const tasa = (m) => (fallos && fallos.get ? fallos.get(m) : null);
+  // "Por color" agrupa los del mismo color siguiendo el orden de la paleta, y
+  // deja los que no tienen color al final — que son los que están sin decidir.
+  const indiceColor = (m) => {
+    const guardado = estilos && estilos.get ? estilos.get(m) : null;
+    const color = guardado && guardado.color;
+    if (!color || !colores) return null;
+    const i = colores.indexOf(color);
+    return i < 0 ? null : i;
+  };
+  switch (criterio) {
+    case "alfabetico-inv": return lista.sort((a, b) => alfa(b, a));
+    case "mas-pendientes": return lista.sort(porNumero((m) => campo(m, "pendientes"), true));
+    case "mas-tarjetas": return lista.sort(porNumero((m) => campo(m, "total"), true));
+    case "menos-tarjetas": return lista.sort(porNumero((m) => campo(m, "total"), false));
+    case "mas-falladas": return lista.sort(porNumero(tasa, true));
+    case "menos-falladas": return lista.sort(porNumero(tasa, false));
+    case "color": return lista.sort(porNumero(indiceColor, false));
+    default: return lista.sort(alfa);
+  }
 }
 
 // Arrastrar un mazo y soltarlo: qué significa cada sitio donde se puede
