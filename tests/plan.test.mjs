@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   mezclarTemas, temaDeTarjeta, colaDeRepaso, planHastaObjetivo,
   reinsertarEnSesion, tarjetasDistintas, PASOS_REPETICION, DIAS_PARA_CONSOLIDAR,
+  barajarEnBloques, ordenarPorPrioridad,
 } from "../src/logica.js";
 
 const clave = (x) => x.tema;
@@ -229,4 +230,98 @@ test("las repetidas no se cuentan dos veces en el resumen", () => {
   assert.equal(tarjetasDistintas([]), 0);
   // El progreso va indexado por `grupo_id || id`, así que esa es la identidad.
   assert.equal(tarjetasDistintas([{ id: "x", grupo_id: "g" }, { id: "y", grupo_id: "g" }]), 1);
+});
+
+// ---------- Barajar dentro del nivel ----------
+//
+// La queja: "no me gusta que las que haya acertado bien... salgan estático,
+// el patrón de respuesta es siempre igual: a a a a b b b b; me gustaría que
+// saliera b b a b a a a b, cada vez aleatorio dentro de la misma dificultad,
+// para no aprenderme el orden y sí sea memoria".
+
+const HOY = "2026-10-23";
+// Un generador con semilla, para que la prueba sea repetible pero el orden no
+// sea el de entrada.
+const azarCon = (semilla) => {
+  let x = semilla;
+  return () => {
+    x = (x * 1664525 + 1013904223) % 4294967296;
+    return x / 4294967296;
+  };
+};
+
+test("dentro del mismo nivel el orden cambia de una sesión a otra", () => {
+  const lista = ["a", "b", "c", "d", "e", "f"].map((id) => ({ id }));
+  const progreso = {};
+  lista.forEach((f) => { progreso[f.id] = { repeticiones: 3, proxima_revision: HOY, ultima_revision: `2026-10-0${1}T10:00:00Z` }; });
+  const uno = barajarEnBloques(lista, progreso, HOY, azarCon(1)).map((f) => f.id);
+  const dos = barajarEnBloques(lista, progreso, HOY, azarCon(99)).map((f) => f.id);
+  assert.notDeepEqual(uno, dos, "dos sesiones seguidas dan el mismo orden: se aprende la secuencia");
+  // Y ninguna de las dos puede ser el orden de entrada tal cual.
+  assert.deepEqual([...uno].sort(), ["a", "b", "c", "d", "e", "f"]);
+  assert.deepEqual([...dos].sort(), ["a", "b", "c", "d", "e", "f"]);
+});
+
+test("barajar NO mezcla niveles: lo que más cuesta sigue saliendo primero", () => {
+  // Una recién fallada, dos vencidas y una nunca vista. Pase lo que pase con
+  // el azar, el orden de los niveles es intocable.
+  const lista = [
+    { id: "fallada" }, { id: "vencidaVieja" }, { id: "vencidaHoy" }, { id: "nueva" },
+  ];
+  const progreso = {
+    fallada: { repeticiones: 0, proxima_revision: HOY, ultima_revision: "2026-10-22T10:00:00Z" },
+    vencidaVieja: { repeticiones: 4, proxima_revision: "2026-10-10", ultima_revision: "2026-10-01T10:00:00Z" },
+    vencidaHoy: { repeticiones: 4, proxima_revision: HOY, ultima_revision: "2026-10-02T10:00:00Z" },
+  };
+  for (const semilla of [1, 7, 42, 1234, 99999]) {
+    const salida = barajarEnBloques(lista, progreso, HOY, azarCon(semilla)).map((f) => f.id);
+    assert.deepEqual(salida, ["fallada", "vencidaVieja", "vencidaHoy", "nueva"],
+      `con la semilla ${semilla} se cruzaron los niveles: ${salida.join(", ")}`);
+  }
+});
+
+test("barajar no pierde ni duplica ninguna tarjeta", () => {
+  const lista = Array.from({ length: 30 }, (_, i) => ({ id: `t${i}` }));
+  const progreso = {};
+  lista.forEach((f, i) => {
+    progreso[f.id] = { repeticiones: i % 3, proxima_revision: i % 2 ? HOY : "2026-10-20", ultima_revision: "" };
+  });
+  const salida = barajarEnBloques(lista, progreso, HOY, azarCon(5));
+  assert.equal(salida.length, 30);
+  assert.equal(new Set(salida.map((f) => f.id)).size, 30);
+});
+
+test("un azar que devuelve 1 exacto no se sale del array", () => {
+  // `Math.floor(1 * (i+1))` daría i+1, fuera de rango, y la tarjeta saldría
+  // como undefined. Ya pasó en la ruleta.
+  const lista = ["a", "b", "c"].map((id) => ({ id }));
+  const progreso = {};
+  lista.forEach((f) => { progreso[f.id] = { repeticiones: 2, proxima_revision: HOY }; });
+  const salida = barajarEnBloques(lista, progreso, HOY, () => 1);
+  assert.equal(salida.length, 3);
+  assert.ok(salida.every((f) => f && f.id), `salió algo vacío: ${JSON.stringify(salida)}`);
+});
+
+test("el reparto sin repeticiones se mantiene: barajar va DESPUÉS de cortar", () => {
+  // Seis tarjetas empatadas en fecha, sesiones de dos. `colaDeRepaso` ordena
+  // por `ultima_revision`, se corta, y solo entonces se baraja — así que las
+  // dos que salen son siempre las que hace más que no se ven, aunque el orden
+  // entre ellas sea el que sea. En tres sesiones tienen que salir las seis.
+  const ids = ["a", "b", "c", "d", "e", "f"];
+  const lista = ids.map((id) => ({ id }));
+  const progreso = {};
+  ids.forEach((id, i) => {
+    progreso[id] = { repeticiones: 3, proxima_revision: HOY, ultima_revision: `2026-10-0${i + 1}T10:00:00Z` };
+  });
+  const vistas = [];
+  for (let s = 0; s < 3; s++) {
+    const cola = colaDeRepaso(lista, progreso, HOY, azarCon(s + 1));
+    const elegidas = barajarEnBloques(cola.slice(0, 2), progreso, HOY, azarCon(s + 50));
+    for (const f of elegidas) {
+      vistas.push(f.id);
+      // Repasarla la manda al final de su grupo, como en la app.
+      progreso[f.id] = { ...progreso[f.id], ultima_revision: `2026-10-2${s}T12:00:00Z` };
+    }
+  }
+  assert.equal(new Set(vistas).size, 6, `alguna se repitió antes de verlas todas: ${vistas.join(", ")}`);
 });

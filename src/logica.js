@@ -284,6 +284,69 @@ export function colaDeRepaso(lista, progresoPorId, hoy, azar = Math.random) {
   ];
 }
 
+// Baraja DENTRO de cada nivel, sin mezclar niveles.
+//
+// Esto nace de dos peticiones que parecen contradecirse y no lo son, y por eso
+// conviene dejar escrito cómo se resuelven, no sea que alguien "arregle" una
+// rompiendo la otra:
+//
+//   (a) "que no se repitan antes de que vuelvan a salir otras" — de ahí el
+//       desempate por `ultima_revision` de `colaDeRepaso`.
+//   (b) "aunque me las supiera, que salga b b a b a a a b, cada vez aleatorio
+//       dentro de la misma dificultad, para no aprenderme el orden".
+//
+// El desempate de (a) las deja clavadas: `ultima_revision` es un instante
+// exacto, así que no empata casi nunca y el sorteo que había detrás no llegaba
+// a usarse — repasar una la manda al final de su grupo, y la vuelta siguiente
+// sale en la MISMA secuencia. Eso es justo lo que se aprende de memoria en
+// lugar de la tarjeta.
+//
+// La salida es separar dos cosas que estaban juntas: **`ultima_revision` elige
+// QUIÉN entra en la sesión, y esta función decide EN QUÉ ORDEN sale.** Se
+// aplica después de cortar a la cantidad pedida, así que el reparto sin
+// repeticiones se mantiene intacto —son las mismas tarjetas— y lo único que
+// cambia es la secuencia, que ahora es distinta cada vez.
+//
+// Lo que NO hace, y es la mitad del asunto: no mezcla niveles. Lo marcado
+// "Otra vez" sigue delante de todo, lo vencido antes de lo nunca visto, y
+// dentro de lo vencido lo más atrasado primero — "que salgan primero las que
+// más cuestan" se mantiene. Se baraja solo entre las que están empatadas, que
+// son las que producían el "a a a a b b b b".
+export function barajarEnBloques(lista, progresoPorId, hoy, azar = Math.random) {
+  const clave = (f) => {
+    const p = progresoPorId[f.grupo_id || f.id];
+    if (!p) return "2";                                  // nunca vista
+    if (p.repeticiones === 0) return "0";                // recién marcada "Otra vez"
+    const cuando = p.proxima_revision || "";
+    // Las vencidas se agrupan por el día que les tocaba: así una atrasada diez
+    // días no se baraja con una de ayer, pero las que comparten fecha —que son
+    // las que se contestaron en la misma sesión, o sea el bloque entero— sí.
+    if (!cuando || cuando <= hoy) return `1|${cuando}`;
+    return `3|${cuando}`;                                // aún no toca
+  };
+  const grupos = new Map();
+  for (const f of lista || []) {
+    const k = clave(f);
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(f);
+  }
+  // `Map` conserva el orden de inserción, así que los bloques salen en el
+  // mismo orden en que venían: el nivel lo sigue decidiendo quien ordenó.
+  const salida = [];
+  for (const bloque of grupos.values()) {
+    for (let i = bloque.length - 1; i > 0; i--) {
+      // `Math.min` porque un `azar()` de 1 exacto se saldría del array. Ya
+      // pasó en `elegirPreguntaRuleta`.
+      const j = Math.min(i, Math.floor(azar() * (i + 1)));
+      const t = bloque[i];
+      bloque[i] = bloque[j];
+      bloque[j] = t;
+    }
+    salida.push(...bloque);
+  }
+  return salida;
+}
+
 // ---------- Lo que fallas vuelve ANTES de acabar la sesión ----------
 //
 // Es el paso de aprendizaje de Anki, y es lo que faltaba para que el feedback
