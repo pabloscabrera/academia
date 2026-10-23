@@ -1761,8 +1761,11 @@ function Header({
       {mostrarRanking && (
         <div style={styles.pantallaCompleta}>
           <div style={styles.pantallaCompletaCierre}>
-            <button type="button" onClick={() => setMostrarRanking(false)} style={styles.iconBtn} title="Cerrar">
-              <X size={20} color="#6E6A61" />
+            {/* Con texto y no un aspa suelta: un icono de 20 px en la esquina
+                no se ve, que fue la queja ("no tengo opción de salir"). Con
+                borde y 44 px de alto es además lo que un dedo acierta. */}
+            <button type="button" onClick={() => setMostrarRanking(false)} style={styles.botonCerrarPantalla}>
+              <X size={17} /> Cerrar
             </button>
           </div>
           <main style={styles.main} className="main-app">
@@ -1773,8 +1776,11 @@ function Header({
       {mostrarBanco && (
         <div style={styles.pantallaCompleta}>
           <div style={styles.pantallaCompletaCierre}>
-            <button type="button" onClick={() => setMostrarBanco(false)} style={styles.iconBtn} title="Cerrar">
-              <X size={20} color="#6E6A61" />
+            {/* Con texto y no un aspa suelta: un icono de 20 px en la esquina
+                no se ve, que fue la queja ("no tengo opción de salir"). Con
+                borde y 44 px de alto es además lo que un dedo acierta. */}
+            <button type="button" onClick={() => setMostrarBanco(false)} style={styles.botonCerrarPantalla}>
+              <X size={17} /> Cerrar
             </button>
           </div>
           <main style={styles.main} className="main-app">
@@ -5906,7 +5912,11 @@ const SOMBRA_SUAVE = "0 1px 2px rgba(30,28,24,0.07), 0 1px 6px rgba(30,28,24,0.0
 const styles = {
   app: { fontFamily: "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", background: "#EEECE4", minHeight: "100vh", color: TINTA, WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none", fontSize: 17 },
   center: { display: "flex", alignItems: "center", justifyContent: "center" },
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "18px 24px", borderBottom: `1px solid ${RAYA}` },
+  // Los cuatro lados por separado y no el atajo `padding`: mezclar el atajo
+  // con un `paddingTop` suelto dispara el aviso de React sobre shorthand y
+  // longhand al redibujar. `env(safe-area-inset-top)` reserva la franja del
+  // reloj en modo pantalla de inicio; en navegador vale 0 y manda el 18.
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", paddingTop: "max(18px, env(safe-area-inset-top))", paddingRight: 24, paddingBottom: 18, paddingLeft: 24, borderBottom: `1px solid ${RAYA}` },
   nav: { display: "flex", gap: 6, padding: "0 18px", borderBottom: `1px solid ${RAYA}`, overflowX: "auto" },
   navBtn: { display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: "16px 14px", fontSize: 16, cursor: "pointer", whiteSpace: "nowrap" },
   navDot: { position: "absolute", top: 10, right: 6, width: 8, height: 8, borderRadius: "50%", background: ACENTO, animation: "dueloPulso 1.2s ease-in-out infinite" },
@@ -5945,7 +5955,11 @@ const styles = {
   dropdownCatcher: { position: "fixed", inset: 0, zIndex: 39 },
   logrosDropdown: { position: "absolute", top: "calc(100% + 10px)", right: 0, width: 320, maxWidth: "88vw", background: "#fff", border: `1.5px solid ${RAYA_FUERTE}`, borderRadius: 18, boxShadow: SOMBRA_SUAVE, padding: 16, zIndex: 40 },
   pantallaCompleta: { position: "fixed", inset: 0, background: "#EEECE4", zIndex: 50, overflowY: "auto" },
-  pantallaCompletaCierre: { display: "flex", justifyContent: "flex-end", padding: "14px 18px 0" },
+  // `pantallaCompleta` va a `inset: 0`, o sea pegada al borde de la pantalla:
+  // desde el icono de la pantalla de inicio el botón de cerrar caía DEBAJO del
+  // reloj y la batería, y desde fuera eso es "he entrado en el Ranking y no
+  // puedo salir". Mismo arreglo que en la barra de aviso.
+  pantallaCompletaCierre: { display: "flex", justifyContent: "flex-end", paddingTop: "max(14px, env(safe-area-inset-top))", paddingRight: 18, paddingBottom: 0, paddingLeft: 18 },
   modalCard: { background: "#fff", borderRadius: 18, padding: 24, maxWidth: 340, width: "100%", boxShadow: "0 12px 40px rgba(30,28,24,0.20)" },
   escalaBtn: { flex: 1, padding: "10px 0", borderRadius: 10, border: `1.5px solid ${RAYA}`, background: "#fff", color: TINTA, fontWeight: 700, cursor: "pointer" },
   escalaBtnActivo: { borderColor: TINTA, background: TINTA, color: "#fff" },
@@ -5971,6 +5985,7 @@ const styles = {
   input: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid #D9D5C4", fontSize: 17, fontFamily: "inherit", color: TINTA, boxSizing: "border-box" },
   select: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid #D9D5C4", fontSize: 17, fontFamily: "inherit", color: TINTA, background: "#fff" },
   btnPrimary: { background: TINTA, color: "#fff", border: "none", borderRadius: 12, padding: "15px 22px", fontSize: 17, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" },
+  botonCerrarPantalla: { background: "#fff", color: TINTA, border: `1.5px solid ${RAYA_FUERTE}`, borderRadius: 999, padding: "0 16px", height: 44, fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "inherit" },
   btnSecondary: { background: "transparent", color: TINTA, border: `1.5px solid ${TINTA}`, borderRadius: 12, padding: "12px 18px", fontSize: 16, cursor: "pointer", display: "inline-flex", alignItems: "center" },
   iconBtn: { background: "none", border: "none", cursor: "pointer", padding: 6 },
   chip: { border: "1.5px solid", borderRadius: 22, padding: "9px 18px", fontSize: 16, cursor: "pointer" },

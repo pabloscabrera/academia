@@ -59,7 +59,14 @@
          entera se ensancha, y el engranaje de Ajustes y el botón de salir se
          quedan literalmente fuera de la pantalla. */
       @media (max-width: 620px) {
-        .cabecera { padding: 12px 14px !important; }
+        /* `env(safe-area-inset-top)` reserva la franja del reloj y la batería.
+           Desde el icono de la pantalla de inicio la página empieza en y=0 y
+           iOS dibuja la hora ENCIMA, así que la primera fila de la cabecera
+           —la marca y las píldoras de gente en línea— quedaba tapada. Es el
+           mismo fallo que ya tuvo la barra de aviso con su X.
+           En Safari normal la variable vale 0 y `max()` deja los 12 px de
+           siempre, así que fuera del icono no cambia nada. */
+        .cabecera { padding: max(12px, env(safe-area-inset-top)) 14px 12px !important; }
         /* Ya sabes cómo te llamas, y son los ~110 px que hacen falta para
            que quepan los botones, que son lo que sí hace algo. */
         .cabecera-nombre { display: none !important; }
