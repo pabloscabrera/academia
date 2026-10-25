@@ -404,6 +404,18 @@ export const ESPERA_MAX_CARGA_MS = 12000;
 // Una escritura es una sola ida y vuelta, así que no merece los 12 s de la
 // carga entera: pasado este plazo el botón deja de girar y se dice qué pasa.
 export const ESPERA_MAX_ESCRITURA_MS = 10000;
+// Pero diez segundos mirando un botón gris que dice "Añadiendo..." y nada más
+// son diez segundos en los que, por fuera, la app está colgada — y así lo vio
+// el usuario ("se ha quedado pillado"). Pasados estos tres se avisa de que
+// sigue intentándolo, para que la espera se vea en vez de adivinarse. No se
+// acorta el plazo: una conexión mala tarda de verdad varios segundos y
+// cortarla antes sería perder la escritura.
+export const ESPERA_AVISO_ESCRITURA_MS = 3000;
+
+export function mensajeDeEspera(queIba = "") {
+  const frase = "está tardando más de lo normal. Seguimos intentándolo, no cierres la app.";
+  return queIba ? `${queIba}: ${frase}` : frase;
+}
 
 export function conTiempoLimite(promesa, ms, mensaje) {
   let reloj;
@@ -411,6 +423,32 @@ export function conTiempoLimite(promesa, ms, mensaje) {
     reloj = setTimeout(() => rechazar(new Error(mensaje)), ms);
   });
   return Promise.race([promesa, limite]).finally(() => clearTimeout(reloj));
+}
+
+// Un botón que se queda en "Guardando..." para siempre. El patrón de toda la
+// app era `set(true)` → `await lo que sea` → `set(false)`, y ahí lo de en
+// medio tiene DOS formas de no llegar nunca al `set(false)`: que lance (un
+// `throw` salta las líneas que quedan, así que la bandera se queda en `true`
+// y el botón muerto, sin aviso ninguno) o que no vuelva (una petición a un
+// servidor mudo no falla, se queda colgada). Esto cierra la primera por
+// construcción —el `finally` se ejecuta pase lo que pase— y de la segunda se
+// ocupa `conTiempoLimite` en cada escritura. Entre las dos, un botón ya no
+// puede quedarse pillado — y el usuario lo ha visto ("se ha quedado pillado"),
+// así que no es una precaución teórica.
+//
+// Devuelve `false` si la tarea lanza, porque es lo que esperan los que
+// llaman (`const ok = await ...; if (!ok) return;`); el motivo ya lo ha
+// contado `escribir` con su barra de aviso.
+export async function conBandera(poner, tarea) {
+  poner(true);
+  try {
+    return await tarea();
+  } catch (err) {
+    console.error("Falló mientras guardaba:", err);
+    return false;
+  } finally {
+    poner(false);
+  }
 }
 
 // Lo mismo pero para una ESCRITURA, que falla por motivos distintos a los de
