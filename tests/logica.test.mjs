@@ -4,7 +4,7 @@ import {
   esExamen, esTemaReal, temasDisponibles, filtrarPreguntas, indicePorId,
   reconstruirTirada, agruparAciertos, calcularSM2, ordenarPorPrioridad,
   parsearEtiquetas, lunesDeLaSemana, aplicarFiltroPedido,
-  conTiempoLimite, mensajeDeCarga, textoIntervalo, MAX_INTERVALO, dentroDelHorizonte,
+  conTiempoLimite, conBandera, mensajeDeCarga, mensajeDeEspera, textoIntervalo, MAX_INTERVALO, dentroDelHorizonte,
   cursosDeRuleta, elegirPreguntaRuleta, reconstruirRuleta,
   hayQueDescargar, selloDeFilas, MAX_EDAD_CACHE_MS,
   preguntaUsable, bancoUsable,
@@ -907,4 +907,42 @@ test("agruparMazosEnCarpetas respeta el orden que recibe", () => {
   const estilos = new Map([["Zeta", { icono: null, color: null, carpeta: null }]]);
   const { sueltos } = agruparMazosEnCarpetas(["Zeta", "Alfa", "Media"], estilos);
   assert.deepEqual(sueltos, ["Zeta", "Alfa", "Media"]);
+});
+
+test("conBandera apaga la bandera aunque la tarea lance", async () => {
+  // Es la única cosa que esta función tiene que garantizar: el patrón viejo
+  // era set(true) → await → set(false), y un throw en medio se salta el
+  // set(false) y deja el botón en "Guardando..." para siempre y sin aviso.
+  const visto = [];
+  const ok = await conBandera((v) => visto.push(v), async () => { throw new Error("servidor roto"); });
+  assert.equal(ok, false);
+  assert.deepEqual(visto, [true, false]);
+});
+
+test("conBandera devuelve lo que devuelva la tarea y apaga la bandera", async () => {
+  const visto = [];
+  const ok = await conBandera((v) => visto.push(v), async () => true);
+  assert.equal(ok, true);
+  assert.deepEqual(visto, [true, false]);
+});
+
+test("conBandera pone la bandera antes de empezar la tarea", async () => {
+  // Si se pusiera después, el botón seguiría pulsable durante la escritura.
+  const visto = [];
+  await conBandera((v) => visto.push(v), async () => {
+    assert.deepEqual(visto, [true]);
+    return true;
+  });
+  assert.deepEqual(visto, [true, false]);
+});
+
+test("mensajeDeEspera dice que sigue en marcha, no que haya fallado", () => {
+  // El aviso de los 3 s no es un error: si dijera que algo falló mientras
+  // sigue intentándolo, mentiría justo en el caso que viene bien la mitad de
+  // las veces. Y tiene que nombrar qué se está guardando.
+  const m = mensajeDeEspera('Añadir la tarjeta a "Porcentajes"');
+  assert.match(m, /^Añadir la tarjeta a "Porcentajes": /);
+  assert.match(m, /tardando/);
+  assert.doesNotMatch(m, /no se pudo|error|falló/i);
+  assert.match(mensajeDeEspera(), /tardando/);
 });

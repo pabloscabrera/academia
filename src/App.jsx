@@ -13,7 +13,8 @@ import {
   calcularSM2, MAX_INTERVALO, dentroDelHorizonte, ordenarPorPrioridad, colaDeRepaso, barajarEnBloques, reinsertarEnSesion,
   mensajeDeEscritura, copiasParaMazo, copiaDeTarjeta,
   tarjetasDistintas, parsearEtiquetas, lunesDeLaSemana,
-  ESPERA_MAX_CARGA_MS, ESPERA_MAX_ESCRITURA_MS, conTiempoLimite, mensajeDeCarga,
+  ESPERA_MAX_CARGA_MS, ESPERA_MAX_ESCRITURA_MS, ESPERA_AVISO_ESCRITURA_MS,
+  conTiempoLimite, conBandera, mensajeDeCarga, mensajeDeEspera,
   hayQueDescargar, selloDeFilas,
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar, faltaColumnaCarpeta,
   carpetaDeMazo, carpetasExistentes, agruparMazosEnCarpetas, interpretarSoltar, FUERA_DE_CARPETAS,
@@ -559,40 +560,49 @@ export default function AcademiaPIR() {
     await supabase.auth.signOut();
   };
 
+  // Las tres del banco van por `escribir` como las demás: eran `await`
+  // pelados, así que un servidor mudo dejaba el botón de guardar girando sin
+  // plazo ni mensaje. Solo las usa el admin, pero el fallo es el mismo.
   const addQuestion = async (q) => {
-    const { data, error } = await supabase
-      .from("preguntas")
-      .insert([{
-        curso: q.curso, tema: q.tema, pregunta: q.pregunta,
-        opciones: q.opciones, correcta: q.correcta, explicacion: q.explicacion,
-        inventada: !!q.inventada,
-      }])
-      .select();
+    const { ok, data } = await escribir(
+      "Añadir la pregunta",
+      supabase
+        .from("preguntas")
+        .insert([{
+          curso: q.curso, tema: q.tema, pregunta: q.pregunta,
+          opciones: q.opciones, correcta: q.correcta, explicacion: q.explicacion,
+          inventada: !!q.inventada,
+        }])
+        .select()
+    );
     // La copia local del banco deja de ser fiel en cuanto el admin lo toca.
-    if (!error && data && data[0]) { setQuestions((prev) => [...prev, data[0]]); borrarPreguntasCache(); }
-    return !error;
+    if (ok && data && data[0]) { setQuestions((prev) => [...prev, data[0]]); borrarPreguntasCache(); }
+    return ok;
   };
 
   const updateQuestion = async (id, q) => {
-    const { data, error } = await supabase
-      .from("preguntas")
-      .update({
-        curso: q.curso, tema: q.tema, pregunta: q.pregunta,
-        opciones: q.opciones, correcta: q.correcta, explicacion: q.explicacion
-      })
-      .eq("id", id)
-      .select();
-    if (!error && data && data[0]) {
+    const { ok, data } = await escribir(
+      "Guardar los cambios de la pregunta",
+      supabase
+        .from("preguntas")
+        .update({
+          curso: q.curso, tema: q.tema, pregunta: q.pregunta,
+          opciones: q.opciones, correcta: q.correcta, explicacion: q.explicacion
+        })
+        .eq("id", id)
+        .select()
+    );
+    if (ok && data && data[0]) {
       setQuestions((prev) => prev.map((p) => (p.id === id ? data[0] : p)));
       borrarPreguntasCache();
     }
-    return !error;
+    return ok;
   };
 
   const deleteQuestion = async (id) => {
-    const { error } = await supabase.from("preguntas").delete().eq("id", id);
-    if (!error) { setQuestions((prev) => prev.filter((p) => p.id !== id)); borrarPreguntasCache(); }
-    return !error;
+    const { ok } = await escribir("Borrar la pregunta", supabase.from("preguntas").delete().eq("id", id));
+    if (ok) { setQuestions((prev) => prev.filter((p) => p.id !== id)); borrarPreguntasCache(); }
+    return ok;
   };
 
   const registrarAcierto = async (correcto) => {
@@ -765,6 +775,14 @@ export default function AcademiaPIR() {
   //    a nadie, que es exactamente "la estrella no se pone amarilla".
   // El aviso dice qué se estaba intentando y de quién es el problema.
   const escribir = async (queIba, consulta) => {
+    // A los 3 s se dice que sigue en marcha. Sin esto, una escritura lenta son
+    // diez segundos de botón gris sin una palabra, que por fuera es idéntico a
+    // que la app se haya colgado. Va aquí y no en cada botón porque `escribir`
+    // es el único sitio por donde pasan todas las escrituras.
+    const relojAviso = setTimeout(
+      () => setAviso({ texto: mensajeDeEspera(queIba), red: false, esperando: true }),
+      ESPERA_AVISO_ESCRITURA_MS
+    );
     try {
       const res = await conTiempoLimite(
         Promise.resolve(consulta),
@@ -782,6 +800,8 @@ export default function AcademiaPIR() {
       console.error(queIba, err);
       setAviso({ texto: mensajeDeEscritura(err, queIba), red: esFalloDeRed(err) });
       return { ok: false, error: err };
+    } finally {
+      clearTimeout(relojAviso);
     }
   };
 
@@ -963,7 +983,14 @@ export default function AcademiaPIR() {
       setFlashcards(restantes);
       const quedanCopias = restantes.some((f) => (f.grupo_id || f.id) === grupoId);
       if (!quedanCopias) {
-        await supabase.from("flashcards_progreso").delete().eq("flashcard_id", grupoId);
+        // Se manda y no se espera, igual que el borrado del estilo de abajo:
+        // era un `await` SIN plazo y nadie lee su resultado (el `setState` de
+        // la línea siguiente no depende de él), así que lo único que aportaba
+        // era poder dejar esta función colgada para siempre — y con ella, sin
+        // ejecutar, la limpieza del progreso huérfano de la copia local. El
+        // botón no se veía pillado porque la fila ya se ha quitado de la lista
+        // dos líneas antes y se lo lleva con ella.
+        supabase.from("flashcards_progreso").delete().eq("flashcard_id", grupoId).then(() => {}, () => {});
         setFlashcardsProgreso((prev) => prev.filter((p) => p.flashcard_id !== grupoId));
       }
     }
@@ -1062,7 +1089,8 @@ export default function AcademiaPIR() {
       const gruposSupervivientes = new Set(restantes.map((f) => f.grupo_id || f.id));
       const gruposHuerfanos = [...gruposEliminados].filter((g) => !gruposSupervivientes.has(g));
       if (gruposHuerfanos.length > 0) {
-        await supabase.from("flashcards_progreso").delete().in("flashcard_id", gruposHuerfanos);
+        // Sin esperar, por lo mismo que en deleteFlashcard.
+        supabase.from("flashcards_progreso").delete().in("flashcard_id", gruposHuerfanos).then(() => {}, () => {});
       }
       setFlashcardsProgreso((prev) => prev.filter((p) => !gruposHuerfanos.includes(p.flashcard_id)));
     }
@@ -1205,7 +1233,7 @@ export default function AcademiaPIR() {
   return (
     <div style={{ ...styles.app, background: ajustes.fondo, zoom: ajustes.escala, "--font-display": fuenteActual.familia }}>
       {contenido}
-      {aviso && <BarraAviso texto={aviso.texto} />}
+      {aviso && <BarraAviso texto={aviso.texto} esperando={aviso.esperando} />}
       {mostrarAjustes && <AjustesPanel ajustes={ajustes} setAjustes={setAjustes} onClose={() => setMostrarAjustes(false)} />}
       {insigniaDesbloqueada && <InsigniaDesbloqueadaModal insignia={insigniaDesbloqueada} onClose={() => setInsigniaDesbloqueada(null)} />}
     </div>
@@ -1231,13 +1259,16 @@ export default function AcademiaPIR() {
 // pierde, porque la tirada y lo pendiente de subir viven en `localStorage`.
 // No hace falta botón de cerrar: el aviso se retira él solo cuando vuelve la
 // red o cuando la siguiente escritura sale bien.
-function BarraAviso({ texto }) {
+// `esperando` es el aviso de "sigue en marcha", que no es un fallo: va en
+// naranja y SIN el botón de recargar, porque recargar a mitad de una escritura
+// es justo lo que no hay que hacer — se abandonaría lo que se está guardando.
+function BarraAviso({ texto, esperando }) {
   return (
     <div
       role="alert"
       style={{
         position: "fixed", left: 0, right: 0, top: 0, zIndex: 60,
-        background: ACENTO, color: "#fff",
+        background: esperando ? AVISO : ACENTO, color: "#fff",
         paddingTop: "max(12px, env(safe-area-inset-top))",
         paddingBottom: 12, paddingLeft: 14, paddingRight: 14,
         display: "flex", alignItems: "center", gap: 12,
@@ -1245,6 +1276,7 @@ function BarraAviso({ texto }) {
       }}
     >
       <span style={{ flex: 1 }}>{texto}</span>
+      {!esperando && (
       <button
         type="button"
         onClick={() => window.location.reload()}
@@ -1260,6 +1292,7 @@ function BarraAviso({ texto }) {
         <RotateCw size={16} />
         Recargar
       </button>
+      )}
     </div>
   );
 }
@@ -1295,9 +1328,14 @@ function AuthScreen({ onLogin, onSignup }) {
       setError("Las contraseñas no coinciden.");
       return;
     }
-    setCargando(true);
-    const resultado = modo === "login" ? await onLogin(username, password) : await onSignup(username, password, codigo);
-    setCargando(false);
+    // `conBandera` apaga el "Entrando..." pase lo que pase, y devuelve `false`
+    // si algo lanzó — que aquí no debería pasar, porque handleLogin y
+    // handleSignup lo atrapan todo, pero si pasara el botón no puede quedarse
+    // muerto y en silencio: eso es exactamente "le doy a Entrar y no pasa nada".
+    const devuelto = await conBandera(setCargando, () =>
+      modo === "login" ? onLogin(username, password) : onSignup(username, password, codigo)
+    );
+    const resultado = devuelto === false ? { error: "Algo falló. Vuelve a intentarlo." } : devuelto;
     if (resultado.error) {
       setError(resultado.error);
     } else if (modo === "signup") {
@@ -2634,9 +2672,9 @@ function EditarPregunta({ q, onSave, onCancel }) {
 
   const submit = async () => {
     if (!pregunta.trim() || opciones.some((o) => !o.trim()) || !tema.trim()) return;
-    setSaving(true);
-    await onSave({ curso, tema, pregunta, opciones, correcta, explicacion: explicacion || null });
-    setSaving(false);
+    await conBandera(setSaving, () =>
+      onSave({ curso, tema, pregunta, opciones, correcta, explicacion: explicacion || null })
+    );
   };
 
   return (
@@ -4597,13 +4635,11 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
                 type="button"
                 disabled={enviando || !editandoCarta.frontal.trim() || !editandoCarta.posterior.trim()}
                 onClick={async () => {
-                  setEnviando(true);
                   const cambios = {
                     frontal: editandoCarta.frontal.trim(),
                     posterior: editandoCarta.posterior.trim(),
                   };
-                  const ok = await onUpdate(carta.id, cambios);
-                  setEnviando(false);
+                  const ok = await conBandera(setEnviando, () => onUpdate(carta.id, cambios));
                   if (!ok) return;
                   // `sesion` es una foto de las tarjetas hecha al empezar, así
                   // que hay que parchearla también: si no, sigues viendo la
@@ -4953,9 +4989,7 @@ function SelectorEstiloMazo({ icono, color, onGuardar, onCerrar }) {
           type="button"
           disabled={guardando}
           onClick={async () => {
-            setGuardando(true);
-            await onGuardar({ icono: iconoSel, color: colorSel });
-            setGuardando(false);
+            await conBandera(setGuardando, () => onGuardar({ icono: iconoSel, color: colorSel }));
             onCerrar();
           }}
           style={{ ...styles.btnPrimary, flex: 1, opacity: guardando ? 0.7 : 1 }}
@@ -5007,9 +5041,7 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
             type="button"
             disabled={procesando || !nombreNuevo.trim()}
             onClick={async () => {
-              setProcesando(true);
-              const ok = await onRenombrar(nombreNuevo.trim());
-              setProcesando(false);
+              const ok = await conBandera(setProcesando, () => onRenombrar(nombreNuevo.trim()));
               if (ok) setModo("normal"); else setNombreNuevo(titulo);
             }}
             style={{ ...styles.btnPrimary, flex: 1, opacity: procesando ? 0.7 : 1 }}
@@ -5044,9 +5076,7 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
             type="button"
             disabled={procesando || !destinoElegido}
             onClick={async () => {
-              setProcesando(true);
-              const ok = await onCopiar(destinoElegido);
-              setProcesando(false);
+              const ok = await conBandera(setProcesando, () => onCopiar(destinoElegido));
               if (ok) setModo("normal");
             }}
             style={{ ...styles.btnPrimary, flex: 1, opacity: procesando ? 0.7 : 1 }}
@@ -5067,7 +5097,7 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
           <button
             type="button"
             disabled={procesando}
-            onClick={async () => { setProcesando(true); await onBorrar(); setProcesando(false); }}
+            onClick={() => conBandera(setProcesando, () => onBorrar())}
             style={{ ...styles.btnPrimary, flex: 1, background: ACENTO, borderColor: ACENTO, opacity: procesando ? 0.7 : 1 }}
           >
             {procesando ? "Borrando..." : "Sí, borrar"}
@@ -5123,9 +5153,9 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
             type="button"
             disabled={procesando}
             onClick={async () => {
-              setProcesando(true);
-              const ok = await onEstilo({ icono: est.icono, color: est.color, carpeta: destino });
-              setProcesando(false);
+              const ok = await conBandera(setProcesando, () =>
+                onEstilo({ icono: est.icono, color: est.color, carpeta: destino })
+              );
               if (ok !== false) { setCarpetaNueva(""); setModo("normal"); }
             }}
             style={{ ...styles.btnPrimary, flex: 1, opacity: procesando ? 0.7 : 1 }}
@@ -5278,9 +5308,7 @@ function NuevaCarpeta({ mazos, carpetaDe, onCrear }) {
           type="button"
           disabled={!listo}
           onClick={async () => {
-            setGuardando(true);
-            await onCrear(nombre.trim(), elegidos);
-            setGuardando(false);
+            await conBandera(setGuardando, () => onCrear(nombre.trim(), elegidos));
             setNombre(""); setElegidos([]); setAbierto(false);
           }}
           style={{ ...styles.btnPrimary, flex: 1, opacity: listo ? 1 : 0.6 }}
@@ -5386,9 +5414,9 @@ function NuevaFlashcard({ onAdd, mazoFijo, textoBoton, etiquetasExistentes }) {
 
   const guardar = async () => {
     if (!frontal.trim() || !posterior.trim() || !destino) return;
-    setGuardando(true);
-    const ok = await onAdd({ mazo: destino, frontal: frontal.trim(), posterior: posterior.trim(), etiquetas });
-    setGuardando(false);
+    const ok = await conBandera(setGuardando, () =>
+      onAdd({ mazo: destino, frontal: frontal.trim(), posterior: posterior.trim(), etiquetas })
+    );
     if (!ok) return;
     // Las etiquetas NO se limpian: así pones "porcentajes" una vez y metes
     // diez tarjetas seguidas con ella sin volver a escribirla.
@@ -5462,9 +5490,7 @@ function ImportarFlashcards({ onAddBulk, mazoFijo, etiquetasExistentes }) {
 
   const importar = async () => {
     if (tarjetas.length === 0 || !destino) return;
-    setImportando(true);
-    const n = await onAddBulk(destino, tarjetas, etiquetas);
-    setImportando(false);
+    const n = await conBandera(setImportando, () => onAddBulk(destino, tarjetas, etiquetas));
     setResultado(n);
     if (n > 0) setTexto("");
   };
@@ -5531,24 +5557,20 @@ function FlashcardEditableCard({ f, onUpdate, onDelete, onCopiar, mazos, etiquet
 
   const guardar = async () => {
     if (!frontal.trim() || !posterior.trim()) return;
-    setSaving(true);
-    const ok = await onUpdate(f.id, { frontal: frontal.trim(), posterior: posterior.trim(), etiquetas });
-    setSaving(false);
+    const ok = await conBandera(setSaving, () =>
+      onUpdate(f.id, { frontal: frontal.trim(), posterior: posterior.trim(), etiquetas })
+    );
     if (ok) setEditing(false);
   };
 
   const mover = async () => {
     if (!mazoDestino) return;
-    setSaving(true);
-    const ok = await onCopiar(f.id, mazoDestino);
-    setSaving(false);
+    const ok = await conBandera(setSaving, () => onCopiar(f.id, mazoDestino));
     if (ok) setMoviendo(false);
   };
 
   const borrar = async () => {
-    setBorrando(true);
-    await onDelete(f.id);
-    setBorrando(false);
+    await conBandera(setBorrando, () => onDelete(f.id));
   };
 
   if (moviendo) {
