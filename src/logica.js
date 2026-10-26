@@ -19,6 +19,31 @@ export function esExamen(curso) {
   return typeof curso === "string" && /^pir(?:[\s\d]|$)/i.test(curso.trim());
 }
 
+// Bancos que se practican como un examen más (salen en el desplegable de
+// "Examen" con su propio nombre) pero que NO son una edición del PIR. Por eso
+// esExamen les sigue diciendo que no, y el modo relámpago, que solo baraja
+// ediciones del PIR, se queda sin ellos: lo pidió así el usuario ("en modo
+// relámpago siguen siendo solo los exámenes").
+export const BANCOS_COMO_EXAMEN = ["DSM-5-TR"];
+
+export function esBancoComoExamen(curso) {
+  return typeof curso === "string" && BANCOS_COMO_EXAMEN.includes(curso.trim());
+}
+
+// Lo que lista el desplegable de exámenes: "Todos", las ediciones del PIR de
+// la más nueva a la más vieja, y detrás los bancos de BANCOS_COMO_EXAMEN.
+// Van al final y no mezclados porque el orden de los PIR sale del número de
+// la edición, y el "5" de "DSM-5-TR" no es ninguna edición: ordenado igual,
+// el DSM caería entre los PIR como si fuera el de 2005.
+export function cursosDelDesplegable(preguntas) {
+  const presentes = [...new Set((preguntas || []).map((q) => q && q.curso))];
+  const numero = (c) => parseInt(c.match(/\d+/), 10) || 0;
+  const ediciones = presentes.filter(esExamen).sort((a, b) => numero(b) - numero(a));
+  const bancos = presentes.filter(esBancoComoExamen)
+    .sort((a, b) => BANCOS_COMO_EXAMEN.indexOf(a.trim()) - BANCOS_COMO_EXAMEN.indexOf(b.trim()));
+  return ["Todos", ...ediciones, ...bancos];
+}
+
 // Los exámenes oficiales transcritos del PDF no traían tema, así que se les
 // puso "Pregunta N" de relleno. No es un tema y no debe salir en las listas.
 export const TEMA_PLACEHOLDER = /^pregunta\s*\d+$/i;
