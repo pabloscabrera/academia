@@ -41,6 +41,11 @@ test("el DSM-5-TR sale en el desplegable de exámenes pero no es una edición (f
     "los PIR de nuevo a viejo, el DSM detrás y no entre ellos, y las asignaturas sueltas fuera");
   assert.deepEqual(cursosDelDesplegable([{ curso: "PIR 18" }]), ["Todos", "PIR 18"],
     "sin preguntas del DSM no aparece una opción vacía");
+  assert.equal(esExamen("BELLOCH"), false, "el Belloch tampoco entra en relámpago");
+  assert.deepEqual(
+    cursosDelDesplegable([{ curso: "BELLOCH" }, { curso: "PIR 20" }, { curso: "DSM-5-TR" }]),
+    ["Todos", "PIR 20", "DSM-5-TR", "BELLOCH"],
+    "los libros van detrás de los PIR, en el orden de BANCOS_COMO_EXAMEN");
 });
 
 test("los temas de relleno de los PDF no cuentan como tema", () => {
