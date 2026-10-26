@@ -4,7 +4,7 @@ import {
   esExamen, esTemaReal, temasDisponibles, filtrarPreguntas, indicePorId,
   reconstruirTirada, agruparAciertos, calcularSM2, ordenarPorPrioridad,
   parsearEtiquetas, lunesDeLaSemana, aplicarFiltroPedido,
-  conTiempoLimite, conBandera, mensajeDeCarga, mensajeDeEspera, textoIntervalo, MAX_INTERVALO, dentroDelHorizonte,
+  conTiempoLimite, conBandera, mensajeDeCarga, mensajeDeEspera, marcadorTirada, textoIntervalo, MAX_INTERVALO, dentroDelHorizonte,
   cursosDeRuleta, elegirPreguntaRuleta, reconstruirRuleta,
   hayQueDescargar, selloDeFilas, MAX_EDAD_CACHE_MS,
   preguntaUsable, bancoUsable,
@@ -945,4 +945,42 @@ test("mensajeDeEspera dice que sigue en marcha, no que haya fallado", () => {
   assert.match(m, /tardando/);
   assert.doesNotMatch(m, /no se pudo|error|falló/i);
   assert.match(mensajeDeEspera(), /tardando/);
+});
+
+// ---------- marcador de la tirada ----------
+
+test("marcadorTirada cuenta aciertos y fallos de lo contestado", () => {
+  const answers = [{ correct: true }, { correct: false }, { correct: true }];
+  assert.deepEqual(marcadorTirada(answers, 1, null), { aciertos: 2, fallos: 1 });
+});
+
+test("marcadorTirada arranca a cero", () => {
+  assert.deepEqual(marcadorTirada([], 1, null), { aciertos: 0, fallos: 0 });
+  assert.deepEqual(marcadorTirada(undefined, 1, null), { aciertos: 0, fallos: 0 });
+});
+
+test("marcadorTirada suma la pregunta en curso, que aún no está en answers", () => {
+  // El número tiene que moverse cuando la opción se pinta de verde o rojo, no
+  // al pulsar "Siguiente": `answers` no la lleva todavía.
+  const answers = [{ correct: true }];
+  assert.deepEqual(marcadorTirada(answers, 1, null, true), { aciertos: 2, fallos: 0 });
+  assert.deepEqual(marcadorTirada(answers, 1, null, false), { aciertos: 1, fallos: 1 });
+  assert.deepEqual(marcadorTirada(answers, 1, null, null), { aciertos: 1, fallos: 0 });
+});
+
+test("marcadorTirada se queda clavado en el repaso de falladas", () => {
+  // En la ronda 2 `answers` se vacía y solo vuelven las falladas: acertarlas
+  // ahora NO sube la nota, que es lo que dirá el resumen final.
+  const primerIntento = { correctCount: 18, total: 25 };
+  assert.deepEqual(marcadorTirada([{ correct: true }], 2, primerIntento), { aciertos: 18, fallos: 7 });
+  // Ni siquiera la que tienes revelada delante.
+  assert.deepEqual(marcadorTirada([{ correct: true }], 3, primerIntento, true), { aciertos: 18, fallos: 7 });
+});
+
+test("marcadorTirada no se fía de un primerIntento incoherente", () => {
+  // Si total < correctCount (no debería pasar), los fallos no pueden ser
+  // negativos: un marcador con un -1 es peor que uno impreciso.
+  assert.deepEqual(marcadorTirada([], 2, { correctCount: 5, total: 3 }), { aciertos: 5, fallos: 0 });
+  // Y sin primerIntento se cae a contar lo que haya, en vez de romper.
+  assert.deepEqual(marcadorTirada([{ correct: false }], 2, null), { aciertos: 0, fallos: 1 });
 });

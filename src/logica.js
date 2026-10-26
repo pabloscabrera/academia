@@ -95,6 +95,36 @@ export function reconstruirTirada(guardada, questions, ahora = Date.now()) {
   return { ...guardada, pool, poolOriginal, answers, resultados };
 }
 
+// Aciertos y fallos para el marcador de la cabecera de una tirada, para ir
+// sabiendo cómo vas sin esperar al final.
+//
+// Cuenta el PRIMER intento, que es la nota que de verdad vale: es lo que
+// enseña la pantalla de resultados (`primerIntento`) y lo mismo que se guarda
+// en Supabase, donde todo va limitado a `ronda === 1`. Si contara también los
+// repasos, el marcador diría una cosa y el resumen final otra.
+//
+// Por eso a partir de la ronda 2 se queda CLAVADO: ahí `answers` se vacía y
+// solo vuelven las falladas, así que acertar una que ya fallaste no te sube
+// la nota — se lee de `primerIntento`, que ya está cerrado.
+//
+// `enCurso` es la pregunta que acabas de contestar pero que todavía no ha
+// entrado en `answers` (se añade al pulsar "Siguiente"): `true` si la
+// acertaste, `false` si no, `null` si aún no has elegido. Va aparte para que
+// el número se mueva en el mismo instante en que la opción se pinta de verde
+// o de rojo, y no un toque después.
+export function marcadorTirada(answers, ronda, primerIntento, enCurso = null) {
+  if (ronda > 1 && primerIntento) {
+    const aciertos = primerIntento.correctCount || 0;
+    return { aciertos, fallos: Math.max(0, (primerIntento.total || 0) - aciertos) };
+  }
+  const lista = answers || [];
+  let aciertos = lista.filter((a) => a && a.correct).length;
+  let fallos = lista.length - aciertos;
+  if (enCurso === true) aciertos += 1;
+  else if (enCurso === false) fallos += 1;
+  return { aciertos, fallos };
+}
+
 // ---------- Aciertos por examen y por tema ----------
 
 // No hay un contador de aciertos en ninguna tabla: se deduce de los intentos
