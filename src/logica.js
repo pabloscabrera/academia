@@ -24,7 +24,7 @@ export function esExamen(curso) {
 // esExamen les sigue diciendo que no, y el modo relámpago, que solo baraja
 // ediciones del PIR, se queda sin ellos: lo pidió así el usuario ("en modo
 // relámpago siguen siendo solo los exámenes").
-export const BANCOS_COMO_EXAMEN = ["DSM-5-TR", "BELLOCH"];
+export const BANCOS_COMO_EXAMEN = ["DSM-5-TR", "BELLOCH", "FONSECA"];
 
 export function esBancoComoExamen(curso) {
   return typeof curso === "string" && BANCOS_COMO_EXAMEN.includes(curso.trim());

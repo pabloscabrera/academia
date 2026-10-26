@@ -46,6 +46,11 @@ test("el DSM-5-TR sale en el desplegable de exámenes pero no es una edición (f
     cursosDelDesplegable([{ curso: "BELLOCH" }, { curso: "PIR 20" }, { curso: "DSM-5-TR" }]),
     ["Todos", "PIR 20", "DSM-5-TR", "BELLOCH"],
     "los libros van detrás de los PIR, en el orden de BANCOS_COMO_EXAMEN");
+  assert.equal(esExamen("FONSECA"), false, "el Fonseca tampoco entra en relámpago");
+  assert.deepEqual(
+    cursosDelDesplegable([{ curso: "FONSECA" }, { curso: "BELLOCH" }, { curso: "PIR 20" }, { curso: "DSM-5-TR" }]),
+    ["Todos", "PIR 20", "DSM-5-TR", "BELLOCH", "FONSECA"],
+    "el Fonseca va el último, detrás del Belloch");
 });
 
 test("los temas de relleno de los PDF no cuentan como tema", () => {
