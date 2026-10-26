@@ -8,7 +8,7 @@ import {
   estadisticasFlashcards, agruparEstadisticas, DIAS_MADURA,
   mezclarTemas, temaDeTarjeta, planHastaObjetivo, DIAS_PARA_CONSOLIDAR, textoIntervalo,
   retencionGlobal, retencionPorSemana, retencionPorIntervalo, RETENCION_OBJETIVO,
-  MAX_EDAD_TIRADA_MS, reconstruirTirada, agruparAciertos,
+  MAX_EDAD_TIRADA_MS, reconstruirTirada, marcadorTirada, agruparAciertos,
   cursosDeRuleta, elegirPreguntaRuleta, reconstruirRuleta,
   calcularSM2, MAX_INTERVALO, dentroDelHorizonte, ordenarPorPrioridad, colaDeRepaso, barajarEnBloques, reinsertarEnSesion,
   mensajeDeEscritura, copiasParaMazo, copiaDeTarjeta,
@@ -2223,6 +2223,10 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
     const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
     const ss = String(seconds % 60).padStart(2, "0");
     const esCorrecta = selected === q.correcta;
+    // La que tienes revelada delante todavía no está en `answers` (entra al
+    // pulsar "Siguiente"), así que se le pasa aparte: si no, el marcador iría
+    // siempre una pregunta por detrás de lo que acabas de ver en pantalla.
+    const marcador = marcadorTirada(answers, ronda, primerIntento, revealed ? esCorrecta : null);
     return (
       <div>
         <style>{`
@@ -2248,6 +2252,21 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
                   style={rachaViva > recordPrevio ? { filter: "drop-shadow(0 0 3px rgba(232,103,43,.7))" } : undefined}
                 />
                 <span style={{ color: rachaViva > recordPrevio ? "#E8672B" : "#9B9689", fontWeight: 700 }}>{rachaViva}</span>
+              </span>
+            )}
+            {/* El marcador NO se pone en relámpago: allí la llama ya enseña
+                ese mismo número (la racha acaba con el primer fallo), y dos
+                cifras iguales juntas solo son ruido. */}
+            {!relampago && (
+              <span style={{ display: "flex", alignItems: "center", gap: 7 }} title={`${marcador.aciertos} acertadas · ${marcador.fallos} falladas${ronda > 1 ? " (de la primera vuelta)" : ""}`}>
+                <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                  <Check size={13} color={marcador.aciertos > 0 ? CORRECTO : RAYA} strokeWidth={3} />
+                  <span style={{ color: marcador.aciertos > 0 ? TINTA : TINTA_TENUE, fontWeight: 600 }}>{marcador.aciertos}</span>
+                </span>
+                <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                  <X size={13} color={marcador.fallos > 0 ? ACENTO : RAYA} strokeWidth={3} />
+                  <span style={{ color: marcador.fallos > 0 ? TINTA : TINTA_TENUE, fontWeight: 600 }}>{marcador.fallos}</span>
+                </span>
               </span>
             )}
             <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Clock size={13} /> {mm}:{ss}</span>
