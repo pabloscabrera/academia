@@ -4,7 +4,7 @@ import { supabase } from "./supabaseClient";
 import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
 import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, sinFila, filasPendientes, CONFLICTO } from "./colaPendientes";
 import {
-  esExamen, TEMA_PLACEHOLDER, temasDisponibles, filtrarPreguntas, indicePorId, aplicarFiltroPedido,
+  esExamen, cursosDelDesplegable, TEMA_PLACEHOLDER, temasDisponibles, filtrarPreguntas, indicePorId, aplicarFiltroPedido,
   estadisticasFlashcards, agruparEstadisticas, DIAS_MADURA,
   mezclarTemas, temaDeTarjeta, planHastaObjetivo, DIAS_PARA_CONSOLIDAR, textoIntervalo,
   retencionGlobal, retencionPorSemana, retencionPorIntervalo, RETENCION_OBJETIVO,
@@ -1873,11 +1873,9 @@ function Nav({ section, setSection, alerta }) {
 function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo, onRespuestaPregunta, favoritos, onToggleFavorito, miRacha, preguntasProgreso, fallos, filtroPedido, onFiltroAplicado }) {
   const [incluirInventadas, setIncluirInventadas] = useState(false);
   const base = useMemo(() => (incluirInventadas ? questions : questions.filter((q) => !q.inventada)), [questions, incluirInventadas]);
-  const cursos = useMemo(() => {
-    const examenes = [...new Set(base.filter((q) => esExamen(q.curso)).map((q) => q.curso))];
-    examenes.sort((a, b) => (parseInt(b.match(/\d+/), 10) || 0) - (parseInt(a.match(/\d+/), 10) || 0));
-    return ["Todos", ...examenes];
-  }, [base]);
+  // El DSM-5-TR sale aquí como un examen más, pero relámpago (más abajo)
+  // sigue filtrando con esExamen, que solo acepta ediciones del PIR.
+  const cursos = useMemo(() => cursosDelDesplegable(base), [base]);
   const [curso, setCurso] = useState("Todos");
 
   // De dónde salen las preguntas. Hasta ahora solo se podía tirar al azar de

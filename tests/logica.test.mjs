@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  esExamen, esTemaReal, temasDisponibles, filtrarPreguntas, indicePorId,
+  esExamen, esBancoComoExamen, cursosDelDesplegable, esTemaReal, temasDisponibles, filtrarPreguntas, indicePorId,
   reconstruirTirada, agruparAciertos, calcularSM2, ordenarPorPrioridad,
   parsearEtiquetas, lunesDeLaSemana, aplicarFiltroPedido,
   conTiempoLimite, conBandera, mensajeDeCarga, mensajeDeEspera, marcadorTirada, textoIntervalo, MAX_INTERVALO, dentroDelHorizonte,
@@ -25,6 +25,22 @@ test("esExamen distingue una edición de examen de una asignatura suelta", () =>
   assert.equal(esExamen("PIR"), true);
   assert.equal(esExamen("PIR22"), true);
   assert.equal(esExamen(null), false);
+});
+
+test("el DSM-5-TR sale en el desplegable de exámenes pero no es una edición (fuera de relámpago)", () => {
+  assert.equal(esExamen("DSM-5-TR"), false, "relámpago filtra con esExamen: el DSM no puede colarse");
+  assert.equal(esBancoComoExamen("DSM-5-TR"), true);
+  assert.equal(esBancoComoExamen(" DSM-5-TR "), true);
+  assert.equal(esBancoComoExamen("Psicopatología"), false);
+  assert.equal(esBancoComoExamen(null), false);
+  const lista = cursosDelDesplegable([
+    { curso: "PIR 18" }, { curso: "DSM-5-TR" }, { curso: "PIR 25" }, { curso: "Psicopatología" },
+    { curso: "PIR 20" }, { curso: "DSM-5-TR" }, null,
+  ]);
+  assert.deepEqual(lista, ["Todos", "PIR 25", "PIR 20", "PIR 18", "DSM-5-TR"],
+    "los PIR de nuevo a viejo, el DSM detrás y no entre ellos, y las asignaturas sueltas fuera");
+  assert.deepEqual(cursosDelDesplegable([{ curso: "PIR 18" }]), ["Todos", "PIR 18"],
+    "sin preguntas del DSM no aparece una opción vacía");
 });
 
 test("los temas de relleno de los PDF no cuentan como tema", () => {
