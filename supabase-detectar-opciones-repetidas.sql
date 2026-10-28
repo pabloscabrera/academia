@@ -32,6 +32,18 @@
 -- buena: puedes contestar lo mismo que pone la correcta y que te la den por
 -- fallada. Eso no es cosmético.
 --
+-- EL FALSO POSITIVO QUE SÍ APARECIÓ, y por qué el regex lleva esos símbolos.
+-- La primera versión normalizaba con `[^a-z0-9]`, o sea que se comía el `+` y
+-- el `-`. Sobre las 1067 del repo no falló ni una vez, pero al correrlo sobre
+-- el banco entero marcó una de FONSECA cuyas opciones son "Nivel de evidencia
+-- 1++", "1+" y "1-": tres niveles DISTINTOS de la escala SIGN que colapsaban
+-- todos a "1". Se comprobó contra `supabase-fonseca-preguntas.sql`, que está
+-- en el repo, y las cuatro opciones son legítimas. Por eso la normalización
+-- conserva ahora `+ - % / < > =`: en este banco esos símbolos son contenido
+-- ("1++", "35-90%", "p<0,05", "DSM-5"), no puntuación. Moraleja: validar
+-- contra 1067 filas no es validar contra 2934, y el caso que faltaba era
+-- justamente de uno de los bancos nuevos.
+--
 -- No arregla nada: cada caso necesita el documento original para saber qué
 -- decía la opción que se perdió. Mismo criterio que los demás `detectar-*`.
 -- ============================================================================
@@ -54,9 +66,9 @@ plano as (
 ),
 claves as (
   select plano.*,
-         regexp_replace(t, '[^a-z0-9]', '', 'g') as solo_alfa,
+         regexp_replace(t, '[^a-z0-9+%/<>=-]', '', 'g') as solo_alfa,
          (select string_agg(w, ' ' order by i)
-            from unnest(regexp_split_to_array(regexp_replace(t, '[^a-z0-9]', ' ', 'g'), '\s+'))
+            from unnest(regexp_split_to_array(regexp_replace(t, '[^a-z0-9+%/<>=-]', ' ', 'g'), '\s+'))
                  with ordinality as u(w, i)
            where w <> ''
              and w not in ('de','del','la','el','los','las','un','una','unos','unas',
@@ -104,9 +116,9 @@ plano as (
 ),
 claves as (
   select plano.*,
-         regexp_replace(t,'[^a-z0-9]','','g') as solo_alfa,
+         regexp_replace(t,'[^a-z0-9+%/<>=-]','','g') as solo_alfa,
          (select string_agg(w,' ' order by i)
-            from unnest(regexp_split_to_array(regexp_replace(t,'[^a-z0-9]',' ','g'),'\s+')) with ordinality as u(w,i)
+            from unnest(regexp_split_to_array(regexp_replace(t,'[^a-z0-9+%/<>=-]',' ','g'),'\s+')) with ordinality as u(w,i)
            where w <> '' and w not in ('de','del','la','el','los','las','un','una','unos','unas',
                                        'y','o','e','u','que','en','a','al','se','su','sus','lo')
          ) as sin_vacias
