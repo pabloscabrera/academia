@@ -1885,8 +1885,10 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
   const [origen, setOrigen] = useState("todas");
   const [tema, setTema] = useState("Todos");
 
-  const acertadaPorId = useMemo(
-    () => indicePorId(preguntasProgreso, "pregunta_id", (p) => p.acertada),
+  // Lo INTENTADO, no lo acertado: "No realizadas" es lo que no has llegado a
+  // contestar nunca — misma definición que la pestaña "Pendientes" del Banco.
+  const intentadaPorId = useMemo(
+    () => indicePorId(preguntasProgreso, "pregunta_id", (p) => (p.veces || 0) > 0),
     [preguntasProgreso]
   );
   const falladaPorId = useMemo(
@@ -1900,8 +1902,8 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
   // combinación se queda sin preguntas, el contador lo canta y el botón se
   // desactiva, en vez de empezar una tirada vacía.
   const filtradas = useMemo(
-    () => filtrarPreguntas(base, { curso, tema, origen }, acertadaPorId, falladaPorId),
-    [base, curso, tema, origen, acertadaPorId, falladaPorId]
+    () => filtrarPreguntas(base, { curso, tema, origen }, intentadaPorId, falladaPorId),
+    [base, curso, tema, origen, intentadaPorId, falladaPorId]
   );
   const disponibles = filtradas.length;
 
@@ -2146,7 +2148,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
           <div style={styles.tabsOrigen}>
             {[
               { id: "todas", texto: "Todas" },
-              { id: "sinacertar", texto: "Sin acertar" },
+              { id: "nohechas", texto: "No realizadas" },
               { id: "fallos", texto: "Falladas" },
             ].map((o) => (
               <button
@@ -2160,8 +2162,8 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
             ))}
           </div>
           <p style={{ fontSize: 12.5, color: TINTA_TENUE, margin: "0 0 16px", lineHeight: 1.5 }}>
-            {origen === "sinacertar"
-              ? "Las que nunca has llegado a acertar, incluidas las que no has visto todavía."
+            {origen === "nohechas"
+              ? "Solo las que no has contestado todavía. Lo que has fallado va en \u201cFalladas\u201d."
               : origen === "fallos"
               ? "Solo las que has fallado alguna vez, las hayas acertado después o no."
               : "Todo el banco del examen y el tema que elijas debajo."}

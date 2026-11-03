@@ -105,26 +105,38 @@ const progreso = [
   { pregunta_id: "d", veces: 1, acertada: true },
 ];
 const fallos = [{ pregunta_id: "a", veces: 1 }, { pregunta_id: "b", veces: 2 }];
-const acertada = indicePorId(progreso, "pregunta_id", (p) => p.acertada);
+const intentada = indicePorId(progreso, "pregunta_id", (p) => (p.veces || 0) > 0);
 const fallada = indicePorId(fallos, "pregunta_id", (f) => (f.veces || 0) > 0);
 const ids = (r) => r.map((q) => q.id);
 
 test("'Todas' devuelve el banco entero", () => {
-  assert.deepEqual(ids(filtrarPreguntas(banco, { curso: "Todos", tema: "Todos", origen: "todas" }, acertada, fallada)), ["a", "b", "c", "d", "e"]);
+  assert.deepEqual(ids(filtrarPreguntas(banco, { curso: "Todos", tema: "Todos", origen: "todas" }, intentada, fallada)), ["a", "b", "c", "d", "e"]);
 });
 
-test("'Sin acertar' incluye lo fallado y lo nunca visto, y excluye lo acertado", () => {
-  assert.deepEqual(ids(filtrarPreguntas(banco, { curso: "Todos", tema: "Todos", origen: "sinacertar" }, acertada, fallada)), ["b", "c", "e"]);
+test("'No realizadas' es solo lo que no has contestado nunca", () => {
+  // a, b y d tienen veces > 0; c y e no se han visto.
+  assert.deepEqual(ids(filtrarPreguntas(banco, { curso: "Todos", tema: "Todos", origen: "nohechas" }, intentada, fallada)), ["c", "e"]);
+});
+
+test("'No realizadas' NO arrastra lo fallado, que es lo que separa los dos chips", () => {
+  // "b" está intentada y fallada: tiene que salir en "Falladas" y NO en
+  // "No realizadas". Con el criterio viejo (`!acertada`) salía en los dos, y
+  // esa duplicación es justo lo que se pidió quitar.
+  const noHechas = ids(filtrarPreguntas(banco, { curso: "Todos", tema: "Todos", origen: "nohechas" }, intentada, fallada));
+  const falladas = ids(filtrarPreguntas(banco, { curso: "Todos", tema: "Todos", origen: "fallos" }, intentada, fallada));
+  assert.ok(falladas.includes("b"), "b se falló, va en Falladas");
+  assert.ok(!noHechas.includes("b"), "b está contestada: no puede salir en No realizadas");
+  assert.deepEqual(noHechas.filter((id) => falladas.includes(id)), [], "los dos chips no se pisan");
 });
 
 test("'Falladas' incluye las que acabaste acertando", () => {
-  assert.deepEqual(ids(filtrarPreguntas(banco, { curso: "Todos", tema: "Todos", origen: "fallos" }, acertada, fallada)), ["a", "b"]);
+  assert.deepEqual(ids(filtrarPreguntas(banco, { curso: "Todos", tema: "Todos", origen: "fallos" }, intentada, fallada)), ["a", "b"]);
 });
 
 test("examen, tema y origen se combinan entre sí", () => {
-  assert.deepEqual(ids(filtrarPreguntas(banco, { curso: "PIR 20", tema: "Todos", origen: "sinacertar" }, acertada, fallada)), ["b", "c"]);
-  assert.deepEqual(ids(filtrarPreguntas(banco, { curso: "PIR 18", tema: "Ansiedad", origen: "sinacertar" }, acertada, fallada)), ["e"]);
-  assert.deepEqual(ids(filtrarPreguntas(banco, { curso: "PIR 18", tema: "Psicometría", origen: "todas" }, acertada, fallada)), [],
+  assert.deepEqual(ids(filtrarPreguntas(banco, { curso: "PIR 20", tema: "Todos", origen: "nohechas" }, intentada, fallada)), ["c"]);
+  assert.deepEqual(ids(filtrarPreguntas(banco, { curso: "PIR 18", tema: "Ansiedad", origen: "nohechas" }, intentada, fallada)), ["e"]);
+  assert.deepEqual(ids(filtrarPreguntas(banco, { curso: "PIR 18", tema: "Psicometría", origen: "todas" }, intentada, fallada)), [],
     "una combinación imposible da 0, y la pantalla desactiva el botón");
 });
 
