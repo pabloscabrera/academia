@@ -112,6 +112,27 @@ export function aplicarFiltroPedido(filtro, { cursos, temas }) {
   };
 }
 
+// ---------- El teclado durante una tirada ----------
+
+// 1/2/3/4 eligen la A/B/C/D e Intro pasa de pregunta. La regla vive aquí y
+// no dentro del oyente porque es lo único que tiene decisiones:
+//
+//  - **Intro solo cuenta con la pregunta ya contestada.** Se pidió así, y
+//    además es lo que evita que un Intro de más salte una pregunta sin
+//    responder, que contaría como no vista.
+//  - **Un número ya no hace nada una vez revelada**: cambiar la respuesta
+//    después de ver el verde o el rojo no sería contestar.
+//  - Un número por encima de las opciones que hay (un "4" en una pregunta
+//    de tres) se ignora en vez de elegir la última.
+export const TECLAS_OPCION = ["1", "2", "3", "4"];
+
+export function accionDeTecla(tecla, { revelada, numOpciones }) {
+  if (tecla === "Enter") return revelada ? { tipo: "siguiente" } : null;
+  const i = TECLAS_OPCION.indexOf(tecla);
+  if (i < 0 || i >= (numOpciones || 0)) return null;
+  return revelada ? null : { tipo: "elegir", indice: i };
+}
+
 // ---------- Retomar una autoevaluación a medias ----------
 
 export const MAX_EDAD_TIRADA_MS = 7 * 24 * 60 * 60 * 1000;
