@@ -20,7 +20,7 @@ import {
   carpetaDeMazo, carpetasExistentes, agruparMazosEnCarpetas, interpretarSoltar, FUERA_DE_CARPETAS,
   CRITERIOS_ORDEN_MAZO, ordenarMazos, tasaDeFalloPorMazo,
   mediaCalificacionPorTarjeta, estadoCuadricula,
-  etiquetaOrigen,
+  etiquetaOrigen, accionDeTecla,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -2107,6 +2107,36 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
 
     setState("done");
   };
+
+  // El teclado: 1/2/3/4 eligen opción e Intro pasa de pregunta. Va DESPUÉS
+  // de `elegir` y `next`, que son las dos que llama: un efecto por encima de
+  // lo que lee tumba la app entera (ver la regla de los hooks en CLAUDE.md).
+  // Qué hace cada tecla lo decide `accionDeTecla`, que se prueba sola; aquí
+  // solo quedan las guardas del navegador.
+  useEffect(() => {
+    if (state !== "running") return undefined;
+    const alPulsar = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const d = e.target;
+      const etiqueta = d && d.tagName ? d.tagName.toLowerCase() : "";
+      // Escribiendo en un campo manda el campo: si no, el "1" de una
+      // cantidad o de una búsqueda contestaría la pregunta.
+      if (etiqueta === "input" || etiqueta === "textarea" || etiqueta === "select") return;
+      if (d && d.isContentEditable) return;
+      // Con Intro sobre un botón, que lo haga el botón: si no, el mismo
+      // Intro pasaría de pregunta dos veces.
+      if (e.key === "Enter" && etiqueta === "button") return;
+      const q = pool[idx];
+      if (!q) return;
+      const accion = accionDeTecla(e.key, { revelada: revealed, numOpciones: q.opciones.length });
+      if (!accion) return;
+      e.preventDefault();
+      if (accion.tipo === "elegir") elegir(accion.indice);
+      else next();
+    };
+    window.addEventListener("keydown", alPulsar);
+    return () => window.removeEventListener("keydown", alPulsar);
+  }, [state, revealed, pool, idx, elegir, next]);
 
   if (questions.length === 0) {
     return (

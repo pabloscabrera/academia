@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   esExamen, esBancoComoExamen, cursosDelDesplegable, esTemaReal, temasDisponibles, filtrarPreguntas, indicePorId,
-  etiquetaOrigen,
+  etiquetaOrigen, accionDeTecla, TECLAS_OPCION,
   reconstruirTirada, agruparAciertos, calcularSM2, ordenarPorPrioridad,
   parsearEtiquetas, lunesDeLaSemana, aplicarFiltroPedido,
   conTiempoLimite, conBandera, mensajeDeCarga, mensajeDeEspera, marcadorTirada, textoIntervalo, MAX_INTERVALO, dentroDelHorizonte,
@@ -108,6 +108,35 @@ const fallos = [{ pregunta_id: "a", veces: 1 }, { pregunta_id: "b", veces: 2 }];
 const intentada = indicePorId(progreso, "pregunta_id", (p) => (p.veces || 0) > 0);
 const fallada = indicePorId(fallos, "pregunta_id", (f) => (f.veces || 0) > 0);
 const ids = (r) => r.map((q) => q.id);
+
+test("el teclado: 1-4 eligen opción, Intro pasa de pregunta", () => {
+  const sinContestar = { revelada: false, numOpciones: 4 };
+  assert.deepEqual(accionDeTecla("1", sinContestar), { tipo: "elegir", indice: 0 }, "1 es la A");
+  assert.deepEqual(accionDeTecla("4", sinContestar), { tipo: "elegir", indice: 3 }, "4 es la D");
+  assert.equal(TECLAS_OPCION.length, 4);
+});
+
+test("Intro NO pasa de pregunta mientras no hayas contestado", () => {
+  // Es lo que se pidió, y lo que evita saltarse una sin responder.
+  assert.equal(accionDeTecla("Enter", { revelada: false, numOpciones: 4 }), null);
+  assert.deepEqual(accionDeTecla("Enter", { revelada: true, numOpciones: 4 }), { tipo: "siguiente" });
+});
+
+test("con la pregunta ya revelada, los números no cambian la respuesta", () => {
+  assert.equal(accionDeTecla("1", { revelada: true, numOpciones: 4 }), null);
+  assert.equal(accionDeTecla("3", { revelada: true, numOpciones: 4 }), null);
+});
+
+test("una tecla que no es nuestra, o que señala una opción que no existe, se ignora", () => {
+  const abierta = { revelada: false, numOpciones: 4 };
+  for (const t of ["a", "0", "5", "Escape", " ", "ArrowDown"]) {
+    assert.equal(accionDeTecla(t, abierta), null, `"${t}" no debería hacer nada`);
+  }
+  // Un "4" en una pregunta de tres opciones no elige la última.
+  assert.equal(accionDeTecla("4", { revelada: false, numOpciones: 3 }), null);
+  assert.deepEqual(accionDeTecla("3", { revelada: false, numOpciones: 3 }), { tipo: "elegir", indice: 2 });
+  assert.equal(accionDeTecla("1", { revelada: false, numOpciones: 0 }), null, "sin opciones no hay nada que elegir");
+});
 
 test("'Todas' devuelve el banco entero", () => {
   assert.deepEqual(ids(filtrarPreguntas(banco, { curso: "Todos", tema: "Todos", origen: "todas" }, intentada, fallada)), ["a", "b", "c", "d", "e"]);
