@@ -71,14 +71,21 @@ export function etiquetaOrigen(pregunta) {
 
 // ---------- Elegir qué preguntas entran en una autoevaluación ----------
 
-// origen: "todas" | "sinacertar" | "fallos".
-// "sinacertar" incluye lo que no se ha visto nunca; "fallos", lo que consta
-// como fallado alguna vez aunque después se acertara.
-export function filtrarPreguntas(base, { curso, tema, origen }, acertadaPorId, falladaPorId) {
+// origen: "todas" | "nohechas" | "fallos".
+// "nohechas" es lo que NO has contestado nunca; "fallos", lo que consta como
+// fallado alguna vez aunque después se acertara. **Los dos chips no se pisan
+// a propósito**: antes "nohechas" se llamaba "sinacertar" y era `!acertada`,
+// o sea lo nunca acertado — que incluye lo intentado y fallado, justo lo que
+// ya lista "Falladas". Repetido en dos chips, el de la izquierda no decía
+// nada que el de la derecha no dijera ya. Ahora uno es lo que te falta por
+// ver y el otro lo que has visto y te salió mal, que son las dos preguntas
+// que uno se hace. De ahí que el índice que recibe sea el de lo INTENTADO
+// (`veces > 0`) y no el de lo acertado.
+export function filtrarPreguntas(base, { curso, tema, origen }, intentadaPorId, falladaPorId) {
   return base.filter((q) => {
     if (curso && curso !== "Todos" && q.curso !== curso) return false;
     if (tema && tema !== "Todos" && (q.tema || "").trim() !== tema) return false;
-    if (origen === "sinacertar" && acertadaPorId[q.id]) return false;
+    if (origen === "nohechas" && intentadaPorId[q.id]) return false;
     if (origen === "fallos" && !falladaPorId[q.id]) return false;
     return true;
   });
