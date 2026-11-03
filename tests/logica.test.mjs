@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   esExamen, esBancoComoExamen, cursosDelDesplegable, esTemaReal, temasDisponibles, filtrarPreguntas, indicePorId,
+  etiquetaOrigen,
   reconstruirTirada, agruparAciertos, calcularSM2, ordenarPorPrioridad,
   parsearEtiquetas, lunesDeLaSemana, aplicarFiltroPedido,
   conTiempoLimite, conBandera, mensajeDeCarga, mensajeDeEspera, marcadorTirada, textoIntervalo, MAX_INTERVALO, dentroDelHorizonte,
@@ -51,6 +52,33 @@ test("el DSM-5-TR sale en el desplegable de exámenes pero no es una edición (f
     cursosDelDesplegable([{ curso: "FONSECA" }, { curso: "BELLOCH" }, { curso: "PIR 20" }, { curso: "DSM-5-TR" }]),
     ["Todos", "PIR 20", "DSM-5-TR", "BELLOCH", "FONSECA"],
     "el Fonseca va el último, detrás del Belloch");
+});
+
+test("la etiqueta de una pregunta dice de dónde sale, nunca de qué va", () => {
+  // El caso que lo motivó: un caso clínico de disforia premenstrual del
+  // DSM-5-TR llevaba encima "DSM-5-TR · Trastornos depresivos", que es media
+  // respuesta; y una de Belloch sobre el TAS, "BELLOCH · Trastorno de
+  // ansiedad social", que es la respuesta entera.
+  assert.equal(
+    etiquetaOrigen({ curso: "DSM-5-TR", tema: "Trastornos depresivos" }),
+    "DSM-5-TR",
+    "el tema no puede salir en la etiqueta"
+  );
+  assert.equal(
+    etiquetaOrigen({ curso: "BELLOCH", tema: "Trastorno de ansiedad social" }),
+    "BELLOCH"
+  );
+  // Y nada de lo que trae la pregunta se cuela por detrás.
+  const etiqueta = etiquetaOrigen({
+    curso: "PIR 22", tema: "Psicometría",
+    pregunta: "¿Un enunciado?", explicacion: "Porque sí",
+  });
+  assert.ok(!/Psicometr/.test(etiqueta), `se coló el tema: "${etiqueta}"`);
+
+  // Sin curso no se inventa nada ni revienta.
+  assert.equal(etiquetaOrigen({ tema: "Ansiedad" }), "");
+  assert.equal(etiquetaOrigen(null), "");
+  assert.equal(etiquetaOrigen({ curso: "  PIR 18  " }), "PIR 18");
 });
 
 test("los temas de relleno de los PDF no cuentan como tema", () => {

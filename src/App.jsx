@@ -20,6 +20,7 @@ import {
   carpetaDeMazo, carpetasExistentes, agruparMazosEnCarpetas, interpretarSoltar, FUERA_DE_CARPETAS,
   CRITERIOS_ORDEN_MAZO, ordenarMazos, tasaDeFalloPorMazo,
   mediaCalificacionPorTarjeta, estadoCuadricula,
+  etiquetaOrigen,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -2273,7 +2274,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
         <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${(idx / pool.length) * 100}%` }} /></div>
         <Card style={{ marginTop: 16, ...styles.daypoCard }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div style={{ fontSize: 11, color: TINTA_SUAVE, fontFamily: "Arial, Helvetica, sans-serif" }}>{q.curso} · {q.tema}</div>
+            <div style={{ fontSize: 11, color: TINTA_SUAVE, fontFamily: "Arial, Helvetica, sans-serif" }}>{etiquetaOrigen(q)}</div>
             {onToggleFavorito && <FavoritoBtn pregunta={q} favoritos={favoritos} onToggle={onToggleFavorito} />}
           </div>
           <p style={styles.daypoPregunta}>{q.pregunta}</p>
@@ -2359,7 +2360,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
         {abierta && (
           <Card style={{ marginTop: 14 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-              <div style={{ fontSize: 11, color: TINTA_SUAVE }}>{abierta.pregunta.curso} · {abierta.pregunta.tema}</div>
+              <div style={{ fontSize: 11, color: TINTA_SUAVE }}>{etiquetaOrigen(abierta.pregunta)}</div>
               {onToggleFavorito && (
                 <FavoritoBtn pregunta={abierta.pregunta} favoritos={favoritos} onToggle={onToggleFavorito} />
               )}
@@ -2504,7 +2505,7 @@ function PreguntaGeneradaCard({ p, guardada, onGuardar }) {
   const revealed = selected !== null;
   return (
     <Card style={{ marginBottom: 10, borderLeft: "3px solid #8A5A9E" }}>
-      <div style={{ fontSize: 11, color: "#8A5A9E", marginBottom: 4 }}>{p.curso} · {p.tema}</div>
+      <div style={{ fontSize: 11, color: "#8A5A9E", marginBottom: 4 }}>{etiquetaOrigen(p)}</div>
       <div style={{ fontSize: 14, color: "#1E1C18", marginBottom: 8 }}>{p.pregunta}</div>
       {p.opciones.map((op, oi) => {
         let estilo = { ...styles.opcion };
@@ -2595,7 +2596,7 @@ function PreguntaCard({ q, isAdmin, onUpdate, onDelete, favoritos, onToggleFavor
           <div style={{ textAlign: "left", flex: 1 }}>
             <div style={{ fontSize: 11, color: q.inventada ? "#8A5A9E" : TINTA_SUAVE, marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>
               {q.inventada && <Sparkles size={11} />}
-              {q.curso} · {q.tema}
+              {etiquetaOrigen(q)}
             </div>
             <div style={{ fontSize: 14, color: "#1E1C18", lineHeight: 1.4 }}>{q.pregunta}</div>
           </div>
@@ -5693,7 +5694,7 @@ function PreguntasPlegables({ titulo, subtitulo, items, etiquetaItem, abiertaId,
             <button type="button" onClick={() => setAbiertaId(abiertaId === f.pregunta_id ? null : f.pregunta_id)} style={{ ...styles.expandBtn, flex: 1 }}>
               <div style={{ textAlign: "left", flex: 1 }}>
                 <div style={{ fontSize: 11, color: "#9B9689", marginBottom: 4 }}>
-                  {f.pregunta.curso} · {f.pregunta.tema}{etiquetaItem ? ` · ${etiquetaItem(f)}` : ""}
+                  {etiquetaOrigen(f.pregunta)}{etiquetaItem ? ` · ${etiquetaItem(f)}` : ""}
                 </div>
                 <div style={{ fontSize: 14, color: "#1E1C18", lineHeight: 1.4 }}>{f.pregunta.pregunta}</div>
               </div>
@@ -5736,7 +5737,7 @@ function FalloRepetible({ f, index, favoritos, onToggleFavorito }) {
         <button type="button" onClick={toggleAbierta} style={{ ...styles.expandBtn, flex: 1 }}>
           <div style={{ textAlign: "left", flex: 1 }}>
             <div style={{ fontSize: 14, color: TINTA, fontWeight: 600 }}>
-              {q.curso} · Pregunta {index}
+              {etiquetaOrigen(q)} · Pregunta {index}
             </div>
             <div style={{ fontSize: 11, color: "#9B9689", marginTop: 2 }}>
               fallada {f.veces} {f.veces === 1 ? "vez" : "veces"}

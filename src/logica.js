@@ -58,6 +58,17 @@ export function temasDisponibles(preguntas) {
   return nombres.sort((a, b) => a.localeCompare(b, "es"));
 }
 
+// La etiqueta que se dibuja encima del enunciado. Es SOLO el `curso` — de
+// dónde sale la pregunta —, nunca el `tema`: "DSM-5-TR · Trastornos
+// depresivos" encima de un caso de disforia premenstrual es media respuesta
+// regalada, y lo mismo "Trastorno de ansiedad social" sobre una pregunta que
+// pregunta justamente por el TAS. El tema se sigue usando para FILTRAR (el
+// desplegable de Simulacros, el buscador del Banco) y para "Dónde fallas",
+// que es donde informa sin delatar.
+export function etiquetaOrigen(pregunta) {
+  return ((pregunta && pregunta.curso) || "").trim();
+}
+
 // ---------- Elegir qué preguntas entran en una autoevaluación ----------
 
 // origen: "todas" | "sinacertar" | "fallos".
