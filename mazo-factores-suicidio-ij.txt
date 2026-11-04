@@ -1,0 +1,42 @@
+Bajo nivel económico o clase social.;Factor de riesgo familiar
+Antecedentes familiares de intento de suicidio.;Factor de riesgo familiar
+Problemas de comunicación parentales.;Factor de riesgo familiar
+Conflictos familiares.;Factor de riesgo familiar
+Cohesión familiar.;Factor de protección familiar
+Baja conflictividad familiar.;Factor de protección familiar
+Abandono, absentismo o fracaso escolar.;Factor de riesgo socioambiental y contextual
+Problemas de rendimiento escolar percibidos o reales.;Factor de riesgo socioambiental y contextual
+No trabajar ni estudiar.;Factor de riesgo socioambiental y contextual
+Mala relación con los iguales.;Factor de riesgo socioambiental y contextual
+Buen sistema de apoyo y recursos.;Factor de protección socioambiental y contextual
+Compromiso y seguridad en la escuela.;Factor de protección socioambiental y contextual
+Participación en actividades extraescolares.;Factor de protección socioambiental y contextual
+Pertenecer al colectivo LGB.;Factor de riesgo personal
+Baja motivación académica.;Factor de riesgo personal
+Desapego escolar.;Factor de riesgo personal
+Impulsividad.;Factor de riesgo personal
+Inhibición emocional.;Factor de riesgo personal
+Dificultad en solución de problemas.;Factor de riesgo personal
+Apego inseguro.;Factor de riesgo personal
+Habilidad de solución de problemas.;Factor de protección personal
+Estrategias de afrontamiento.;Factor de protección personal
+Buen rendimiento escolar.;Factor de protección personal
+Actitudes y valores positivos frente al suicidio.;Factor de protección personal
+Creencias espirituales, valores existenciales o de autotrascendencia.;Factor de protección personal
+Locus de control interno.;Factor de protección personal
+Autoestima alta.;Factor de protección personal
+Buen nivel de inteligencia.;Factor de protección personal
+Capacidad de cooperación.;Factor de protección personal
+Trastornos afectivos previos.;Factor de riesgo por trastorno psicológico
+Trastorno de consumo de alcohol u otras sustancias.;Factor de riesgo por trastorno psicológico
+Trastorno de ansiedad.;Factor de riesgo por trastorno psicológico
+Trastorno de depresión mayor.;Factor de riesgo por trastorno psicológico
+Acoso escolar.;Factor de riesgo por experiencia estresante adversa
+Maltrato infantil.;Factor de riesgo por experiencia estresante adversa
+Muerte por suicidio de algún familiar.;Factor de riesgo por experiencia estresante adversa
+Muerte parental.;Factor de riesgo por experiencia estresante adversa
+Violencia de pareja.;Factor de riesgo por experiencia estresante adversa
+Violencia en la calle.;Factor de riesgo por experiencia estresante adversa
+Intento de suicidio.;Factor de riesgo por conducta suicida previa
+Ideación suicida.;Factor de riesgo por conducta suicida previa
+Autolesión no suicida.;Factor de riesgo por conducta suicida previa
