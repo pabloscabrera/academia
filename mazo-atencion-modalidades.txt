@@ -1,0 +1,6 @@
+Capacidad para priorizar el procesamiento de un determinado estímulo frente a otros.;Focalizada
+Capacidad para mantener la atención sobre un estímulo durante un largo periodo de tiempo, detectando los cambios que ocurren en éste.;Sostenida
+Capacidad para atender las características más relevantes del ambiente, siendo seleccionadas estas frente a otras más prescindibles.;Selectiva
+Capacidad para cambiar a voluntad el foco de atención entre distintos estímulos.;Alternante
+Necesaria para realizar tareas en paralelo (simultáneamente).;Dividida
+Capacidad de inhibir la respuesta ante estímulos irrelevantes.;Excluyente
