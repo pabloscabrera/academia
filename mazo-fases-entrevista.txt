@@ -1,0 +1,12 @@
+Establecer la base del rapport.;Fase inicial
+Reducir la incertidumbre.;Fase inicial
+Sondear y establecer expectativas.;Fase inicial
+Obtener los primeros datos del estado mental.;Fase inicial
+Obtener información relevante y precisa.;Fase intermedia
+Identificar el problema.;Fase intermedia
+Elaborar hipótesis.;Fase intermedia
+Decisión de derivación o tratamiento.;Fase intermedia
+Resumir lo que se ha visto en la entrevista.;Fase final
+Planificar citas, acciones y/o tareas futuras.;Fase final
+Aclarar dudas o comentarios.;Fase final
+Cierre o despedida.;Fase final
