@@ -133,6 +133,32 @@ export function accionDeTecla(tecla, { revelada, numOpciones }) {
   return revelada ? null : { tipo: "elegir", indice: i };
 }
 
+// ---------- El teclado califica una flashcard: 1/2/3/4 ----------
+
+// Los cuatro botones de dificultad en el orden en que se dibujan:
+// 1 Otra vez · 2 Difícil · 3 Bien · 4 Fácil.
+export const TECLAS_CALIFICACION = ["1", "2", "3", "4"];
+
+// Lo que dura la animación de pulsado, y por tanto lo que se tarda en pasar de
+// tarjeta al calificar con el teclado. NO es una espera al servidor —eso se
+// quitó a propósito y no vuelve—: es el tiempo que hace falta para VER cuál se
+// ha pulsado, que es justo lo que se pidió ("para estar seguro de que no me he
+// equivocado de tecla"). Al tocar con el dedo no se aplica: ahí ya sabes dónde
+// has dado, y meterle 180 ms al iPad sería pagar por un aviso que no hace falta.
+export const MS_PULSACION = 180;
+
+// Un número solo califica con la tarjeta REVELADA, por el mismo motivo por el
+// que Intro no pasa de pregunta sin contestar en la autoevaluación: puntuar sin
+// haber visto el dorso no es recordar, y mandaría a Supabase un repaso que no
+// ha ocurrido. Un número por encima de los botones que hay se ignora en vez de
+// caer en el último.
+export function calificacionDeTecla(tecla, { revelada, numBotones }) {
+  if (!revelada) return null;
+  const i = TECLAS_CALIFICACION.indexOf(tecla);
+  if (i < 0 || i >= (numBotones || 0)) return null;
+  return i;
+}
+
 // ---------- Retomar una autoevaluación a medias ----------
 
 export const MAX_EDAD_TIRADA_MS = 7 * 24 * 60 * 60 * 1000;

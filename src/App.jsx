@@ -21,6 +21,7 @@ import {
   CRITERIOS_ORDEN_MAZO, ordenarMazos, tasaDeFalloPorMazo,
   mediaCalificacionPorTarjeta, estadoCuadricula,
   etiquetaOrigen, accionDeTecla,
+  calificacionDeTecla, MS_PULSACION,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -4489,6 +4490,13 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
   const [verTarjetas, setVerTarjetas] = useState(false);
   const [editandoCarta, setEditandoCarta] = useState(null); // { frontal, posterior } o null
   const [busquedaTarjetas, setBusquedaTarjetas] = useState("");
+  // Qué botón de dificultad se está viendo pulsar ahora mismo (índice), para
+  // la animación del atajo de teclado. El temporizador vive en un ref y NO en
+  // el estado: si estuviera en las dependencias del efecto, cada cambio lo
+  // volvería a registrar, la limpieza cancelaría el `setTimeout` a medias y la
+  // calificación se perdería en silencio.
+  const [teclaPulsada, setTeclaPulsada] = useState(null);
+  const pulsacionRef = useRef(null);
 
 
   // La cola entera, en orden de turno: lo vencido delante y, detrás, lo que
@@ -4575,6 +4583,45 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     return () => window.removeEventListener("keydown", alPulsar);
   }, [sesion, revelada, editandoCarta]);
 
+  // 1/2/3/4 califican: Otra vez / Difícil / Bien / Fácil, en el orden en que se
+  // dibujan los botones. La regla vive en `calificacionDeTecla` y no repartida
+  // por aquí; lo que queda en el oyente son las guardas del navegador, que son
+  // las mismas que en la autoevaluación y ninguna sobra.
+  //
+  // Lo propio de aquí es que NO se califica en el acto: se enciende la
+  // animación de pulsado y se pasa de tarjeta al terminarla. Sin esa pausa el
+  // aviso no se vería —`calificar` oculta los botones al instante, porque la
+  // siguiente tarjeta sale sin revelar—, y el aviso ES lo que se pidió: saber
+  // que no te has equivocado de tecla. `pulsacionRef` evita que un segundo
+  // golpe de tecla entre a mitad, y los botones se desactivan mientras tanto
+  // para que un click tampoco se cuele y califique la tarjeta siguiente.
+  useEffect(() => {
+    const alPulsar = (e) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const d = e.target;
+      const etiqueta = d && d.tagName ? d.tagName.toLowerCase() : "";
+      if (etiqueta === "input" || etiqueta === "textarea" || etiqueta === "select") return;
+      if (d && d.isContentEditable) return;
+      if (!sesion || editandoCarta || enviando) return;
+      const i = calificacionDeTecla(e.key, { revelada, numBotones: CALIFICACIONES_FLASHCARD.length });
+      if (i === null) return;
+      e.preventDefault();
+      if (pulsacionRef.current) return;
+      setTeclaPulsada(i);
+      pulsacionRef.current = setTimeout(() => {
+        pulsacionRef.current = null;
+        setTeclaPulsada(null);
+        calificar(CALIFICACIONES_FLASHCARD[i].calidad);
+      }, MS_PULSACION);
+    };
+    window.addEventListener("keydown", alPulsar);
+    return () => window.removeEventListener("keydown", alPulsar);
+  }, [sesion, revelada, editandoCarta, enviando, calificar]);
+
+  // La limpieza va en su propio efecto con dependencias vacías: así solo corre
+  // al desmontar y nunca cancela una pulsación en marcha.
+  useEffect(() => () => { if (pulsacionRef.current) clearTimeout(pulsacionRef.current); }, []);
+
   if (flashcards.length === 0) {
     return (
       <div>
@@ -4609,6 +4656,12 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
           .flip-inner.flipped { transform: rotateY(180deg); }
           .flip-face { grid-area: 1 / 1; min-height: 280px; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; overflow-y: auto; }
           .flip-back { transform: rotateY(180deg); }
+          @keyframes pulsoTecla {
+            0%   { transform: scale(1);    box-shadow: 0 0 0 0 currentColor; }
+            30%  { transform: scale(0.94); box-shadow: 0 0 0 4px currentColor; }
+            100% { transform: scale(1);    box-shadow: 0 0 0 0 currentColor; }
+          }
+          .tecla-pulsada { animation: pulsoTecla ${MS_PULSACION}ms ease-out; }
         `}</style>
         <div className="flip-container" onClick={() => setRevelada((v) => !v)} style={{ cursor: "pointer" }}>
           <div className={`flip-inner${revelada ? " flipped" : ""}`}>
@@ -4626,11 +4679,12 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
           <p style={{ fontSize: 12.5, color: "#9B9689", textAlign: "center", marginTop: 14 }}>Toca la tarjeta para ver la respuesta</p>
         ) : (
           <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-            {CALIFICACIONES_FLASHCARD.map((c) => (
+            {CALIFICACIONES_FLASHCARD.map((c, i) => (
               <button
                 key={c.calidad}
                 type="button"
-                disabled={enviando}
+                className={teclaPulsada === i ? "tecla-pulsada" : undefined}
+                disabled={enviando || teclaPulsada !== null}
                 onClick={() => calificar(c.calidad)}
                 style={{ ...styles.btnDificultad, background: c.bg, color: c.color, border: `1.5px solid ${c.borde}`, opacity: enviando ? 0.6 : 1 }}
               >
