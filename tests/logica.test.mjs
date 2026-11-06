@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   esExamen, esBancoComoExamen, cursosDelDesplegable, esTemaReal, temasDisponibles, filtrarPreguntas, indicePorId,
   etiquetaOrigen, accionDeTecla, TECLAS_OPCION,
+  calificacionDeTecla, TECLAS_CALIFICACION, MS_PULSACION,
   reconstruirTirada, agruparAciertos, calcularSM2, ordenarPorPrioridad,
   parsearEtiquetas, lunesDeLaSemana, aplicarFiltroPedido,
   conTiempoLimite, conBandera, mensajeDeCarga, mensajeDeEspera, marcadorTirada, textoIntervalo, MAX_INTERVALO, dentroDelHorizonte,
@@ -114,6 +115,44 @@ test("el teclado: 1-4 eligen opción, Intro pasa de pregunta", () => {
   assert.deepEqual(accionDeTecla("1", sinContestar), { tipo: "elegir", indice: 0 }, "1 es la A");
   assert.deepEqual(accionDeTecla("4", sinContestar), { tipo: "elegir", indice: 3 }, "4 es la D");
   assert.equal(TECLAS_OPCION.length, 4);
+});
+
+test("en flashcards, 1-4 califican Otra vez / Difícil / Bien / Fácil", () => {
+  const vista = { revelada: true, numBotones: 4 };
+  assert.equal(calificacionDeTecla("1", vista), 0, "1 es Otra vez");
+  assert.equal(calificacionDeTecla("2", vista), 1, "2 es Difícil");
+  assert.equal(calificacionDeTecla("3", vista), 2, "3 es Bien");
+  assert.equal(calificacionDeTecla("4", vista), 3, "4 es Fácil");
+  assert.equal(TECLAS_CALIFICACION.length, 4);
+});
+
+test("un número NO califica con la tarjeta sin revelar", () => {
+  // Mismo motivo que Intro en la autoevaluación: puntuar sin haber visto el
+  // dorso no es recordar, y subiría a Supabase un repaso que no ha ocurrido.
+  for (const t of TECLAS_CALIFICACION) {
+    assert.equal(calificacionDeTecla(t, { revelada: false, numBotones: 4 }), null, t);
+  }
+});
+
+test("una tecla que no califica, o un número de más, se deja pasar", () => {
+  const vista = { revelada: true, numBotones: 4 };
+  assert.equal(calificacionDeTecla("5", vista), null, "no hay quinto botón");
+  assert.equal(calificacionDeTecla("0", vista), null);
+  assert.equal(calificacionDeTecla("a", vista), null);
+  assert.equal(calificacionDeTecla("Enter", vista), null, "Intro es de revelar, no de calificar");
+  assert.equal(calificacionDeTecla("3", { revelada: true, numBotones: 2 }), null, "solo dos botones");
+});
+
+test("el índice 0 (Otra vez) NO se confunde con 'no hay tecla'", () => {
+  // Devuelve 0, que es falsy: quien llame tiene que comprobar contra null o
+  // "Otra vez" dejaría de funcionar en silencio. Mismo tropiezo que ya hubo
+  // con la calidad 0 en `estadoCuadricula`.
+  assert.strictEqual(calificacionDeTecla("1", { revelada: true, numBotones: 4 }), 0);
+  assert.notStrictEqual(calificacionDeTecla("1", { revelada: true, numBotones: 4 }), null);
+});
+
+test("la pulsación dura lo justo para verse y no para estorbar", () => {
+  assert.ok(MS_PULSACION >= 100 && MS_PULSACION <= 300, "entre 100 y 300 ms");
 });
 
 test("Intro NO pasa de pregunta mientras no hayas contestado", () => {
