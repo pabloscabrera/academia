@@ -15,7 +15,7 @@ import {
   tarjetasDistintas, parsearEtiquetas, lunesDeLaSemana,
   ESPERA_MAX_CARGA_MS, ESPERA_MAX_ESCRITURA_MS, ESPERA_AVISO_ESCRITURA_MS,
   conTiempoLimite, conBandera, mensajeDeCarga, mensajeDeEspera,
-  hayQueDescargar, selloDeFilas,
+  hayQueDescargar, selloDeFilas, traerTodasLasFilas,
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar, faltaColumnaCarpeta,
   carpetaDeMazo, carpetasExistentes, agruparMazosEnCarpetas, interpretarSoltar, FUERA_DE_CARPETAS,
   CRITERIOS_ORDEN_MAZO, ordenarMazos, tasaDeFalloPorMazo,
@@ -282,7 +282,11 @@ export default function AcademiaPIR() {
       const [qData, rachasRes, flashcardsRes, estilosRes] = await Promise.all([
         obtenerPreguntas(),
         supabase.from("rachas").select("*"),
-        supabase.from("flashcards").select("*"),
+        // Por páginas: sin esto PostgREST corta en 1000 y las tarjetas de la
+        // 1001 en adelante no se ven (ver `traerTodasLasFilas`).
+        traerTodasLasFilas((desde, hasta) =>
+          supabase.from("flashcards").select("*").order("created_at", { ascending: true }).order("id", { ascending: true }).range(desde, hasta)
+        ),
         supabase.from("mazos_estilo").select("*"),
       ]);
       setQuestions(qData || []);
@@ -426,14 +430,18 @@ export default function AcademiaPIR() {
       // crecería sin techo y no se usa para nada.
       const desde = new Date(Date.now() - 90 * 86400000).toISOString();
       const [fRes, favRes, progresoRes, preguntasProgresoRes, repasosRes] = await Promise.all([
-        supabase.from("fallos").select("*").eq("name", user.name),
-        supabase.from("favoritos").select("*").eq("name", user.name),
-        supabase.from("flashcards_progreso").select("*").eq("name", user.name),
-        supabase.from("preguntas_progreso").select("*").eq("name", user.name),
+        // Todas por páginas, con un orden único para que ninguna fila salga
+        // dos veces ni se quede fuera entre una página y la siguiente:
+        // PostgREST corta en 1000 sin avisar, y `flashcards_repasos` ya pasaba
+        // de 1000 en 90 días (ver `traerTodasLasFilas`).
+        traerTodasLasFilas((d, h) => supabase.from("fallos").select("*").eq("name", user.name).order("pregunta_id", { ascending: true }).range(d, h)),
+        traerTodasLasFilas((d, h) => supabase.from("favoritos").select("*").eq("name", user.name).order("pregunta_id", { ascending: true }).range(d, h)),
+        traerTodasLasFilas((d, h) => supabase.from("flashcards_progreso").select("*").eq("name", user.name).order("flashcard_id", { ascending: true }).range(d, h)),
+        traerTodasLasFilas((d, h) => supabase.from("preguntas_progreso").select("*").eq("name", user.name).order("pregunta_id", { ascending: true }).range(d, h)),
         // `flashcard_id` y `calidad` son para la cuadrícula de Estadísticas (colorear
         // cada tarjeta por el último botón pulsado); van en la misma consulta, así
         // que no cuestan otra ida y vuelta.
-        supabase.from("flashcards_repasos").select("flashcard_id, calidad, acierto, intervalo_antes, creado_en").eq("name", user.name).gte("creado_en", desde),
+        traerTodasLasFilas((d, h) => supabase.from("flashcards_repasos").select("flashcard_id, calidad, acierto, intervalo_antes, creado_en").eq("name", user.name).gte("creado_en", desde).order("creado_en", { ascending: true }).order("id", { ascending: true }).range(d, h)),
       ]);
       if (preguntasProgresoRes.error) console.error("No se pudo cargar preguntas_progreso:", preguntasProgresoRes.error.message);
       if (!activo) return;
