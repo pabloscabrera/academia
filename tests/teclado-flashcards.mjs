@@ -41,10 +41,15 @@ const numeroDeTarjeta = (pagina) => pagina.evaluate(`(() => {
   return m ? Number(m[1]) : null;
 })()`);
 
-// El botón que lleva la clase de la animación, por su texto.
+// El botón que lleva la animación, con SU ESTILO CALCULADO: mirar solo la
+// clase no vale, porque un `@keyframes` mal escrito dejaría la clase puesta y
+// la animación sin existir — la prueba pasaría y el aviso no se vería. El
+// nombre y la duración salen del navegador, no del fuente.
 const botonPulsado = (pagina) => pagina.evaluate(`(() => {
   const b = [...document.querySelectorAll("button")].find((x) => (x.className || "").includes("tecla-pulsada"));
-  return b ? b.textContent.trim() : null;
+  if (!b) return null;
+  const e = getComputedStyle(b);
+  return { texto: b.textContent.trim(), animacion: e.animationName, duracion: e.animationDuration };
 })()`);
 
 try {
@@ -105,7 +110,9 @@ try {
   const pulsado = await botonPulsado(pagina);
   await pagina.keyboard.up("3");
   console.log(`B) botón con la animación de pulsado -> ${JSON.stringify(pulsado)}`);
-  if (pulsado !== "Bien") throw new Error(`B) la animación no marcó "Bien", marcó ${JSON.stringify(pulsado)}`);
+  if (!pulsado || pulsado.texto !== "Bien") throw new Error(`B) la animación no marcó "Bien", marcó ${JSON.stringify(pulsado)}`);
+  if (pulsado.animacion !== "pulsoTecla") throw new Error(`B) el @keyframes no se aplica: animationName=${pulsado.animacion}`);
+  if (!/^0\.1[0-9]*s$|^0\.[23]s$/.test(pulsado.duracion)) throw new Error(`B) duración inesperada: ${pulsado.duracion}`);
 
   // --- C) y después califica de verdad, con la calidad de ESE botón ---
   await esperar(700);
