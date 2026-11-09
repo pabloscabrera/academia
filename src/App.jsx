@@ -4484,6 +4484,16 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
   const [sesion, setSesion] = useState(null);
   const [idx, setIdx] = useState(0);
   const [revelada, setRevelada] = useState(false);
+  // Qué tarjeta de la sesión (su índice) tiene permiso para llevar su
+  // respuesta ESCRITA en la página. No es lo mismo que `revelada`: al pasar de
+  // tarjeta, `revelada` vuelve a false pero el índice cambia, y lo que hace
+  // falta es que el texto de la respuesta nueva no exista todavía. Mientras
+  // esto no coincida con `idx`, la cara trasera se dibuja vacía — no oculta,
+  // VACÍA —, así que no hay nada que un navegador pueda pintar un fotograma
+  // antes de tiempo. Tocar una tarjeta ya revelada para volver a la pregunta
+  // no cambia `idx`, así que el texto se queda y el giro de vuelta se ve
+  // entero.
+  const [dorsoDe, setDorsoDe] = useState(-1);
   const [resumen, setResumen] = useState(null);
   const [enviando, setEnviando] = useState(false);
   const [numTarjetas, setNumTarjetas] = useState(TAM_SESION_FLASHCARDS);
@@ -4525,6 +4535,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     setSesion(mezclarTemas(elegidas, temaDeTarjeta));
     setIdx(0);
     setRevelada(false);
+    setDorsoDe(-1);
     setResumen(null);
     setEditandoCarta(null);
   };
@@ -4577,11 +4588,12 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
       if (e.key === "Enter" && etiqueta === "button") return;
       if (!sesion || revelada || editandoCarta) return;
       e.preventDefault();
+      setDorsoDe(idx);
       setRevelada(true);
     };
     window.addEventListener("keydown", alPulsar);
     return () => window.removeEventListener("keydown", alPulsar);
-  }, [sesion, revelada, editandoCarta]);
+  }, [sesion, revelada, editandoCarta, idx]);
 
   // 1/2/3/4 califican: Otra vez / Difícil / Bien / Fácil, en el orden en que se
   // dibujan los botones. La regla vive en `calificacionDeTecla` y no repartida
@@ -4673,7 +4685,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
           }
           .tecla-pulsada { animation: pulsoTecla ${MS_PULSACION}ms ease-out; }
         `}</style>
-        <div className="flip-container" onClick={() => setRevelada((v) => !v)} style={{ cursor: "pointer" }}>
+        <div className="flip-container" onClick={() => { if (!revelada) setDorsoDe(idx); setRevelada((v) => !v); }} style={{ cursor: "pointer" }}>
           {/* La `key` es lo que impide ver la respuesta de la tarjeta que
               viene. Al pasar, `revelada` vuelve a false y el interior ANIMABA
               de vuelta 180°→0° con su medio segundo de transición — y la cara
@@ -4698,8 +4710,12 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
               <p style={{ fontSize: "clamp(22px, 4vw, 30px)", color: TINTA, lineHeight: 1.4, margin: 0, fontWeight: 600 }}>{carta.frontal}</p>
             </Card>
             <Card className="flip-face flip-back">
-              <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 18 }}>{carta.mazo}</div>
-              <p style={{ fontSize: "clamp(22px, 4vw, 30px)", color: CORRECTO, lineHeight: 1.4, margin: 0, fontWeight: 700 }}>{carta.posterior}</p>
+              {dorsoDe === idx ? (
+                <>
+                  <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 18 }}>{carta.mazo}</div>
+                  <p style={{ fontSize: "clamp(22px, 4vw, 30px)", color: CORRECTO, lineHeight: 1.4, margin: 0, fontWeight: 700 }}>{carta.posterior}</p>
+                </>
+              ) : null}
             </Card>
           </div>
         </div>

@@ -3,27 +3,31 @@
 //
 //   npm run build && node tests/transicion-tarjeta.mjs
 //
-// QUÉ SE MIDE Y POR QUÉ, que es lo que esta prueba tuvo que aprender a la
-// fuerza: la primera versión medía solo el ÁNGULO de `.flip-inner` y daba por
-// bueno un 0°, pero el ángulo no es la pregunta. Que la cara trasera esté
-// girada 180° solo la esconde si el navegador aplica `backface-visibility`, y
-// eso es una decisión de COMPOSICIÓN: sobre un nodo recién montado —que es
-// exactamente lo que hay al cambiar de tarjeta— puede llegar un fotograma
-// tarde, y entonces la respuesta se pinta aunque el ángulo diga 0. Así que lo
-// que se comprueba ahora es `visibility`, que es estilo y se resuelve en el
-// mismo cálculo que el resto, igual en todos los motores: con la tarjeta sin
-// revelar la cara trasera tiene que estar en `hidden`, o sea que no hay
-// píxeles que pintar y da igual lo que haga la composición.
+// QUÉ SE MIDE, QUE ES LO QUE ESTA PRUEBA HA TENIDO QUE APRENDER DOS VECES.
+// La primera versión medía el ÁNGULO de `.flip-inner` y daba por bueno un 0°.
+// La segunda medía la `visibility` de la cara trasera y daba por bueno un
+// `hidden`. Las dos pasaban y el usuario seguía viendo la respuesta. Las dos
+// medían lo MISMO sin saberlo: si el navegador consigue esconder un texto que
+// SÍ está escrito en la página. El ángulo depende de que aplique
+// `backface-visibility` (composición, que puede llegar un fotograma tarde) y
+// `visibility` depende de que el estilo calculado llegue al pintado antes que
+// el contenido nuevo. Las dos son promesas del motor, y este contenedor solo
+// tiene Chromium: con Safari no hay forma de comprobarlas aquí.
 //
-// Se muestrea FOTOGRAMA A FOTOGRAMA dentro de la página (requestAnimationFrame),
+// Así que lo que se mide ahora NO es una promesa del motor: que el texto de la
+// respuesta de la tarjeta que viene NO ESTÉ en la página. Lo que no está
+// escrito no lo puede pintar ningún navegador, ni tarde ni temprano.
+//
+// Se muestrea fotograma a fotograma dentro de la página (requestAnimationFrame),
 // no sondeando desde fuera cada 45 ms: un destello de un fotograma se cuela
 // entre dos sondeos.
 //
-// Tres comprobaciones, y las dos de control son las que impiden "arreglarlo"
-// escondiendo la respuesta siempre o matando la animación:
-//   A) tocar la tarjeta la gira Y la respuesta está visible durante todo el giro
-//   B) al pasar de tarjeta, la respuesta está oculta en TODOS los fotogramas
-//   C) tocar una tarjeta ya revelada deja ver el giro de vuelta entero
+// Cuatro comprobaciones, y las de control son las que impiden "arreglarlo"
+// dejando la respuesta fuera siempre o matando la animación:
+//   0) con la tarjeta sin revelar, la respuesta no está escrita
+//   A) tocar la tarjeta la gira Y la respuesta está escrita y visible todo el giro
+//   B) al pasar, la respuesta de la nueva no está escrita en ningún fotograma
+//   C) el giro de vuelta a la pregunta se ve entero
 import { chromium } from "playwright";
 import { spawn } from "node:child_process";
 
@@ -51,10 +55,15 @@ const navegador = await chromium.launch({ executablePath: process.env.PLAYWRIGHT
 const grabar = (pagina, ms) => pagina.evaluate(`(() => {
   window.__m = [];
   const t0 = performance.now();
+  // textContent y NO innerText: innerText mira el layout y devuelve "" en un
+  // elemento oculto, así que no distinguiría "no está escrito" de "está
+  // escrito pero tapado", que es justo la diferencia que hay que medir.
+  const texto = (el) => (el && el.textContent ? el.textContent.replace(/\\s+/g, " ").trim() : "");
   const paso = () => {
     const inner = document.querySelector(".flip-inner");
     const back = document.querySelector(".flip-back");
-    if (inner && back) {
+    const front = document.querySelector(".flip-face:not(.flip-back)");
+    if (inner && back && front) {
       const t = getComputedStyle(inner).transform;
       let g = 0;
       if (t && t !== "none") {
@@ -65,10 +74,8 @@ const grabar = (pagina, ms) => pagina.evaluate(`(() => {
         t: Math.round(performance.now() - t0),
         g,
         v: getComputedStyle(back).visibility,
-        // textContent y NO innerText: innerText mira el layout y devuelve ""
-        // en un elemento con visibility hidden, así que el corte de la ventana
-        // se detectaría a sí mismo y la comprobación saldría trivial.
-        txt: (back.textContent || "").replace(/\\s+/g, " ").trim(),
+        frente: texto(front),
+        dorso: texto(back),
       });
     }
     if (performance.now() - t0 < ${ms}) requestAnimationFrame(paso);
@@ -78,7 +85,8 @@ const grabar = (pagina, ms) => pagina.evaluate(`(() => {
 const leer = (pagina) => pagina.evaluate("window.__m");
 const resumir = (m) => {
   const vistos = [...new Set(m.map((x) => x.v))].join("/");
-  return `${m.length} fotogramas, visibility=${vistos}, giro ${m[0] ? m[0].g : "?"}°→${m.length ? m[m.length - 1].g : "?"}° (máx ${Math.max(...m.map((x) => x.g))}°)`;
+  const escrito = [...new Set(m.map((x) => (x.dorso ? "sí" : "no")))].join("/");
+  return `${m.length} fotogramas, giro ${m[0] ? m[0].g : "?"}°→${m.length ? m[m.length - 1].g : "?"}° (máx ${Math.max(...m.map((x) => x.g))}°), respuesta escrita=${escrito}, visibility=${vistos}`;
 };
 
 try {
@@ -114,12 +122,16 @@ try {
   await pagina.getByRole("button", { name: "Empezar repaso" }).click();
   await esperar(800);
 
-  // --- CONTROL 0) con la tarjeta sin revelar, la respuesta no se pinta ---
-  const enReposo = await pagina.evaluate(`getComputedStyle(document.querySelector(".flip-back")).visibility`);
-  console.log(`0) tarjeta sin revelar: visibility de la respuesta = ${enReposo}`);
-  if (enReposo !== "hidden") {
-    throw new Error(`0) la respuesta se puede pintar con la tarjeta sin revelar (visibility=${enReposo}); así basta un fotograma de composición tardía para que se vea`);
+  // --- 0) con la tarjeta sin revelar, la respuesta NO está escrita ---
+  const reposo = await pagina.evaluate(`(() => {
+    const b = document.querySelector(".flip-back");
+    return { txt: (b.textContent || "").trim(), v: getComputedStyle(b).visibility };
+  })()`);
+  console.log(`0) tarjeta sin revelar: respuesta escrita=${JSON.stringify(reposo.txt)}, visibility=${reposo.v}`);
+  if (reposo.txt !== "") {
+    throw new Error(`0) la respuesta está ESCRITA en la página con la tarjeta sin revelar (${JSON.stringify(reposo.txt)}); esconderla depende entonces de que el navegador la tape a tiempo, y eso no se puede prometer`);
   }
+  if (reposo.v !== "hidden") throw new Error(`0) la cara trasera no está oculta: ${reposo.v}`);
 
   // --- A) CONTROL: tocar la tarjeta la gira y la respuesta se ve TODO el giro ---
   await grabar(pagina, 700);
@@ -129,40 +141,36 @@ try {
   console.log(`A) tocar la tarjeta: ${resumir(a)}`);
   const girando = a.filter((x) => x.g > 5 && x.g < 175);
   if (girando.length < 3) throw new Error(`A) el toque ya no anima: solo ${girando.length} fotogramas a medio giro`);
-  const ocultaGirando = a.filter((x) => x.g > 5 && x.v !== "visible");
-  if (ocultaGirando.length) {
-    throw new Error(`A) la respuesta está oculta mientras la tarjeta gira hacia ella (${ocultaGirando.length} fotogramas): se vería la tarjeta en blanco`);
+  const mudos = a.filter((x) => x.g > 5 && (!x.dorso || x.v !== "visible"));
+  if (mudos.length) {
+    throw new Error(`A) la tarjeta gira hacia una respuesta que no se ve (${mudos.length} fotogramas sin texto o con visibility ${mudos[0].v}): se vería girar a una cara en blanco`);
   }
   if (a[a.length - 1].g < 170) throw new Error(`A) no acaba enseñando el dorso: ${a[a.length - 1].g}°`);
 
-  // --- B) EL FALLO: al pasar de tarjeta, ni un fotograma con la respuesta ---
-  // La ventana se corta en el fotograma en que CAMBIA el texto de la cara
-  // trasera, que es el instante exacto en que React ya ha puesto la tarjeta
-  // nueva. Lo de antes de ese corte es la tarjeta vieja todavía revelada, que
-  // es lo que se estaba mirando y tiene que verse; lo de después es la
-  // respuesta de la que viene, y eso no puede pintarse ni un fotograma.
+  // --- B) EL FALLO: al pasar, la respuesta de la nueva no está escrita ---
+  // La ventana se corta en el fotograma en que cambia el texto del FRENTE, que
+  // es cuando React ya ha puesto la tarjeta nueva. Lo de antes es la vieja
+  // todavía revelada, que es lo que se estaba mirando y tiene que verse.
   await grabar(pagina, 700);
   await pagina.getByRole("button", { name: "Bien", exact: true }).click();
   await esperar(800);
   const b = await leer(pagina);
-  const textoViejo = b[0] ? b[0].txt : "";
-  const corte = b.findIndex((x) => x.txt !== textoViejo);
+  const frenteViejo = b[0] ? b[0].frente : "";
+  const corte = b.findIndex((x) => x.frente !== frenteViejo);
   console.log(`B) al pasar de tarjeta: ${resumir(b)}`);
-  console.log(`B) la cara trasera pasa de ${JSON.stringify(textoViejo)} a ${JSON.stringify(corte >= 0 ? b[corte].txt : "")} en el fotograma ${corte} (${corte >= 0 ? b[corte].t : "?"} ms)`);
-  console.log("B) desde ahí: " + b.slice(corte, corte + 6).map((x) => `${x.t}ms ${x.g}° ${x.v}`).join(" | "));
+  console.log(`B) el frente pasa de ${JSON.stringify(frenteViejo)} a ${JSON.stringify(corte >= 0 ? b[corte].frente : "")} en el fotograma ${corte} (${corte >= 0 ? b[corte].t : "?"} ms)`);
   if (corte < 0) throw new Error("B) la tarjeta no cambió: no hay nada que medir");
+  console.log("B) desde ahí: " + b.slice(corte, corte + 6).map((x) => `${x.t}ms ${x.g}° ${x.v} dorso=${JSON.stringify(x.dorso)}`).join(" | "));
   const despues = b.slice(corte);
-  const visibles = despues.filter((x) => x.v !== "hidden");
+  const conTexto = despues.filter((x) => x.dorso !== "");
+  if (conTexto.length) {
+    const q = conTexto[0];
+    throw new Error(`B) la respuesta de la tarjeta que viene está escrita en la página al pasar: ${conTexto.length} de ${despues.length} fotogramas (el primero a los ${q.t} ms, giro ${q.g}°, visibility ${q.v}, texto ${JSON.stringify(q.dorso)})`);
+  }
   const maximo = Math.max(...despues.map((x) => x.g));
-  if (visibles.length) {
-    const q = visibles[0];
-    throw new Error(`B) la respuesta de la tarjeta que viene se puede pintar al pasar: ${visibles.length} de ${despues.length} fotogramas con visibility=${q.v} (el primero a los ${q.t} ms, giro ${q.g}°, texto ${JSON.stringify(q.txt)})`);
-  }
-  if (maximo > 15) {
-    throw new Error(`B) además gira: el interior llega a ${maximo}° con la tarjeta nueva puesta (debería quedarse en 0°)`);
-  }
-  const textoDelante = await pagina.evaluate(`document.querySelector(".flip-container").innerText`);
-  if (!/Frente/.test(textoDelante)) throw new Error("B) no se está enseñando el frente: " + textoDelante);
+  if (maximo > 15) throw new Error(`B) además gira: el interior llega a ${maximo}° con la tarjeta nueva puesta`);
+  const visibles = despues.filter((x) => x.v !== "hidden");
+  if (visibles.length) throw new Error(`B) la cara trasera se queda pintable (${visibles.length} fotogramas con visibility ${visibles[0].v})`);
 
   // --- C) CONTROL: la siguiente gira igual, y el giro de VUELTA se ve entero ---
   await grabar(pagina, 700);
@@ -173,14 +181,17 @@ try {
   if (c1.filter((x) => x.g > 5 && x.g < 175).length < 3) {
     throw new Error("C) la tarjeta nueva ya no anima al tocarla");
   }
-  // Y al tocarla otra vez, vuelve a la pregunta girando: la respuesta tiene que
-  // seguir pintándose durante ese giro de vuelta, o se vería un hueco.
+  if (c1.filter((x) => x.g > 5 && !x.dorso).length) {
+    throw new Error("C) la tarjeta nueva gira hacia una respuesta que no está escrita");
+  }
+  // Al tocarla otra vez vuelve a la pregunta girando: la respuesta tiene que
+  // seguir escrita y visible durante ese giro de vuelta, o se vería un hueco.
   await grabar(pagina, 700);
   await pagina.locator(".flip-container").click();
   await esperar(800);
   const c2 = await leer(pagina);
   console.log(`C) giro de vuelta a la pregunta: ${resumir(c2)}`);
-  const huecos = c2.filter((x) => x.g > 95 && x.v !== "visible");
+  const huecos = c2.filter((x) => x.g > 95 && (!x.dorso || x.v !== "visible"));
   if (huecos.length) {
     throw new Error(`C) al volver a la pregunta la respuesta desaparece antes de dejar de mirar al usuario (${huecos.length} fotogramas): se ve la tarjeta vacía`);
   }
@@ -191,7 +202,7 @@ try {
 
   if (errores.length) throw new Error("errores JS: " + errores.join(" | "));
   await ctx.close();
-  console.log("\nOK: al pasar de tarjeta la respuesta no se puede pintar en ningún fotograma, y los dos giros se siguen viendo enteros");
+  console.log("\nOK: al pasar de tarjeta la respuesta de la que viene no está escrita en ningún fotograma, y los dos giros se siguen viendo enteros");
 } catch (e) { fallo = e; } finally { await navegador.close(); servidor.kill(); }
 
 if (fallo) { console.error("\nFALLA:", fallo.message); process.exit(1); }
