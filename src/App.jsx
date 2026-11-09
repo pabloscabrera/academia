@@ -4664,7 +4664,19 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
           .tecla-pulsada { animation: pulsoTecla ${MS_PULSACION}ms ease-out; }
         `}</style>
         <div className="flip-container" onClick={() => setRevelada((v) => !v)} style={{ cursor: "pointer" }}>
-          <div className={`flip-inner${revelada ? " flipped" : ""}`}>
+          {/* La `key` es lo que impide ver la respuesta de la tarjeta que
+              viene. Al pasar, `revelada` vuelve a false y el interior ANIMABA
+              de vuelta 180°→0° con su medio segundo de transición — y la cara
+              que gira hacia fuera ya llevaba el dorso de la tarjeta NUEVA, así
+              que durante ese giro se leía la respuesta antes que la pregunta.
+              Con una key que cambia en cada tarjeta, React monta un nodo
+              nuevo: nace a 0° y una transición no tiene desde dónde arrancar,
+              así que el cambio es instantáneo. Tocar la tarjeta sigue
+              animándose, porque ahí el nodo es el mismo y el giro sí es un
+              cambio de valor. Lleva `idx` además del id porque una tarjeta
+              puede repetirse dentro de la sesión (`reinsertarEnSesion`) y la
+              key tiene que cambiar siempre. */}
+          <div key={`${idx}:${carta.id}`} className={`flip-inner${revelada ? " flipped" : ""}`}>
             <Card className="flip-face">
               <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 18 }}>{carta.mazo}</div>
               <p style={{ fontSize: "clamp(22px, 4vw, 30px)", color: TINTA, lineHeight: 1.4, margin: 0, fontWeight: 600 }}>{carta.frontal}</p>
