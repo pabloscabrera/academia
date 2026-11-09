@@ -4652,10 +4652,20 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
         </div>
         <style>{`
           .flip-container { perspective: 1600px; margin-top: 16px; }
-          .flip-inner { display: grid; width: 100%; transition: transform 0.5s; transform-style: preserve-3d; }
+          .flip-inner { display: grid; width: 100%; transition: transform 0.5s; -webkit-transform-style: preserve-3d; transform-style: preserve-3d; }
           .flip-inner.flipped { transform: rotateY(180deg); }
-          .flip-face { grid-area: 1 / 1; min-height: 280px; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; overflow-y: auto; }
-          .flip-back { transform: rotateY(180deg); }
+          .flip-face { grid-area: 1 / 1; min-height: 280px; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; overflow-y: auto; }
+          /* Con la tarjeta sin revelar, la respuesta no es que esté
+             girada: es que NO se pinta. backface-visibility es una decisión de
+             composición y puede tardar un fotograma en aplicarse sobre un nodo
+             recién montado, que es justo lo que hay al cambiar de tarjeta;
+             visibility es estilo, se resuelve en el mismo cálculo que el resto
+             y no depende del motor. El retardo de 0,5 s al ocultar es lo que
+             deja que el giro de vuelta (tocar una tarjeta ya revelada) se siga
+             viendo entero; al revelar no hay retardo, así que la respuesta está
+             ahí desde el primer grado de giro. */
+          .flip-back { transform: rotateY(180deg); visibility: hidden; transition: visibility 0s linear 0.5s; }
+          .flip-inner.flipped .flip-back { visibility: visible; transition: visibility 0s linear 0s; }
           @keyframes pulsoTecla {
             0%   { transform: scale(1);    box-shadow: 0 0 0 0 currentColor; }
             30%  { transform: scale(0.94); box-shadow: 0 0 0 4px currentColor; }
@@ -4675,7 +4685,13 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
               animándose, porque ahí el nodo es el mismo y el giro sí es un
               cambio de valor. Lleva `idx` además del id porque una tarjeta
               puede repetirse dentro de la sesión (`reinsertarEnSesion`) y la
-              key tiene que cambiar siempre. */}
+              key tiene que cambiar siempre.
+
+              Son DOS cosas y hacen falta las dos: la key quita el GIRO y el
+              `visibility: hidden` de `.flip-back` quita los PÍXELES. Fiarse
+              solo del giro era fiarse de `backface-visibility`, que es
+              composición y puede llegar un fotograma tarde en un nodo recién
+              montado. */}
           <div key={`${idx}:${carta.id}`} className={`flip-inner${revelada ? " flipped" : ""}`}>
             <Card className="flip-face">
               <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 18 }}>{carta.mazo}</div>
