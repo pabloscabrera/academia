@@ -4666,6 +4666,15 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
           .flip-container { perspective: 1600px; margin-top: 16px; }
           .flip-inner { display: grid; width: 100%; transition: transform 0.5s; -webkit-transform-style: preserve-3d; transform-style: preserve-3d; }
           .flip-inner.flipped { transform: rotateY(180deg); }
+          /* Tarjeta recién cambiada: ni un grado de giro y ni un milisegundo de
+             transición. Antes esto se conseguía con una key que montaba un nodo
+             nuevo, y montar uno nuevo obliga a RETIRAR el viejo — que en ese
+             instante es la tarjeta anterior girada, con su respuesta a la
+             vista. Un motor puede presentar un fotograma de una capa que acaba
+             de retirar, así que la respuesta de la tarjeta ANTERIOR se colaba
+             por ahí. Sin key el nodo no se retira nunca: el contenido se
+             cambia en sitio y esta clase quita la animación. */
+          .flip-inner.sin-animar, .flip-inner.sin-animar .flip-face { transition: none; }
           .flip-face { grid-area: 1 / 1; min-height: 280px; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; overflow-y: auto; }
           /* Con la tarjeta sin revelar, la respuesta no es que esté
              girada: es que NO se pinta. backface-visibility es una decisión de
@@ -4686,25 +4695,22 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
           .tecla-pulsada { animation: pulsoTecla ${MS_PULSACION}ms ease-out; }
         `}</style>
         <div className="flip-container" onClick={() => { if (!revelada) setDorsoDe(idx); setRevelada((v) => !v); }} style={{ cursor: "pointer" }}>
-          {/* La `key` es lo que impide ver la respuesta de la tarjeta que
-              viene. Al pasar, `revelada` vuelve a false y el interior ANIMABA
-              de vuelta 180°→0° con su medio segundo de transición — y la cara
-              que gira hacia fuera ya llevaba el dorso de la tarjeta NUEVA, así
-              que durante ese giro se leía la respuesta antes que la pregunta.
-              Con una key que cambia en cada tarjeta, React monta un nodo
-              nuevo: nace a 0° y una transición no tiene desde dónde arrancar,
-              así que el cambio es instantáneo. Tocar la tarjeta sigue
-              animándose, porque ahí el nodo es el mismo y el giro sí es un
-              cambio de valor. Lleva `idx` además del id porque una tarjeta
-              puede repetirse dentro de la sesión (`reinsertarEnSesion`) y la
-              key tiene que cambiar siempre.
+          {/* Tres cosas, y cada una tapa un agujero distinto:
 
-              Son DOS cosas y hacen falta las dos: la key quita el GIRO y el
-              `visibility: hidden` de `.flip-back` quita los PÍXELES. Fiarse
-              solo del giro era fiarse de `backface-visibility`, que es
-              composición y puede llegar un fotograma tarde en un nodo recién
-              montado. */}
-          <div key={`${idx}:${carta.id}`} className={`flip-inner${revelada ? " flipped" : ""}`}>
+              1. `dorsoDe` (arriba): la respuesta de una tarjeta que no has
+                 revelado NO está escrita en la página, así que no hay nada que
+                 pintar. Es lo único que no depende del navegador.
+              2. `sin-animar`: con la tarjeta recién cambiada no hay transición,
+                 así que el interior no gira de 180° a 0° enseñando el dorso de
+                 camino.
+              3. NO hay `key`. La hubo, para lo mismo que el punto 2, y era
+                 peor: una key nueva monta un nodo nuevo y RETIRA el viejo, que
+                 en ese instante es la tarjeta anterior girada con su respuesta
+                 a la vista — y un motor puede presentar un fotograma de una
+                 capa recién retirada. Sin key el nodo es siempre el mismo y el
+                 contenido se cambia en sitio, así que no hay ninguna capa
+                 vieja que pueda asomar. */}
+          <div className={`flip-inner${revelada ? " flipped" : ""}${dorsoDe === idx ? "" : " sin-animar"}`}>
             <Card className="flip-face">
               <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 18 }}>{carta.mazo}</div>
               <p style={{ fontSize: "clamp(22px, 4vw, 30px)", color: TINTA, lineHeight: 1.4, margin: 0, fontWeight: 600 }}>{carta.frontal}</p>

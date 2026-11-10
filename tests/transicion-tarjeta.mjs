@@ -76,6 +76,10 @@ const grabar = (pagina, ms) => pagina.evaluate(`(() => {
         v: getComputedStyle(back).visibility,
         frente: texto(front),
         dorso: texto(back),
+        // Todo lo que hay dentro de la tarjeta, para poder exigir que no quede
+        // NI RASTRO de ninguna respuesta —ni la nueva ni la de la anterior—
+        // desde el instante en que cambia la pregunta.
+        todo: texto(document.querySelector(".flip-container")),
       });
     }
     if (performance.now() - t0 < ${ms}) requestAnimationFrame(paso);
@@ -166,6 +170,15 @@ try {
   if (conTexto.length) {
     const q = conTexto[0];
     throw new Error(`B) la respuesta de la tarjeta que viene está escrita en la página al pasar: ${conTexto.length} de ${despues.length} fotogramas (el primero a los ${q.t} ms, giro ${q.g}°, visibility ${q.v}, texto ${JSON.stringify(q.dorso)})`);
+  }
+  // Y lo que de verdad cierra el fallo: ninguna respuesta, de ninguna tarjeta,
+  // visible o no, dentro de la tarjeta desde que cambia la pregunta. Esto caza
+  // también la respuesta de la tarjeta ANTERIOR, que es la que se colaba por el
+  // fotograma de la capa retirada.
+  const conRastro = despues.filter((x) => /Dorso/.test(x.todo));
+  if (conRastro.length) {
+    const r = conRastro[0];
+    throw new Error(`B) queda rastro de una respuesta en la tarjeta tras cambiar la pregunta: ${conRastro.length} de ${despues.length} fotogramas (el primero a los ${r.t} ms: ${JSON.stringify(r.todo)})`);
   }
   const maximo = Math.max(...despues.map((x) => x.g));
   if (maximo > 15) throw new Error(`B) además gira: el interior llega a ${maximo}° con la tarjeta nueva puesta`);
