@@ -1385,3 +1385,32 @@ export function estadoCuadricula(tarjeta, progresoPorId, medias) {
   return bucket === null ? "sin-registro" : bucket;
 }
 
+
+// Supabase (PostgREST) corta cualquier consulta en 1000 filas y NO avisa: no
+// hay error, simplemente faltan las demás. Así es como desaparecieron las
+// flashcards a partir de la 1001 (en noviembre de 2026 había 1957 y la web
+// solo enseñaba las 1000 primeras, sin ninguna de MODELOS CLINICA), y
+// `flashcards_repasos` ya pasaba de 1000 en 90 días. El banco de preguntas ya
+// se pedía por páginas (`fetchTodasPreguntas`); esto lo generaliza.
+//
+// `pedirPagina(desde, hasta)` tiene que construir la consulta ENTERA cada vez
+// (con su `.order` de desempate único): los constructores de supabase-js se
+// modifican al encadenar, y reutilizar uno acumularía los `.order`. Devuelve
+// la misma forma `{ data, error }` que una consulta normal, así que quien la
+// llama no cambia: `res.data || []` y `res.error` siguen valiendo. Si falla
+// cualquier página, falla todo (`data: null`): devolver media lista sin decirlo
+// es justo el fallo que se está arreglando.
+export const TAM_PAGINA = 1000;
+
+export async function traerTodasLasFilas(pedirPagina, tam = TAM_PAGINA) {
+  let desde = 0;
+  let todas = [];
+  for (;;) {
+    const { data, error } = await pedirPagina(desde, desde + tam - 1);
+    if (error) return { data: null, error };
+    const filas = data || [];
+    todas = todas.concat(filas);
+    if (filas.length < tam) return { data: todas, error: null };
+    desde += tam;
+  }
+}
