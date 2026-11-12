@@ -78,6 +78,44 @@ function insigniaActual(totalCorrectas) {
 function siguienteInsignia(totalCorrectas) {
   return INSIGNIAS.find((ins) => totalCorrectas < ins.umbral) || null;
 }
+// Las flashcards TAMBIÉN se piden por páginas, y no tenerlo era un fallo
+// serio: el servidor corta cada respuesta en un número máximo de filas
+// (PostgREST, por defecto 1000), así que una sola petición `select("*")`
+// devolvía ese tope y **todo lo que pasara de ahí sencillamente no existía
+// para la app** — mazos enteros que faltaban, un mazo viejo que aparecía a
+// medias, y tarjetas recién importadas que no salían por mucho que se
+// volvieran a importar. Lo peor es que no se ve: la petición no falla.
+//
+// Dos detalles que no conviene deshacer:
+//  1. **`order("id")`**, que es único. Sin un orden fijo, `range()` sobre un
+//     conjunto sin ordenar puede devolver una misma fila en dos páginas y
+//     dejarse otra fuera. Es exactamente la trampa que ya mordió en
+//     `fetchTodasPreguntas`, escrita ahí arriba.
+//  2. Se para cuando una página viene con MENOS de `TAM_PAGINA`, igual que
+//     `fetchTodasPreguntas`. La contrapartida, dicha para que no sorprenda: si
+//     alguien bajara el tope del servidor por debajo de 1000, esto se quedaría
+//     corto en silencio — pero entonces el banco de preguntas se rompería
+//     igual, así que no se notaría solo aquí. La alternativa (parar solo con
+//     una página vacía) no vale: contra un servidor que ignore el `offset` se
+//     queda en un bucle infinito, y eso es peor que una lista corta.
+async function fetchTodasFlashcards() {
+  const TAM_PAGINA = 1000;
+  let desde = 0;
+  let todas = [];
+  while (true) {
+    const { data, error } = await supabase
+      .from("flashcards")
+      .select("*")
+      .order("id", { ascending: true })
+      .range(desde, desde + TAM_PAGINA - 1);
+    if (error) throw error;
+    todas = todas.concat(data || []);
+    if (!data || data.length < TAM_PAGINA) break;
+    desde += TAM_PAGINA;
+  }
+  return todas;
+}
+
 async function fetchTodasPreguntas() {
   const TAM_PAGINA = 1000;
   let desde = 0;
@@ -282,12 +320,12 @@ export default function AcademiaPIR() {
       const [qData, rachasRes, flashcardsRes, estilosRes] = await Promise.all([
         obtenerPreguntas(),
         supabase.from("rachas").select("*"),
-        supabase.from("flashcards").select("*"),
+        fetchTodasFlashcards(),
         supabase.from("mazos_estilo").select("*"),
       ]);
       setQuestions(qData || []);
       setRachas(rachasRes.data || []);
-      setFlashcards(flashcardsRes.data || []);
+      setFlashcards(flashcardsRes || []);
       // Va en el mismo Promise.all, así que no cuesta otra ida y vuelta. Si la
       // tabla todavía no existe (migración sin ejecutar) esto llega con error y
       // se queda vacío: los mazos se ven como siempre y nada más se rompe.
