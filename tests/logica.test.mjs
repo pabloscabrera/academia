@@ -14,7 +14,7 @@ import {
   carpetaDeMazo, carpetasExistentes, agruparMazosEnCarpetas,
   interpretarSoltar, FUERA_DE_CARPETAS,
   mensajeDeEscritura, faltaColumnaCarpeta,
-  ordenarMazos, tasaDeFalloPorMazo,
+  ordenarMazos, tasaDeFalloPorMazo, filtrarMazos, normalizarBusqueda,
   mediaCalificacionPorTarjeta, bucketDeMedia, estadoCuadricula,
 } from "../src/logica.js";
 
@@ -1117,4 +1117,53 @@ test("marcadorTirada no se fía de un primerIntento incoherente", () => {
   assert.deepEqual(marcadorTirada([], 2, { correctCount: 5, total: 3 }), { aciertos: 5, fallos: 0 });
   // Y sin primerIntento se cae a contar lo que haya, en vez de romper.
   assert.deepEqual(marcadorTirada([{ correct: false }], 2, null), { aciertos: 0, fallos: 1 });
+});
+
+// --- Buscador de mazos ---------------------------------------------------
+
+const MAZOS_BUSCAR = [
+  "CLINICA (+DATOS)",
+  "FASES de la ENTREVISTA",
+  "Técnicas de entrevista",
+  "Big Five Facetas",
+  "Modelo cúbico de Guilford",
+];
+const SIN_CARPETA = () => null;
+
+test("filtrarMazos: sin término devuelve la lista entera", () => {
+  assert.deepEqual(filtrarMazos(MAZOS_BUSCAR, "", SIN_CARPETA), MAZOS_BUSCAR);
+  assert.deepEqual(filtrarMazos(MAZOS_BUSCAR, "   ", SIN_CARPETA), MAZOS_BUSCAR);
+  assert.deepEqual(filtrarMazos(MAZOS_BUSCAR, null, SIN_CARPETA), MAZOS_BUSCAR);
+});
+
+test("filtrarMazos: ignora mayúsculas y tildes en los dos lados", () => {
+  // Quien busca no pone la tilde ni recuerda cómo escribió el nombre.
+  assert.deepEqual(filtrarMazos(MAZOS_BUSCAR, "clinica", SIN_CARPETA), ["CLINICA (+DATOS)"]);
+  assert.deepEqual(filtrarMazos(MAZOS_BUSCAR, "TECNICAS", SIN_CARPETA), ["Técnicas de entrevista"]);
+  assert.deepEqual(filtrarMazos(MAZOS_BUSCAR, "cúbico", SIN_CARPETA), ["Modelo cúbico de Guilford"]);
+});
+
+test("filtrarMazos: cada palabra por separado y en cualquier orden", () => {
+  // Buscar la frase literal no encontraría "FASES de la ENTREVISTA".
+  assert.deepEqual(filtrarMazos(MAZOS_BUSCAR, "fases entrevista", SIN_CARPETA), ["FASES de la ENTREVISTA"]);
+  assert.deepEqual(filtrarMazos(MAZOS_BUSCAR, "entrevista fases", SIN_CARPETA), ["FASES de la ENTREVISTA"]);
+  // "entrevista" a secas sí casa con los dos, que es lo correcto.
+  assert.deepEqual(filtrarMazos(MAZOS_BUSCAR, "entrevista", SIN_CARPETA), ["FASES de la ENTREVISTA", "Técnicas de entrevista"]);
+});
+
+test("filtrarMazos: busca también por el nombre de la carpeta", () => {
+  // Es lo que permite enseñar el resultado en lista plana: un mazo dentro de
+  // una carpeta cerrada aparece igual.
+  const carpetaDe = (m) => (m === "Big Five Facetas" ? "Personalidad" : null);
+  assert.deepEqual(filtrarMazos(MAZOS_BUSCAR, "personalidad", carpetaDe), ["Big Five Facetas"]);
+});
+
+test("filtrarMazos: sin coincidencias devuelve lista vacía, no la entera", () => {
+  assert.deepEqual(filtrarMazos(MAZOS_BUSCAR, "zzz", SIN_CARPETA), []);
+});
+
+test("filtrarMazos: respeta el orden que recibe", () => {
+  // Llega ya ordenado por el criterio elegido; filtrar no puede reordenar.
+  const alReves = [...MAZOS_BUSCAR].reverse();
+  assert.deepEqual(filtrarMazos(alReves, "e", SIN_CARPETA), alReves.filter((m) => normalizarBusqueda(m).includes("e")));
 });
