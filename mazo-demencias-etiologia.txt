@@ -1,0 +1,28 @@
+Enfermedad de Alzheimer.;Enfermedad neurodegenerativa
+Enfermedad de cuerpos de Lewy.;Enfermedad neurodegenerativa
+Demencia mixta.;Enfermedad neurodegenerativa
+Enfermedad de Parkinson.;Enfermedad neurodegenerativa
+Demencia frontotemporal.;Enfermedad neurodegenerativa
+Parálisis supranuclear progresiva.;Enfermedad neurodegenerativa
+Atrofia olivo-ponto-cerebelosa.;Enfermedad neurodegenerativa
+Enfermedad de Huntington.;Enfermedad neurodegenerativa
+Esclerosis lateral amiotrófica.;Enfermedad neurodegenerativa
+Esclerosis múltiple.;Enfermedad neurodegenerativa
+Enfermedad priónica familiar.;Enfermedad neurodegenerativa
+Demencia vascular.;NO neurodegenerativa
+Demencia multiinfarto.;NO neurodegenerativa
+Enfermedad de Binswanger.;NO neurodegenerativa
+Causas metabólicas.;Causa adquirida (potencialmente reversible)
+Toxicidad por medicamentos.;Causa adquirida (potencialmente reversible)
+Déficit nutricional (B12, folatos).;Causa adquirida (potencialmente reversible)
+Alcoholismo.;Causa adquirida (potencialmente reversible)
+Hidrocefalia.;Causa adquirida (potencialmente reversible)
+Vasculitis.;Causa adquirida (potencialmente reversible)
+Tumores.;Causa adquirida (potencialmente reversible)
+Demencia postraumática.;Causa adquirida (potencialmente reversible)
+Síndrome de Wernicke-Korsakoff.;Causa adquirida (potencialmente reversible)
+Enfermedad priónica esporádica.;Causa infecciosa
+Síndrome de inmunodeficiencia adquirida (SIDA).;Causa infecciosa
+Neurosífilis.;Causa infecciosa
+Encefalitis.;Causa infecciosa
+Meningitis.;Causa infecciosa
