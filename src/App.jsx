@@ -18,7 +18,7 @@ import {
   hayQueDescargar, selloDeFilas,
   indiceEstilosMazo, estiloDeMazo, estiloTrasRenombrar, faltaColumnaCarpeta,
   carpetaDeMazo, carpetasExistentes, agruparMazosEnCarpetas, interpretarSoltar, FUERA_DE_CARPETAS,
-  CRITERIOS_ORDEN_MAZO, ordenarMazos, tasaDeFalloPorMazo,
+  CRITERIOS_ORDEN_MAZO, ordenarMazos, tasaDeFalloPorMazo, filtrarMazos,
   mediaCalificacionPorTarjeta, estadoCuadricula,
   etiquetaOrigen, accionDeTecla,
   calificacionDeTecla, MS_PULSACION,
@@ -4243,6 +4243,15 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
   // initialization" que ni `npm run build` ni `npm test` ven. Ya ha pasado dos
   // veces en este componente.
   const [orden, setOrden] = useState(leerOrdenMazos);
+  // El buscador de mazos NO se guarda en `localStorage`, al revés que el
+  // criterio de orden: un orden es una preferencia y una búsqueda es algo que
+  // se está haciendo ahora — volver a abrir la app con la lista recortada por
+  // una palabra tecleada ayer sería "me faltan mazos". Va aquí arriba, con el
+  // orden y antes de los `useMemo`, porque uno de ellos lo lee: un hook que
+  // toca una variable declarada más abajo tumba la app entera con un
+  // `Cannot access ... before initialization` que ni `npm run build` ni
+  // `npm test` ven (ya ha pasado varias veces en este componente).
+  const [busquedaMazos, setBusquedaMazos] = useState("");
 
   // Alfabético siempre: esta lista alimenta también los desplegables ("enviar
   // a otro mazo", elegir mazos al crear una carpeta), y ahí lo que se busca es
@@ -4290,6 +4299,15 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     () => agruparMazosEnCarpetas(mazosOrdenados, indiceEstilos),
     [mazosOrdenados, indiceEstilos]
   );
+
+  // El filtro va DESPUÉS de ordenar y agrupar, no antes: así los resultados
+  // salen en el orden que haya elegido el usuario, y quitar la palabra
+  // devuelve la pantalla exactamente a como estaba.
+  const mazosFiltrados = useMemo(
+    () => filtrarMazos(mazosOrdenados, busquedaMazos, (m) => carpetaDeMazo(indiceEstilos, m)),
+    [mazosOrdenados, busquedaMazos, indiceEstilos]
+  );
+  const buscando = busquedaMazos.trim().length > 0;
 
   const pendientesTotal = useMemo(
     () => [...statsPorMazo.values()].reduce((acc, s) => acc + s.pendientes, 0),
@@ -4874,30 +4892,54 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
           </>
         ) : (
           <>
+            {mazos.length >= MIN_MAZOS_BUSCADOR && (
+              <BuscarMazos valor={busquedaMazos} onCambiar={setBusquedaMazos} />
+            )}
             {mazos.length > 1 && (
               <OrdenarMazos valor={orden} onCambiar={(v) => { setOrden(v); guardarOrdenMazos(v); }} />
             )}
-            {onEstiloMazo && mazos.length > 0 && <NuevaCarpeta mazos={mazos} carpetaDe={(m) => carpetaDeMazo(indiceEstilos, m)} onCrear={crearCarpeta} />}
-            <FilaNavegacion
-              icono={Layers}
-              titulo="Todas las tarjetas"
-              subtitulo={`${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"} en total`}
-              badge={pendientesTotal > 0 ? `${pendientesTotal} hoy` : null}
-              onClick={seleccionarTodas}
-            />
-            <>
-              {agrupacion.carpetas.map((c) => (
-                <TarjetaCarpeta
-                  key={c.nombre}
-                  nombre={c.nombre}
-                  mazos={c.mazos.length}
-                  pendientes={c.mazos.reduce((n, m) => n + ((statsPorMazo.get(m) || {}).pendientes || 0), 0)}
-                  onClick={() => setCarpetaAbierta(c.nombre)}
-                  resaltada={destinoHover === c.nombre}
+            {/* Buscando, la lista va PLANA y sin carpetas: lo que se pide al
+                teclear una palabra es ver el mazo, no saber en qué carpeta
+                está — y con carpetas el que estuviera dentro de una cerrada
+                no aparecería, que es justo el problema que se viene a
+                resolver. "Todas las tarjetas" y "Nueva carpeta" también se
+                quitan: son acciones, no resultados. */}
+            {buscando ? (
+              mazosFiltrados.length === 0 ? (
+                <div style={{ padding: "18px 4px", color: TINTA_SUAVE, fontSize: 14 }}>
+                  Ningún mazo contiene "{busquedaMazos.trim()}".
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 12.5, color: TINTA_TENUE, margin: "2px 0 8px" }}>
+                    {mazosFiltrados.length} mazo{mazosFiltrados.length === 1 ? "" : "s"} de {mazos.length}
+                  </div>
+                  {mazosFiltrados.map(cuadroDeMazo)}
+                </>
+              )
+            ) : (
+              <>
+                {onEstiloMazo && mazos.length > 0 && <NuevaCarpeta mazos={mazos} carpetaDe={(m) => carpetaDeMazo(indiceEstilos, m)} onCrear={crearCarpeta} />}
+                <FilaNavegacion
+                  icono={Layers}
+                  titulo="Todas las tarjetas"
+                  subtitulo={`${flashcards.length} tarjeta${flashcards.length === 1 ? "" : "s"} en total`}
+                  badge={pendientesTotal > 0 ? `${pendientesTotal} hoy` : null}
+                  onClick={seleccionarTodas}
                 />
-              ))}
-              {agrupacion.sueltos.map(cuadroDeMazo)}
-            </>
+                {agrupacion.carpetas.map((c) => (
+                  <TarjetaCarpeta
+                    key={c.nombre}
+                    nombre={c.nombre}
+                    mazos={c.mazos.length}
+                    pendientes={c.mazos.reduce((n, m) => n + ((statsPorMazo.get(m) || {}).pendientes || 0), 0)}
+                    onClick={() => setCarpetaAbierta(c.nombre)}
+                    resaltada={destinoHover === c.nombre}
+                  />
+                ))}
+                {agrupacion.sueltos.map(cuadroDeMazo)}
+              </>
+            )}
           </>
         )}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
@@ -5389,6 +5431,42 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
 // ocho criterios, y ocho botones encima de la lista serían otra vez el ruido
 // del que venía la queja de que la pantalla "parecía demasiado IA". Aquí el
 // control tiene que desaparecer hasta que se busca.
+// Con dos o tres mazos el buscador es un campo de texto que no hace falta y
+// que encima mete ruido en una pantalla de la que ya se dijo que "parece
+// demasiado IA"; a partir de seis la lista deja de leerse de un vistazo.
+const MIN_MAZOS_BUSCADOR = 6;
+
+function BuscarMazos({ valor, onCambiar }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+      <Search size={15} color={TINTA_TENUE} />
+      <label htmlFor="buscar-mazos" style={{ fontSize: 13, color: TINTA_SUAVE }}>Buscar</label>
+      <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+        <input
+          id="buscar-mazos"
+          value={valor}
+          onChange={(e) => onCambiar(e.target.value)}
+          placeholder="Nombre del mazo o de la carpeta..."
+          style={{ ...styles.input, boxSizing: "border-box", width: "100%", padding: "7px 9px", paddingRight: valor ? 34 : 9, fontSize: 13.5 }}
+        />
+        {/* Borrar con un toque: en el iPad llegar a la tecla de retroceso para
+            dejar el campo vacío son varios golpes, y hasta que lo está la
+            lista sigue recortada. */}
+        {valor && (
+          <button
+            type="button"
+            onClick={() => onCambiar("")}
+            title="Borrar la búsqueda"
+            style={{ position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)", width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", cursor: "pointer", color: TINTA_SUAVE, padding: 0 }}
+          >
+            <X size={15} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function OrdenarMazos({ valor, onCambiar }) {
   const actual = CRITERIOS_ORDEN_MAZO.find((c) => c.clave === valor);
   return (

@@ -1184,6 +1184,40 @@ export function agruparMazosEnCarpetas(mazos, estilos) {
 // pregunta al abrir la pantalla: por dónde empiezo. La clave de cada criterio
 // viaja a `localStorage`, así que renombrarla deja la preferencia guardada sin
 // sentido y se cae al alfabético (que es lo correcto, pero conviene saberlo).
+// Buscar un mazo por su nombre cuando ya hay cuarenta y la lista no se lee de
+// un vistazo. Dos decisiones que son las que hacen que sirva:
+//
+// 1. **Se busca sin tildes y sin mayúsculas** (`normalizarBusqueda`): escribir
+//    "clinica" tiene que encontrar "CLINICA (+DATOS)", porque quien busca no va
+//    a poner la tilde ni a acordarse de cómo escribió el nombre.
+// 2. **Cada palabra por separado, en cualquier orden** ("fases entrevista"
+//    encuentra "FASES de la ENTREVISTA"): si se buscara la frase entera
+//    literal, teclear dos palabras sueltas no daría nada y el buscador
+//    parecería roto.
+//
+// Mira también el nombre de la CARPETA, así que buscar una carpeta saca lo que
+// lleva dentro. Es lo que permite enseñar el resultado en una lista plana: un
+// mazo metido en una carpeta cerrada aparece igual, que es justo lo que no
+// hace la pantalla sin buscador.
+export function normalizarBusqueda(texto) {
+  return String(texto == null ? "" : texto)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function filtrarMazos(mazos, termino, carpetaDe) {
+  const palabras = normalizarBusqueda(termino).split(" ").filter(Boolean);
+  if (palabras.length === 0) return mazos || [];
+  return (mazos || []).filter((m) => {
+    const carpeta = typeof carpetaDe === "function" ? carpetaDe(m) : null;
+    const texto = normalizarBusqueda(carpeta ? `${m} ${carpeta}` : m);
+    return palabras.every((p) => texto.includes(p));
+  });
+}
+
 export const CRITERIOS_ORDEN_MAZO = [
   { clave: "alfabetico", etiqueta: "A - Z" },
   { clave: "alfabetico-inv", etiqueta: "Z - A" },
