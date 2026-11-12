@@ -23,8 +23,9 @@ export function esExamen(curso) {
 // "Examen" con su propio nombre) pero que NO son una edición del PIR. Por eso
 // esExamen les sigue diciendo que no, y el modo relámpago, que solo baraja
 // ediciones del PIR, se queda sin ellos: lo pidió así el usuario ("en modo
-// relámpago siguen siendo solo los exámenes").
-export const BANCOS_COMO_EXAMEN = ["DSM-5-TR", "BELLOCH", "FONSECA"];
+// relámpago siguen siendo solo los exámenes"). CEDE son simulacros de
+// academia, no ediciones del PIR, así que van aquí y no en esExamen.
+export const BANCOS_COMO_EXAMEN = ["DSM-5-TR", "BELLOCH", "FONSECA", "CEDE"];
 
 export function esBancoComoExamen(curso) {
   return typeof curso === "string" && BANCOS_COMO_EXAMEN.includes(curso.trim());
