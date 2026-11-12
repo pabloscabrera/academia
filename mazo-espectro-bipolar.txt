@@ -1,0 +1,9 @@
+Episodios depresivos con rápida respuesta a antidepresivos.;Bipolar ¼
+Equivalente a esquizoafectivo tipo bipolar: síntomas positivos de psicosis con episodios maníacos, hipomaníacos y depresivos.;Bipolar ½
+Episodios hipomaníacos sin episodios depresivos.;Bipolar tipo I ½
+Episodios depresivos con temperamento ciclotímico.;Bipolar tipo II ½
+Episodios depresivos con hipomanía inducida por antidepresivos.;Bipolar tipo III
+Episodios depresivos con hipomanía inducida por consumo de tóxicos.;Bipolar tipo III ½
+Episodios depresivos con temperamento hipertímico.;Bipolar tipo IV
+Depresión con hipomanía mixta.;Bipolar V
+Bipolaridad en el contexto de una demencia.;Bipolar VI
