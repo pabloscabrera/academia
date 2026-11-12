@@ -2370,7 +2370,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
             <div style={{ ...styles.daypoFeedback, ...(esCorrecta ? styles.daypoFeedbackOk : styles.daypoFeedbackMal) }}>
               {esCorrecta ? "¡Correcto!" : `Incorrecto. La respuesta correcta es la ${String.fromCharCode(65 + q.correcta)}.`}
               {relampago && !esCorrecta && <div style={{ marginTop: 6, fontWeight: 700 }}>La racha del modo relámpago termina aquí.</div>}
-              {q.explicacion && <div style={{ marginTop: 6, fontWeight: 400 }}>{q.explicacion}</div>}
+              {q.explicacion && <div style={{ marginTop: 6, fontWeight: 400, whiteSpace: "pre-line" }}>{q.explicacion}</div>}
             </div>
           )}
           <button type="button" onClick={next} disabled={!revealed} style={{ ...styles.btnPrimary, width: "100%", marginTop: 18, opacity: !revealed ? 0.4 : 1 }}>
@@ -2443,7 +2443,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
                 {op}
               </div>
             ))}
-            {abierta.pregunta.explicacion && <p style={{ fontSize: 13, color: "#6E6A61", marginTop: 10, lineHeight: 1.5 }}>{abierta.pregunta.explicacion}</p>}
+            {abierta.pregunta.explicacion && <p style={{ fontSize: 13, color: "#6E6A61", marginTop: 10, lineHeight: 1.5, whiteSpace: "pre-line" }}>{abierta.pregunta.explicacion}</p>}
           </Card>
         )}
       </div>
@@ -2592,7 +2592,7 @@ function PreguntaGeneradaCard({ p, guardada, onGuardar }) {
           </button>
         );
       })}
-      {revealed && p.explicacion && <p style={{ fontSize: 13, color: "#6E6A61", marginTop: 8 }}>{p.explicacion}</p>}
+      {revealed && p.explicacion && <p style={{ fontSize: 13, color: "#6E6A61", marginTop: 8, whiteSpace: "pre-line" }}>{p.explicacion}</p>}
       {onGuardar && (
         <button
           type="button"
@@ -2689,7 +2689,7 @@ function PreguntaCard({ q, isAdmin, onUpdate, onDelete, favoritos, onToggleFavor
               Ver respuesta correcta
             </button>
           ) : (
-            q.explicacion && <p style={{ fontSize: 13, color: "#6E6A61", marginTop: 10, lineHeight: 1.5 }}>{q.explicacion}</p>
+            q.explicacion && <p style={{ fontSize: 13, color: "#6E6A61", marginTop: 10, lineHeight: 1.5, whiteSpace: "pre-line" }}>{q.explicacion}</p>
           )}
           {isAdmin && (
             <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
@@ -5962,7 +5962,7 @@ function PreguntasPlegables({ titulo, subtitulo, items, etiquetaItem, abiertaId,
                   {op}
                 </div>
               ))}
-              {f.pregunta.explicacion && <p style={{ fontSize: 13, color: "#6E6A61", marginTop: 10, lineHeight: 1.5 }}>{f.pregunta.explicacion}</p>}
+              {f.pregunta.explicacion && <p style={{ fontSize: 13, color: "#6E6A61", marginTop: 10, lineHeight: 1.5, whiteSpace: "pre-line" }}>{f.pregunta.explicacion}</p>}
             </div>
           )}
         </Card>
@@ -6025,7 +6025,7 @@ function FalloRepetible({ f, index, favoritos, onToggleFavorito }) {
               })}
               {selected != null && (
                 <>
-                  {q.explicacion && <p style={{ fontSize: 13, color: TINTA_SUAVE, margin: "4px 0 8px", lineHeight: 1.5 }}>{q.explicacion}</p>}
+                  {q.explicacion && <p style={{ fontSize: 13, color: TINTA_SUAVE, margin: "4px 0 8px", lineHeight: 1.5, whiteSpace: "pre-line" }}>{q.explicacion}</p>}
                   <button type="button" onClick={() => setSelected(null)} style={styles.linkBtn}>
                     Repetir de nuevo
                   </button>

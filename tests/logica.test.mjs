@@ -52,7 +52,12 @@ test("el DSM-5-TR sale en el desplegable de exámenes pero no es una edición (f
   assert.deepEqual(
     cursosDelDesplegable([{ curso: "FONSECA" }, { curso: "BELLOCH" }, { curso: "PIR 20" }, { curso: "DSM-5-TR" }]),
     ["Todos", "PIR 20", "DSM-5-TR", "BELLOCH", "FONSECA"],
-    "el Fonseca va el último, detrás del Belloch");
+    "el Fonseca va detrás del Belloch");
+  assert.equal(esExamen("CEDE"), false, "los simulacros de CEDE tampoco entran en relámpago");
+  assert.deepEqual(
+    cursosDelDesplegable([{ curso: "CEDE" }, { curso: "FONSECA" }, { curso: "PIR 25" }, { curso: "DSM-5-TR" }, { curso: "BELLOCH" }]),
+    ["Todos", "PIR 25", "DSM-5-TR", "BELLOCH", "FONSECA", "CEDE"],
+    "CEDE va el último, detrás del Fonseca");
 });
 
 test("la etiqueta de una pregunta dice de dónde sale, nunca de qué va", () => {
