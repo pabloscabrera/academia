@@ -1,0 +1,14 @@
+Iniciativa para resolver un problema.;Afrontamiento proactivo
+Convertir los obstáculos en experiencias positivas.;Afrontamiento proactivo
+Buscar alternativas.;Afrontamiento reflexivo
+Pensar varias formas de resolverlo.;Afrontamiento reflexivo
+Imaginarse a uno mismo resolviendo problemas difíciles.;Afrontamiento reflexivo
+Diseñar un plan y llevarlo a cabo.;Afrontamiento de planificación estratégica
+Dividir los problemas en varias partes más asequibles.;Afrontamiento de planificación estratégica
+Establecer prioridades.;Afrontamiento de planificación estratégica
+Planificar antes de actuar.;Afrontamiento preventivo
+Pensar antes para evitar situaciones peligrosas.;Afrontamiento preventivo
+Apoyarse en los demás cuando las cosas van mal.;Afrontamiento de búsqueda de apoyo emocional
+Expresar los sentimientos.;Afrontamiento de búsqueda de apoyo emocional
+Pedir consejos.;Afrontamiento de búsqueda de apoyo instrumental
+Hablar con otros para tener una perspectiva diferente.;Afrontamiento de búsqueda de apoyo instrumental
