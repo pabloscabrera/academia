@@ -1,0 +1,12 @@
+Nueva conducta en alguna dimensión física (duración, frecuencia, intensidad, etc.).;Moldeamiento
+Las conductas intermedias que permitieron la conducta final no son consideradas.;Moldeamiento
+No se requiere de un ambiente estructurado para emitir una gama de comportamientos.;Moldeamiento
+Se lleva a cabo hacia adelante desde el punto de vista del orden natural de la conducta.;Moldeamiento
+Puede implicar algunos instigadores verbales y/o físicos en pasos sucesivos, pero son mínimos.;Moldeamiento
+Implica la aplicación sucesiva del reforzamiento y la extinción.;Moldeamiento
+Una nueva secuencia de respuesta, con un estímulo claro que señala el final de cada respuesta y el comienzo de la siguiente.;Encadenamiento
+La conducta final consiste en todos los pasos del encadenamiento, ya que es una cadena compuesta por varios eslabones necesarios.;Encadenamiento
+El enlace de la cadena de conductas suele requerir un ambiente estructurado o semiestructurado.;Encadenamiento
+Se puede llevar a cabo hacia adelante o hacia atrás.;Encadenamiento
+Con frecuencia, se utilizan instigadores verbales y físicos, guía física, atenuación y, quizá moldeamiento a través de pasos sucesivos.;Encadenamiento
+Normalmente implica menos ensayos de extinción que el moldeamiento.;Encadenamiento
