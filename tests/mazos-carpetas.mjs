@@ -158,6 +158,40 @@ else {
   if (relleno.contraste < 4.5) fallos.push(`[relleno] el título no se lee sobre el color: contraste ${relleno.contraste}`);
 }
 
+// ---------- 3c: la rejilla de colores cabe y se ven todos ----------
+// La paleta pasó de 8 a 16 colores. Son círculos de 34 px en una fila que
+// envuelve, así que lo que hay que comprobar no es que estén —eso lo fija
+// tests/colores-mazo.test.mjs— sino que al doblarlos la pantalla de 390 px no
+// se ensanche y no quede ninguno fuera de la tarjeta.
+await pagina.getByRole("button", { name: /Opciones de TDC/ }).first().click();
+await esperar(400);
+await pagina.getByRole("button", { name: /Color e icono/ }).first().click();
+await esperar(500);
+const paleta = await pagina.evaluate(() => {
+  const circulos = [...document.querySelectorAll("button")].filter((b) => {
+    const e = getComputedStyle(b);
+    return e.borderRadius === "50%" && b.offsetWidth === 34 && b.offsetHeight === 34;
+  });
+  const caja = circulos.length ? circulos[0].parentElement : null;
+  const limite = caja ? caja.getBoundingClientRect() : null;
+  return {
+    cuantos: circulos.length,
+    distintos: new Set(circulos.map((b) => getComputedStyle(b).backgroundColor)).size,
+    seSalen: limite ? circulos.filter((b) => {
+      const r = b.getBoundingClientRect();
+      return r.right > limite.right + 1 || r.left < limite.left - 1;
+    }).length : -1,
+    desbordaPagina: document.documentElement.scrollWidth > window.innerWidth,
+  };
+});
+console.log("3c) paleta ->", JSON.stringify(paleta));
+if (paleta.cuantos < 16) fallos.push(`[paleta] solo se dibujan ${paleta.cuantos} colores`);
+if (paleta.distintos !== paleta.cuantos) fallos.push(`[paleta] hay colores repetidos: ${paleta.cuantos} círculos y ${paleta.distintos} colores`);
+if (paleta.seSalen > 0) fallos.push(`[paleta] ${paleta.seSalen} círculos se salen de la tarjeta a 390 px`);
+if (paleta.desbordaPagina) fallos.push("[paleta] la página se ensancha al abrir el selector");
+await pagina.getByRole("button", { name: /^Cancelar$/ }).first().click();
+await esperar(400);
+
 // ---------- 4: guardar la carpeta sin perder icono ni color ----------
 await pagina.getByRole("button", { name: /Opciones de TDC/ }).first().click();
 await esperar(500);
