@@ -5148,8 +5148,9 @@ function FilaNavegacion({ icono: Icono, titulo, subtitulo, badge, onClick }) {
 // Como FilaNavegacion, pero con lápiz (renombrar in situ) y papelera
 // (borrar con confirmación) junto al nombre — usada para cada mazo real,
 // nunca para la fila sintética "Todas las tarjetas".
-// Elegir color e icono de un mazo. Todo a la vista y de un toque: son 8 y 12
-// opciones, así que un desplegable solo escondería lo que hay que comparar.
+// Elegir color e icono de un mazo. Todo a la vista y de un toque, en dos
+// rejillas que envuelven: un desplegable solo escondería lo que hay que
+// comparar, que es precisamente un color contra otro.
 // "Sin icono" y "Quitar color" son opciones del propio catálogo, no un botón
 // aparte, porque volver al aspecto de antes es una elección más.
 function SelectorEstiloMazo({ icono, color, onGuardar, onCerrar }) {
@@ -5425,10 +5426,11 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
   }
 
   // Con color elegido se rellena la FILA ENTERA, título incluido, y el texto
-  // pasa a blanco. Los ocho colores del catálogo son oscuros, y medido sobre
+  // pasa a blanco. Todos los colores del catálogo son oscuros, y medido sobre
   // blanco el peor (el oro) da 4,54:1 — por encima del 4,5 que hace falta
   // para leer. Con crema en vez de blanco el oro se quedaba en 4,06, así que
-  // el texto de relleno es blanco y no crema; no es una preferencia.
+  // el texto de relleno es blanco y no crema; no es una preferencia. Lo
+  // comprueba tests/colores-mazo.test.mjs color a color.
   const relleno = !!tinte;
   const sobreColor = relleno ? "#fff" : null;
   return (
@@ -6170,10 +6172,27 @@ function FieldLabel({ children, style }) {
 // nada de la paleta ni de lucide, y retirar una opción de aquí no deja una
 // fila ilegible — ese mazo vuelve a su aspecto por defecto (hay prueba).
 //
-// Los ocho colores son oscuros a propósito: el fondo de las tarjetas es crema,
-// y un tono claro sobre crema no se distingue. Los iconos están elegidos por
+// Los colores son oscuros a propósito: el fondo de las tarjetas es crema, y un
+// tono claro sobre crema no se distingue; además el texto de relleno va en
+// blanco, así que un color claro sería ilegible. Los iconos están elegidos por
 // las asignaturas del PIR, no por bonitos: Percent está porque el mazo que ya
 // existe es el de porcentajes y prevalencias.
+//
+// DOS REGLAS PARA AÑADIR UN COLOR, y las dos están medidas en
+// tests/colores-mazo.test.mjs, no miradas:
+//   1. el blanco sobre él tiene que dar 4,5:1 o más (WCAG AA), que es lo que
+//      obliga a que sean oscuros;
+//   2. tiene que distinguirse de TODOS los demás (ΔE >= 18 en CIELAB), o dos
+//      mazos con colores distintos se verían iguales en la lista, que es
+//      justo lo que el color viene a resolver.
+// Y una que no se puede medir: NO SE QUITA NINGUNA CLAVE de las que ya hay.
+// `estiloDeMazo` valida contra este catálogo, así que retirar una dejaría sin
+// color —en silencio— a los mazos que ya la tuvieran elegida.
+//
+// Los ocho primeros son los originales y se quedan en su orden: el orden es lo
+// que ve "Ordenar por color", así que moverlos recolocaría mazos que el
+// usuario ya tenía colocados. Los ocho de la segunda tanda van detrás, por
+// familias (rojos, tierra, verdes, azules, morado, gris).
 const COLORES_MAZO = {
   tinta: TINTA,
   acento: ACENTO,
@@ -6183,6 +6202,14 @@ const COLORES_MAZO = {
   turquesa: "#1F6E6B",
   azul: "#2A5A8C",
   morado: "#6B3A7A",
+  granate: "#7B2D3B",
+  ciruela: "#8C2F63",
+  cacao: "#6B4A2F",
+  oliva: "#56652B",
+  bosque: "#1F5637",
+  marino: "#1B2F6E",
+  berenjena: "#3D2448",
+  pizarra: "#48555F",
 };
 // Primero los objetos de todos los días —los que uno usaría en un cuaderno— y
 // al final los de tema. El orden importa porque es lo que se ve al abrir el
