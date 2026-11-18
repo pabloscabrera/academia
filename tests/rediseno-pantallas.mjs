@@ -96,7 +96,7 @@ try {
   await esperar(500);
   await p2.getByRole("button", { name: /Falladas \(1\)/ }).click();
   const tf = await p2.locator("body").innerText();
-  if (!/fallada 2 veces/.test(tf)) fallos.push("Falladas no muestra el recuento");
+  if (!/fallada 2 veces/i.test(tf)) fallos.push("Falladas no muestra el recuento");
   // 4) La navegación va abajo, como en el prototipo.
   const nav = await p2.evaluate(() => { const n = document.querySelector("nav.nav-app"); const r = n.getBoundingClientRect(); return { abajo: Math.round(window.innerHeight - r.bottom), pos: getComputedStyle(n).position }; });
   console.log("4) navegación ->", JSON.stringify(nav));
