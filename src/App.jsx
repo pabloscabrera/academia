@@ -24,7 +24,7 @@ import {
   etiquetaOrigen, accionDeTecla,
   calificacionDeTecla, MS_PULSACION,
   tomarPreguntas, rgbDeHex, rankingExamenes, esBancoComoExamen,
-  pestanaVecina, conResistencia, decidirPaso, umbralTrackpad, pareceInercia,
+  pestanaVecina, conResistencia, decidirPaso, umbralTrackpad, ejeDelGesto,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -746,12 +746,16 @@ export default function AcademiaPIR() {
     };
 
     // Trackpad: dos dedos de lado llegan como eventos de rueda con deltaX.
-    // La página sigue a los dedos 1:1 y la decisión se toma al SOLTAR, que
-    // en la web no es un evento: se reconoce porque los empujones empiezan
-    // a decaer (la inercia, `pareceInercia`) o porque dejan de llegar. Tras
-    // decidir, se traga todo lo que siga llegando hasta que el trackpad se
-    // calla: si no, la cola de inercia arrancaba un gesto nuevo un momento
-    // después y pasaba otra página "cuando le daba la gana".
+    // Como en las apps nativas: (1) primero se decide el EJE del gesto con
+    // los primeros píxeles (`ejeDelGesto`); si es vertical no se toca nada
+    // hasta que el trackpad se calle; (2) si es lateral, la página sigue a
+    // los dedos y pasa en cuanto la llevas `umbralTrackpad`; (3) tras pasar,
+    // se ignora todo lo que llegue hasta que el trackpad se calle — la
+    // inercia sigue mandando eventos casi un segundo después de levantar los
+    // dedos y, sin esto, arrancaba otro paso "cuando le daba la gana";
+    // (4) si se calla sin llegar al umbral, la página vuelve a su sitio.
+    // Lo que se probó y NO vale: decidir "al soltar" mirando cuándo decaen los
+    // empujones — cualquier frenazo natural a mitad de gesto parecía soltar.
     let rueda = null;
     let tragando = false;
     let tragarTimer = null;
@@ -759,45 +763,48 @@ export default function AcademiaPIR() {
     const tragarHastaSilencio = () => {
       tragando = true;
       clearTimeout(tragarTimer);
-      tragarTimer = setTimeout(() => { tragando = false; }, 220);
+      tragarTimer = setTimeout(() => { tragando = false; }, 250);
     };
-    const terminarRueda = () => {
-      clearTimeout(finTimer);
-      if (!rueda) return;
-      const { dx, vPico } = rueda;
+    const finDeRueda = () => {
+      const r = rueda;
       rueda = null;
-      tragarHastaSilencio();
-      soltar(dx, vPico);
+      if (r && r.eje === "lado") volver();
     };
     const alRueda = (e) => {
       if (e.ctrlKey) return; // pellizco para hacer zoom
-      const deltaX = e.deltaX * (e.deltaMode === 1 ? 16 : 1);
+      const k = e.deltaMode === 1 ? 16 : 1;
+      const deltaX = e.deltaX * k;
+      const deltaY = e.deltaY * k;
       if (tragando) {
-        if (Math.abs(deltaX) > Math.abs(e.deltaY)) { e.preventDefault(); tragarHastaSilencio(); }
+        if (Math.abs(deltaX) > Math.abs(deltaY)) e.preventDefault();
+        tragarHastaSilencio();
         return;
       }
       if (!rueda) {
-        if (Math.abs(deltaX) <= Math.abs(e.deltaY) * 1.2 || Math.abs(deltaX) < 1) return;
         if (bloqueado() || scrollLateral(e.target)) return;
-        rueda = { dx: 0, ultT: performance.now(), pico: 0, ultimos: [], vPico: 0 };
+        rueda = { sx: 0, sy: 0, eje: null };
       }
+      clearTimeout(finTimer);
+      finTimer = setTimeout(finDeRueda, 150);
+      rueda.sx += deltaX;
+      rueda.sy += deltaY;
+      if (rueda.eje === null) rueda.eje = ejeDelGesto(rueda.sx, rueda.sy);
+      if (rueda.eje !== "lado") return;
       e.preventDefault();
-      const ahora = performance.now();
-      const dt = Math.max(ahora - rueda.ultT, 8);
-      rueda.ultT = ahora;
-      rueda.dx -= deltaX;
-      rueda.pico = Math.max(rueda.pico, Math.abs(deltaX));
-      rueda.ultimos = [...rueda.ultimos.slice(-3), deltaX];
-      const v = -deltaX / dt;
-      if (Math.sign(v) === Math.sign(rueda.dx) && Math.abs(v) > Math.abs(rueda.vPico)) rueda.vPico = v;
-      mostrar(rueda.dx);
+      const dx = -rueda.sx;
       const el = mainRef.current;
       const ancho = (el && el.offsetWidth) || window.innerWidth;
-      // Has llevado la página hasta media pantalla: pasa ya, sin esperar.
-      if (Math.abs(rueda.dx) >= Math.max(umbralTrackpad(ancho), ancho * 0.5)) { terminarRueda(); return; }
-      if (pareceInercia(rueda.ultimos, rueda.pico)) { terminarRueda(); return; }
-      clearTimeout(finTimer);
-      finTimer = setTimeout(terminarRueda, 110);
+      const { i, hayAnterior, haySiguiente } = vecinas();
+      const paso = dx < 0 ? 1 : -1;
+      const hayVecina = paso === 1 ? haySiguiente : hayAnterior;
+      if (hayVecina && Math.abs(dx) >= umbralTrackpad(ancho)) {
+        clearTimeout(finTimer);
+        rueda = null;
+        tragarHastaSilencio();
+        transicionA(ORDEN_PESTANAS[i + paso], paso);
+        return;
+      }
+      mostrar(dx);
     };
 
     window.addEventListener("keydown", alTeclear);
@@ -2152,6 +2159,8 @@ function Nav({ section, setSection, alerta }) {
   );
 }
 
+const CANTIDAD_POR_DEFECTO = 10;
+
 // Elegir examen, en el diseño nuevo (prototipo "Exámenes"). Solo pinta: qué
 // preguntas salen lo deciden Simulacros y tomarPreguntas, en logica.js.
 // Tipografía propia (Cabinet / Switzer, autoalojadas en /fonts) y foto de fondo
@@ -2180,11 +2189,16 @@ function SelectorExamenes({
   onEmpezar, onRelampago, relampagoDisponible,
 }) {
   const E = ESTILO_EXAMENES;
-  const cantidadActual = typeof numPreguntas === "number" ? numPreguntas : 1;
-  // El último número bueno: si borras el campo y sales sin escribir nada,
-  // vuelve este en vez de inventarse un 1.
-  const ultimaValida = useRef(cantidadActual);
-  if (typeof numPreguntas === "number") ultimaValida.current = numPreguntas;
+  // El campo va VACÍO hasta que escribes (o usas − / +), con la cantidad por
+  // defecto en gris de fondo. Al tocarlo se vacía del todo y lo que había
+  // queda en gris: el primer número que pulsas es el nuevo, sin cursor
+  // delante de nada que borrar. Si sales sin escribir, se queda lo que había.
+  // (Antes se seleccionaba el número al tocarlo, y en el iPad la selección a
+  // veces no llegaba y el cursor caía delante.)
+  const porDefecto = Math.max(1, Math.min(CANTIDAD_POR_DEFECTO, disponibles || CANTIDAD_POR_DEFECTO));
+  const cantidadActual = typeof numPreguntas === "number" ? numPreguntas : porDefecto;
+  const [borrador, setBorrador] = useState(null);
+  const antesDeEditar = useRef(numPreguntas);
   const alternar = (c) =>
     onCursosSel(cursosSel.includes(c) ? cursosSel.filter((x) => x !== c) : [...cursosSel, c]);
   const paso = (d) => {
@@ -2332,18 +2346,23 @@ function SelectorExamenes({
           <input
             type="text"
             aria-label="Cuántas preguntas"
-            value={typeof numPreguntas === "number" ? Math.min(numPreguntas, disponibles) : numPreguntas}
+            className="campo-cantidad"
+            value={borrador !== null ? borrador : (typeof numPreguntas === "number" ? String(Math.min(numPreguntas, disponibles)) : "")}
+            placeholder={String(borrador !== null && typeof antesDeEditar.current === "number" ? Math.min(antesDeEditar.current, disponibles) : cantidadActual)}
+            onFocus={() => { antesDeEditar.current = numPreguntas; setBorrador(""); }}
             onChange={(e) => {
-              const v = parseInt(e.target.value, 10);
-              onNumPreguntas(Number.isNaN(v) ? "" : v);
+              const limpio = e.target.value.replace(/\D/g, "").slice(0, 4);
+              setBorrador(limpio);
+              const v = parseInt(limpio, 10);
+              // Se aplica mientras escribes (por si pulsas Empezar sin salir
+              // del campo); borrarlo todo devuelve lo que había antes.
+              onNumPreguntas(Number.isNaN(v) || v <= 0 ? antesDeEditar.current : v);
             }}
-            onBlur={() => onNumPreguntas((v) => Math.max(1, Math.min(typeof v === "number" && v > 0 ? v : ultimaValida.current, disponibles)))}
-            // Al tocarlo se selecciona el número entero, así que el primer
-            // dígito que escribes lo sustituye; antes el cursor caía delante
-            // del número y había que borrarlo a mano. El preventDefault del
-            // mouseUp es para Safari, que deshace la selección al soltar.
-            onFocus={(e) => e.target.select()}
-            onMouseUp={(e) => e.preventDefault()}
+            onBlur={() => {
+              setBorrador(null);
+              onNumPreguntas((v) => (typeof v === "number" ? Math.max(1, Math.min(v, disponibles)) : v));
+            }}
+            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
             inputMode="numeric"
             pattern="[0-9]*"
             style={{
@@ -2421,7 +2440,8 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
     return m;
   }, [examenesLista, base, tema, origen, intentadaPorId, falladaPorId]);
 
-  const [numPreguntas, setNumPreguntas] = useState(10);
+  // Vacío hasta que eliges: se usa CANTIDAD_POR_DEFECTO (ver SelectorExamenes).
+  const [numPreguntas, setNumPreguntas] = useState("");
   const [state, setState] = useState("config");
   const [pool, setPool] = useState([]);
   const [poolOriginal, setPoolOriginal] = useState([]);
@@ -2531,7 +2551,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
 
   const start = () => {
     if (filtradas.length === 0) return;
-    const cantidad = Math.max(1, Math.min(numPreguntas || 1, filtradas.length));
+    const cantidad = Math.max(1, Math.min(typeof numPreguntas === "number" && numPreguntas > 0 ? numPreguntas : CANTIDAD_POR_DEFECTO, filtradas.length));
     const elegidas = tomarPreguntas(filtradas, cursosSel, cantidad);
     setPool(elegidas); setPoolOriginal(elegidas);
     setIdx(0); setAnswers([]); setSelected(null); setRevealed(false); setSeconds(0);

@@ -96,6 +96,10 @@
       .nav-app button + button::before { content: ""; position: absolute; left: -3.5px; top: 28%; bottom: 28%; width: 1px; background: var(--linea); transition: opacity .15s; }
       .nav-app button.activa::before, .nav-app button.activa + button::before { opacity: 0; }
       .nav-app button.encima::before, .nav-app button.encima + button::before { opacity: 0; }
+      /* El número de preguntas vacío enseña la cantidad en gris. */
+      .campo-cantidad::placeholder { color: var(--niebla); opacity: 1; }
+      .campo-cantidad:focus { outline: none; box-shadow: inset 0 -2px 0 var(--negro) !important; }
+
       /* De la portada a la app: la portada se difumina y se aleja un poco
          mientras la app, que ya estaba debajo, pasa de borrosa a nítida. */
       .portada-sale { animation: portadaSale .65s cubic-bezier(.4,0,.2,1) forwards; }
