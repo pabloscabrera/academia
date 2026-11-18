@@ -269,6 +269,26 @@ console.log("6) toque normal abre el mazo ->", abrioElMazo, "| escrituras:", env
 if (!abrioElMazo) fallos.push("[toque] un toque normal ya no abre el mazo");
 if (enviados.length > 0) fallos.push("[toque] un toque normal escribió en mazos_estilo");
 
+// Y un toque LENTO (el clic del trackpad apretado medio segundo, sin mover)
+// también entra: antes contaba como arrastre y se tragaba el click, y el mazo
+// "no entraba del tirón".
+await pagina.goto(`http://localhost:${PUERTO}/`, { waitUntil: "domcontentloaded" });
+await esperar(5000);
+await pagina.getByRole("button", { name: /Flashcards/i }).first().click();
+await esperar(1200);
+enviados.length = 0;
+const lento = await centro(/^TBM/);
+await pagina.mouse.move(lento.x, lento.y);
+await pagina.mouse.down();
+await esperar(550);
+await pagina.mouse.up();
+await esperar(900);
+const textoLento = await pagina.locator("body").innerText();
+const entroLento = textoLento.includes("Empezar repaso") && /"TBM/.test(textoLento);
+console.log("7) toque lento sin mover abre el mazo ->", entroLento, "| escrituras:", enviados.length);
+if (!entroLento) fallos.push("[toque lento] mantener pulsado sin mover no abrió el mazo");
+if (enviados.length > 0) fallos.push("[toque lento] escribió en mazos_estilo");
+
 console.log("ERRORES JS:", errores.length ? errores.join(" | ") : "ninguno");
 await navegador.close(); servidor.kill();
 if (errores.length) fallos.push("errores de JavaScript: " + errores.join(" | "));
