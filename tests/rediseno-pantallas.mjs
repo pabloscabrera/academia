@@ -70,7 +70,7 @@ try {
   // 2) Dentro, con sesión: las cinco pestañas.
   const c2 = await navegador.newContext({ viewport: { width: 390, height: 844 } });
   await c2.addInitScript(() => {
-    sessionStorage.setItem("pir-portada-vista", "1");
+    sessionStorage.setItem("pir-pruebas-sin-portada", "1");
     localStorage.setItem("sb-slwifwjwtipoqtkhbhbr-auth-token", JSON.stringify({
       access_token: "x", refresh_token: "y", expires_at: 9999999999,
       user: { id: "u1", email: "prueba@ruta-pir.local", user_metadata: { username: "prueba" } },
@@ -121,81 +121,122 @@ try {
   if (nav.icono > 16) fallos.push("los iconos de la cabecera no son pequeños");
   if (nav.ancho > nav.vista) fallos.push("la página se ensancha");
   // 5) La pantalla de carga, con el JavaScript bloqueado para que se quede:
-  // las letras de AUTOPIR y el asterisco que cambia de forma; sin texto.
+  // las letras de AUTOPIR (PIR fino) y una raya que barre; sin texto ni
+  // asterisco.
   const c3 = await navegador.newContext({ viewport: { width: 390, height: 844 } });
   await c3.route("**/assets/*.js", (r) => r.abort());
   const p3 = await c3.newPage();
   await p3.goto(`http://localhost:${PUERTO}/`, { waitUntil: "load" });
   await esperar(1500);
-  const formas = new Set();
-  for (let i = 0; i < 12; i++) {
-    formas.add(await p3.evaluate(() => [...document.querySelectorAll(".carga-piensa span")].find((s) => getComputedStyle(s).opacity === "1")?.textContent || ""));
-    await esperar(70);
-  }
   const carga = await p3.evaluate(() => {
     const a = document.getElementById("arranque");
-    return { texto: a.innerText.replace(/\s+/g, "").trim(), letras: a.querySelectorAll(".carga-marca span").length };
+    const letras = [...a.querySelectorAll(".carga-marca span")];
+    return {
+      texto: a.innerText.replace(/\s+/g, "").trim(),
+      letras: letras.length,
+      pesoAuto: getComputedStyle(letras[0]).fontWeight,
+      pesoPir: getComputedStyle(letras[4]).fontWeight,
+      raya: !!a.querySelector(".carga-via i"),
+      asterisco: !!a.querySelector(".carga-piensa"),
+    };
   });
-  console.log("5) carga ->", JSON.stringify({ ...carga, formas: [...formas] }));
-  if (/Preparando/i.test(carga.texto)) fallos.push("la carga sigue con texto");
-  if (carga.letras !== 7) fallos.push("faltan las letras de AUTOPIR");
-  if (formas.size < 3) fallos.push("el asterisco de la carga no cambia de forma");
+  console.log("5) carga ->", JSON.stringify(carga));
+  if (carga.texto !== "AUTOPIR") fallos.push("la carga tiene algo más que AUTOPIR: " + carga.texto);
+  if (carga.letras !== 7 || !carga.raya || carga.asterisco) fallos.push("la carga no es letras + raya");
+  if (!(Number(carga.pesoAuto) > Number(carga.pesoPir))) fallos.push("AUTO no es más gordo que PIR");
   await c3.close();
 
-  // 6) Con sesión, al ABRIR la app sale la portada con un solo "Entrar".
-  const c4 = await navegador.newContext({ viewport: { width: 390, height: 844 } });
-  await c4.addInitScript(() => {
-    localStorage.setItem("sb-slwifwjwtipoqtkhbhbr-auth-token", JSON.stringify({
-      access_token: "x", refresh_token: "y", expires_at: 9999999999,
-      user: { id: "u1", email: "prueba@ruta-pir.local", user_metadata: { username: "prueba" } },
-    }));
-  });
-  await rutas(c4);
+  const conSesion = async (opciones = {}, sinPortada = false) => {
+    const c = await navegador.newContext({ viewport: { width: 390, height: 844 }, ...opciones });
+    await c.addInitScript((saltar) => {
+      if (saltar) sessionStorage.setItem("pir-pruebas-sin-portada", "1");
+      localStorage.setItem("sb-slwifwjwtipoqtkhbhbr-auth-token", JSON.stringify({
+        access_token: "x", refresh_token: "y", expires_at: 9999999999,
+        user: { id: "u1", email: "prueba@ruta-pir.local", user_metadata: { username: "prueba" } },
+      }));
+    }, sinPortada);
+    await rutas(c);
+    return c;
+  };
+  const activa = (p) => p.evaluate(() => document.querySelector("nav.nav-app button.activa")?.textContent);
+
+  // 6) Con sesión, al ABRIR la app sale la portada con un solo "Entrar", y
+  // vuelve a salir al recargar (antes se apuntaba como vista y dejaba de
+  // salir en una pestaña que no se cierra).
+  const c4 = await conSesion();
   const p4 = await c4.newPage();
   await p4.goto(`http://localhost:${PUERTO}/`, { waitUntil: "load" });
   await p4.getByText(/sesión iniciada como/).waitFor({ timeout: 20000 });
   if ((await p4.locator("input").count()) !== 0) fallos.push("con sesión la portada pide datos");
   await p4.getByRole("button", { name: "Entrar", exact: true }).click();
   await p4.locator("nav.nav-app").waitFor({ timeout: 20000 });
+  await esperar(300);
+  if (await p4.getByText(/sesión iniciada como/).count()) fallos.push("Entrar no quita la portada");
   // Flechas del teclado: derecha pasa a Flashcards, izquierda vuelve.
   await p4.keyboard.press("ArrowRight");
-  await esperar(300);
-  const tras = await p4.evaluate(() => document.querySelector("nav.nav-app button.activa")?.textContent);
+  await esperar(700);
+  const tras = await activa(p4);
   await p4.keyboard.press("ArrowLeft");
-  await esperar(300);
-  const vuelta = await p4.evaluate(() => document.querySelector("nav.nav-app button.activa")?.textContent);
+  await esperar(700);
+  const vuelta = await activa(p4);
   console.log("6) portada con sesión y flechas ->", tras, "/", vuelta);
   if (tras !== "Flashcards" || vuelta !== "Exámenes") fallos.push("las flechas no cambian de pestaña");
-  // Recargar no vuelve a sacar la portada.
   await p4.reload();
-  await p4.locator("nav.nav-app").waitFor({ timeout: 20000 });
+  await p4.getByText(/sesión iniciada como/).waitFor({ timeout: 20000 }).catch(() => fallos.push("al recargar no vuelve la portada"));
   await c4.close();
 
-  // 7) Deslizar el dedo a la izquierda pasa a la pestaña siguiente.
-  const c5 = await navegador.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
-  await c5.addInitScript(() => {
-    sessionStorage.setItem("pir-portada-vista", "1");
-    localStorage.setItem("sb-slwifwjwtipoqtkhbhbr-auth-token", JSON.stringify({
-      access_token: "x", refresh_token: "y", expires_at: 9999999999,
-      user: { id: "u1", email: "prueba@ruta-pir.local", user_metadata: { username: "prueba" } },
-    }));
-  });
-  await rutas(c5);
+  // 7) Dedo: la página SIGUE al dedo mientras se arrastra, y al soltar lejos
+  // pasa a la siguiente; un arrastre corto vuelve a su sitio.
+  const c5 = await conSesion({ hasTouch: true, isMobile: true }, true);
   const p5 = await c5.newPage();
   await p5.goto(`http://localhost:${PUERTO}/`, { waitUntil: "load" });
   await p5.locator("nav.nav-app").waitFor({ timeout: 20000 });
-  await p5.evaluate(() => {
-    const t = (tipo, x) => {
-      const toque = new Touch({ identifier: 1, target: document.body, clientX: x, clientY: 400 });
-      document.body.dispatchEvent(new TouchEvent(tipo, { touches: tipo === "touchend" ? [] : [toque], changedTouches: [toque], bubbles: true }));
+  const arrastrar = (desde, hasta, pasos) => p5.evaluate(async ({ desde, hasta, pasos }) => {
+    const ev = (tipo, x) => {
+      const t = new Touch({ identifier: 1, target: document.body, clientX: x, clientY: 400 });
+      document.body.dispatchEvent(new TouchEvent(tipo, { touches: tipo === "touchend" ? [] : [t], changedTouches: [t], bubbles: true, cancelable: true }));
     };
-    t("touchstart", 300); t("touchend", 120);
-  });
-  await esperar(300);
-  const deslizada = await p5.evaluate(() => document.querySelector("nav.nav-app button.activa")?.textContent);
-  console.log("7) deslizar ->", deslizada);
+    ev("touchstart", desde);
+    let enMedio = null;
+    for (let k = 1; k <= pasos; k++) {
+      ev("touchmove", desde + ((hasta - desde) * k) / pasos);
+      await new Promise((r) => setTimeout(r, 16));
+      if (k === Math.floor(pasos / 2)) enMedio = getComputedStyle(document.querySelector("main.main-app")).transform;
+    }
+    ev("touchend", hasta);
+    return enMedio;
+  }, { desde, hasta, pasos });
+  const corto = await arrastrar(300, 270, 6);
+  await esperar(500);
+  const trasCorto = await activa(p5);
+  const enMedio = await arrastrar(320, 100, 12);
+  await esperar(700);
+  const deslizada = await activa(p5);
+  const limpio = await p5.evaluate(() => document.querySelector("main.main-app").style.transform);
+  console.log("7) dedo ->", JSON.stringify({ trasCorto, enMedio, deslizada, limpio }));
+  if (trasCorto !== "Exámenes") fallos.push("un arrastre corto cambió de pestaña");
+  if (!enMedio || enMedio === "none") fallos.push("la página no sigue al dedo");
   if (deslizada !== "Flashcards") fallos.push("deslizar no cambia de pestaña");
+  if (limpio) fallos.push("el transform se queda puesto al terminar: " + limpio);
   await c5.close();
+
+  // 8) Trackpad: dos dedos de lado llegan como rueda con deltaX.
+  const c6 = await conSesion({ viewport: { width: 1024, height: 768 } }, true);
+  const p6 = await c6.newPage();
+  await p6.goto(`http://localhost:${PUERTO}/`, { waitUntil: "load" });
+  await p6.locator("nav.nav-app").waitFor({ timeout: 20000 });
+  await p6.mouse.move(500, 500);
+  for (let k = 0; k < 12; k++) { await p6.mouse.wheel(18, 0); await esperar(16); }
+  await esperar(800);
+  const trasRueda = await activa(p6);
+  // Una rueda vertical normal no cambia de pestaña.
+  for (let k = 0; k < 12; k++) { await p6.mouse.wheel(0, 60); await esperar(16); }
+  await esperar(500);
+  const trasVertical = await activa(p6);
+  console.log("8) trackpad ->", trasRueda, "/", trasVertical);
+  if (trasRueda !== "Flashcards") fallos.push("el trackpad no cambia de pestaña");
+  if (trasVertical !== "Flashcards") fallos.push("desplazar en vertical cambió de pestaña");
+  await c6.close();
   if (e2.length) fallos.push("errores dentro: " + e2.join(" | "));
 } catch (err) {
   fallos.push(err.message);

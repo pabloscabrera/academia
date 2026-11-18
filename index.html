@@ -73,36 +73,41 @@
       /* Pestañas: al pasar el ratón el recuadro se oscurece (la activa ya es
          negra y no cambia). Solo con ratón: en táctil :hover se queda pegado. */
       @media (hover: hover) {
-        .nav-app button:not(.activa):hover { background: var(--pestana-hover) !important; color: var(--tinta) !important; border-color: var(--niebla) !important; }
+        .nav-app button:not(.activa):hover { background: var(--pestana-hover) !important; color: var(--tinta) !important; }
       }
 
-      /* Pantalla de carga: AUTOPIR sube letra a letra y debajo un asterisco
-         que va cambiando de forma (· ✢ ✳ ✶ ✻ ✽ y vuelta), como el que pone
-         Claude mientras piensa. Es la MISMA en el HTML (antes de que llegue
-         el JavaScript) y en React (mientras cargan los datos). */
-      .carga { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; background: var(--fondo); }
-      .carga-marca { display: flex; font-family: 'Cabinet Grotesk', 'Arial Black', sans-serif; font-weight: 800; font-size: 26px; letter-spacing: 0.22em; color: var(--negro); padding-left: 0.22em; }
+      /* Pantalla de carga: AUTOPIR sube letra a letra (AUTO gordo, PIR fino,
+         como el logo) y debajo una raya fina que barre. Es la MISMA en el
+         HTML (antes de que llegue el JavaScript) y en React (mientras cargan
+         los datos). */
+      .carga { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; background: var(--fondo); }
+      .carga-marca { display: flex; align-items: baseline; font-family: 'Cabinet Grotesk', 'Arial Black', sans-serif; font-weight: 800; font-size: 26px; letter-spacing: 0.1em; color: var(--negro); padding-left: 0.1em; }
+      .carga-marca .fina { font-family: 'Switzer', 'Helvetica Neue', Arial, sans-serif; font-weight: 400; }
       .carga-marca span { display: inline-block; opacity: 0; transform: translateY(10px); animation: cargaLetra 0.55s cubic-bezier(.22,1,.36,1) forwards; }
-      .carga-piensa { position: relative; width: 30px; height: 30px; opacity: 0; animation: cargaAparece 0.4s ease 0.6s forwards; }
-      .carga-piensa span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: -apple-system, 'Segoe UI Symbol', 'Apple Symbols', sans-serif; font-size: 24px; line-height: 1; color: var(--acento); opacity: 0; animation: cargaGlifo 1.2s step-end infinite; }
-      .carga-piensa span:nth-child(1) { animation-delay: 0s; }
-      .carga-piensa span:nth-child(2) { animation-delay: -1.08s; }
-      .carga-piensa span:nth-child(3) { animation-delay: -0.96s; }
-      .carga-piensa span:nth-child(4) { animation-delay: -0.84s; }
-      .carga-piensa span:nth-child(5) { animation-delay: -0.72s; }
-      .carga-piensa span:nth-child(6) { animation-delay: -0.6s; }
-      .carga-piensa span:nth-child(7) { animation-delay: -0.48s; }
-      .carga-piensa span:nth-child(8) { animation-delay: -0.36s; }
-      .carga-piensa span:nth-child(9) { animation-delay: -0.24s; }
-      .carga-piensa span:nth-child(10) { animation-delay: -0.12s; }
+      .carga-via { position: relative; width: 120px; height: 1.5px; background: var(--linea); overflow: hidden; opacity: 0; animation: cargaAparece 0.4s ease 0.55s forwards; }
+      .carga-via i { position: absolute; top: 0; bottom: 0; width: 38%; background: var(--negro); animation: cargaBarre 1.15s cubic-bezier(.65,0,.35,1) infinite; }
       @keyframes cargaLetra { to { opacity: 1; transform: none; } }
       @keyframes cargaAparece { to { opacity: 1; } }
-      @keyframes cargaGlifo { 0% { opacity: 1; } 10%, 100% { opacity: 0; } }
+      @keyframes cargaBarre { 0% { left: -38%; } 100% { left: 100%; } }
       @media (prefers-reduced-motion: reduce) {
-        .carga-marca span, .carga-piensa { animation: none; opacity: 1; transform: none; }
-        .carga-piensa span { animation: none; }
-        .carga-piensa span:nth-child(5) { opacity: 1; }
+        .carga-marca span, .carga-via { animation: none; opacity: 1; transform: none; }
+        .carga-via i { animation: none; left: 31%; }
       }
+
+      /* Pestañas: una raya vertical fina entre una y otra, que no llega a
+         la línea de abajo. Se esconde junto a la abierta y junto a la que
+         tiene el ratón encima, para que el bloque sombreado no quede
+         cortado por una raya. */
+      .nav-app button + button::before { content: ""; position: absolute; left: -3.5px; top: 28%; bottom: 28%; width: 1px; background: var(--linea); transition: opacity .15s; }
+      .nav-app button.activa::before, .nav-app button.activa + button::before { opacity: 0; }
+      @media (hover: hover) {
+        .nav-app button:hover::before, .nav-app button:hover + button::before { opacity: 0; }
+      }
+      /* Que el gesto de dos dedos del trackpad (o el borde de la pantalla)
+         no lo coja el navegador para ir atrás: es de la app, para pasar de
+         página. */
+      html, body { overscroll-behavior-x: none; }
+
 
       /* Tipografía del rediseño, autoalojada (Fontshare, licencia libre). */
       @font-face { font-family: 'Cabinet Grotesk'; src: url('/fonts/cabinet-grotesk-700.woff2') format('woff2'); font-weight: 700; font-display: swap; }
@@ -146,6 +151,7 @@
         .cabecera-marca { min-width: 0; flex-wrap: wrap; row-gap: 4px; }
         .nav-app { padding-left: 8px !important; padding-right: 8px !important; gap: 4px !important; }
         .nav-app button { padding: 9px 1px !important; font-size: clamp(9.5px, 2.8vw, 11.5px) !important; letter-spacing: 0 !important; text-transform: none !important; gap: 6px !important; border-radius: 8px !important; min-width: 0; }
+        .nav-app button + button::before { left: -2.5px; }
         /* Las cuatro pestañas con su icono no caben, y la que se queda fuera
            ("Mi perfil") no se ve que esté ahí: la barra se desplaza pero no
            lo parece. Sin los iconos entran las cuatro y ya no hay nada
@@ -178,8 +184,8 @@
   <body>
     <div id="root">
       <div id="arranque" class="carga">
-        <div class="carga-marca" aria-label="AUTOPIR"><span style="animation-delay:0ms">A</span><span style="animation-delay:70ms">U</span><span style="animation-delay:140ms">T</span><span style="animation-delay:210ms">O</span><span style="animation-delay:280ms">P</span><span style="animation-delay:350ms">I</span><span style="animation-delay:420ms">R</span></div>
-        <div class="carga-piensa" aria-hidden="true"><span>·</span><span>✢</span><span>✳</span><span>✶</span><span>✻</span><span>✽</span><span>✻</span><span>✶</span><span>✳</span><span>✢</span></div>
+        <div class="carga-marca" aria-label="AUTOPIR"><span style="animation-delay:0ms">A</span><span style="animation-delay:70ms">U</span><span style="animation-delay:140ms">T</span><span style="animation-delay:210ms">O</span><span class="fina" style="animation-delay:280ms">P</span><span class="fina" style="animation-delay:350ms">I</span><span class="fina" style="animation-delay:420ms">R</span></div>
+        <div class="carga-via"><i></i></div>
       </div>
     </div>
     <script>

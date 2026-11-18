@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pestanaVecina, pasoDeDeslizar } from "../src/logica.js";
+import { pestanaVecina, conResistencia, decidirPaso, umbralTrackpad, RESISTENCIA_BORDE } from "../src/logica.js";
 
 const ORDEN = ["simulacros", "flashcards", "duelo", "estadisticas", "perfil"];
 
@@ -12,13 +12,34 @@ test("pestanaVecina avanza y retrocede, y se queda en los extremos", () => {
   assert.equal(pestanaVecina(ORDEN, "otra", 1), "otra");
 });
 
-test("pasoDeDeslizar: dedo a la izquierda es la siguiente", () => {
-  assert.equal(pasoDeDeslizar({ dx: -120, dy: 10, ms: 250 }), 1);
-  assert.equal(pasoDeDeslizar({ dx: 120, dy: -10, ms: 250 }), -1);
+test("conResistencia: libre si hay vecina, frenada si no", () => {
+  assert.equal(conResistencia(-100, true, true), -100);
+  assert.equal(conResistencia(100, false, true), 100 * RESISTENCIA_BORDE);
+  assert.equal(conResistencia(-100, true, false), -100 * RESISTENCIA_BORDE);
 });
 
-test("pasoDeDeslizar ignora lo corto, lo vertical y lo lento", () => {
-  assert.equal(pasoDeDeslizar({ dx: -40, dy: 0, ms: 200 }), 0);
-  assert.equal(pasoDeDeslizar({ dx: -120, dy: 100, ms: 200 }), 0);
-  assert.equal(pasoDeDeslizar({ dx: -120, dy: 0, ms: 900 }), 0);
+const base = { ancho: 400, hayAnterior: true, haySiguiente: true };
+
+test("decidirPaso: arrastrar lejos pasa; poco, vuelve", () => {
+  assert.equal(decidirPaso({ ...base, dx: -120 }), 1);
+  assert.equal(decidirPaso({ ...base, dx: 120 }), -1);
+  assert.equal(decidirPaso({ ...base, dx: -40 }), 0);
+});
+
+test("decidirPaso: un golpe rápido pasa aunque sea corto", () => {
+  assert.equal(decidirPaso({ ...base, dx: -40, velocidad: -0.8 }), 1);
+  // Arrepentirse al final (el dedo vuelve) no cuenta como golpe.
+  assert.equal(decidirPaso({ ...base, dx: -40, velocidad: 0.8 }), 0);
+  // Demasiado corto para ser un gesto, por rápido que sea.
+  assert.equal(decidirPaso({ ...base, dx: -10, velocidad: -2 }), 0);
+});
+
+test("decidirPaso: sin vecina por ese lado no pasa", () => {
+  assert.equal(decidirPaso({ ...base, dx: -300, haySiguiente: false }), 0);
+  assert.equal(decidirPaso({ ...base, dx: 300, hayAnterior: false }), 0);
+});
+
+test("umbralTrackpad: una fracción del ancho, con techo", () => {
+  assert.equal(umbralTrackpad(400), 72);
+  assert.equal(umbralTrackpad(1200), 140);
 });

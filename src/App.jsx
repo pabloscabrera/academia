@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import { flushSync } from "react-dom";
 import { Activity, ArrowDownUp, Award, Baby, BookOpen, Bookmark, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, FileText, Flag, Flame, Folder, FolderOpen, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, MoreHorizontal, FolderPlus, Palette, Pencil, Percent, Plus, Puzzle, RotateCw, Search, Settings, Sparkles, Star, Stethoscope, Tag, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
@@ -23,7 +24,7 @@ import {
   etiquetaOrigen, accionDeTecla,
   calificacionDeTecla, MS_PULSACION,
   tomarPreguntas, rgbDeHex, rankingExamenes, esBancoComoExamen,
-  pestanaVecina, pasoDeDeslizar,
+  pestanaVecina, conResistencia, decidirPaso, umbralTrackpad,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -277,7 +278,13 @@ function usuarioFromSession(session) {
   return { name: isAdmin ? "Pablo" : username, isAdmin };
 }
 
-const CLAVE_PORTADA_VISTA = "pir-portada-vista";
+// Las pruebas de navegador ponen esta clave para no pasar por la portada. La
+// app no la escribe nunca: antes guardaba "ya vista" en sessionStorage, y en
+// una pestaña de Safari que no se cierra eso duraba días — la portada dejaba
+// de salir, que fue justo la queja.
+const CLAVE_SIN_PORTADA = "pir-pruebas-sin-portada";
+// Volver a la app tras este rato fuera también es "entrar".
+const MS_FUERA_PARA_PORTADA = 30 * 60 * 1000;
 const ORDEN_PESTANAS = ["simulacros", "flashcards", "duelo", "estadisticas", "perfil"];
 
 export default function AcademiaPIR() {
@@ -285,16 +292,17 @@ export default function AcademiaPIR() {
   const [loadError, setLoadError] = useState(null);
   const [user, setUser] = useState(null);
   const [section, setSection] = useState("simulacros");
-  // La portada sale al ABRIR la app aunque ya tengas la sesión iniciada: con
-  // sesión no pide nada, solo "Entrar". Se apunta en sessionStorage, así que
-  // vuelve a salir al abrir la app de nuevo pero no al recargar la pestaña.
+  // La portada sale cada vez que ENTRAS, aunque ya tengas la sesión
+  // iniciada: al abrir la app y al volver tras un rato fuera. Con sesión no
+  // pide nada, solo "Entrar". Vive solo en memoria, a propósito.
   const [portadaVista, setPortadaVista] = useState(() => {
-    try { return sessionStorage.getItem(CLAVE_PORTADA_VISTA) === "1"; } catch { return false; }
+    try { return sessionStorage.getItem(CLAVE_SIN_PORTADA) === "1"; } catch { return false; }
   });
-  const pasarPortada = () => {
-    try { sessionStorage.setItem(CLAVE_PORTADA_VISTA, "1"); } catch { /* sin almacenamiento */ }
-    setPortadaVista(true);
-  };
+  const pasarPortada = () => setPortadaVista(true);
+  const mainRef = useRef(null);
+  const animandoRef = useRef(false);
+  const seccionRef = useRef(section);
+  seccionRef.current = section;
   const [questions, setQuestions] = useState([]);
   const [rachas, setRachas] = useState([]);
   const [fallos, setFallos] = useState([]);
@@ -574,49 +582,202 @@ export default function AcademiaPIR() {
     return () => window.removeEventListener("online", alVolverLaRed);
   }, []);
 
-  // Cambiar de pestaña deslizando el dedo a izquierda o derecha, o con las
-  // flechas del teclado. No actúa encima de nada marcado con
+  // Volver a la app tras media hora fuera es entrar otra vez: sale la
+  // portada ENCIMA de lo que hubiera (ver el render), sin desmontarlo, así
+  // que un repaso a medias sigue ahí al pulsar Entrar.
+  useEffect(() => {
+    let fuera = null;
+    const alCambiar = () => {
+      if (document.hidden) { fuera = Date.now(); return; }
+      if (fuera && Date.now() - fuera >= MS_FUERA_PARA_PORTADA) {
+        let enPruebas = false;
+        try { enPruebas = sessionStorage.getItem(CLAVE_SIN_PORTADA) === "1"; } catch { /* nada */ }
+        if (!enPruebas) setPortadaVista(false);
+      }
+      fuera = null;
+    };
+    document.addEventListener("visibilitychange", alCambiar);
+    return () => document.removeEventListener("visibilitychange", alCambiar);
+  }, []);
+
+  // Pasar de página como en Instagram: la página sigue al dedo (o a los dos
+  // dedos del trackpad), y al soltar sale por un lado y entra la vecina por
+  // el otro. Se mueve el <main> tocando su estilo directamente, sin estado de
+  // React, porque un re-render por cada evento de movimiento no va fluido.
+  // Fuera de la animación el transform se BORRA (no se deja a 0): un
+  // transform en un antepasado convierte en relativo todo lo `fixed` de
+  // dentro (la celebración del duelo, el encuentro…).
+  const SALIDA_MS = 170;
+  const ENTRADA_MS = 300;
+  const transicionA = (nueva, dir) => {
+    const el = mainRef.current;
+    const actual = seccionRef.current;
+    if (!nueva || nueva === actual) return;
+    const sinMovimiento = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!el || animandoRef.current || sinMovimiento) { setSection(nueva); return; }
+    animandoRef.current = true;
+    const ancho = el.offsetWidth || window.innerWidth;
+    el.style.transition = `transform ${SALIDA_MS}ms cubic-bezier(.4,0,.9,.6)`;
+    el.style.transform = `translateX(${-dir * ancho}px)`;
+    setTimeout(() => {
+      el.style.transition = "none";
+      el.style.transform = `translateX(${dir * ancho}px)`;
+      // Síncrono: la página nueva tiene que estar ya dibujada fuera de la
+      // pantalla antes de empezar a entrar, o entraría la vieja.
+      flushSync(() => setSection(nueva));
+      if (window.scrollY > 0) window.scrollTo(0, 0);
+      void el.offsetWidth;
+      el.style.transition = `transform ${ENTRADA_MS}ms cubic-bezier(.22,1,.36,1)`;
+      el.style.transform = "translateX(0px)";
+      setTimeout(() => {
+        el.style.transition = "";
+        el.style.transform = "";
+        animandoRef.current = false;
+      }, ENTRADA_MS + 40);
+    }, SALIDA_MS);
+  };
+  // Pulsar una pestaña también desliza, hacia el lado en que está.
+  const irASeccion = (nueva) => {
+    const i = ORDEN_PESTANAS.indexOf(seccionRef.current);
+    const j = ORDEN_PESTANAS.indexOf(nueva);
+    if (i === -1 || j === -1) { setSection(nueva); return; }
+    transicionA(nueva, j > i ? 1 : -1);
+  };
+
+  // Gestos: dedo, trackpad y flechas. No actúan encima de nada marcado con
   // data-sin-deslizar (una tirada, un repaso de tarjetas, un duelo, las
-  // pantallas completas y los paneles): ahí un roce del dedo cambiaría de
-  // pestaña y se llevaría por delante lo que estás haciendo.
+  // pantallas completas y los paneles): ahí un roce cambiaría de pestaña y se
+  // llevaría por delante lo que estás haciendo.
   useEffect(() => {
     if (!user || !portadaVista) return undefined;
-    const bloqueado = () => !!document.querySelector("[data-sin-deslizar]");
+    const bloqueado = () => animandoRef.current || !!document.querySelector("[data-sin-deslizar]");
     const editable = (el) => !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
-    const mover = (paso) => setSection((actual) => pestanaVecina(ORDEN_PESTANAS, actual, paso));
+    // Lo que ya se desplaza de lado (una fila de chips) se queda su gesto.
+    const scrollLateral = (el) => {
+      for (let n = el; n && n !== document.body; n = n.parentElement) {
+        if (n.scrollWidth > n.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(n).overflowX)) return true;
+      }
+      return false;
+    };
+    const vecinas = () => {
+      const i = ORDEN_PESTANAS.indexOf(seccionRef.current);
+      return { i, hayAnterior: i > 0, haySiguiente: i >= 0 && i < ORDEN_PESTANAS.length - 1 };
+    };
+    const mostrar = (dx) => {
+      const el = mainRef.current;
+      if (!el) return;
+      const { hayAnterior, haySiguiente } = vecinas();
+      el.style.transition = "none";
+      el.style.transform = `translateX(${conResistencia(dx, hayAnterior, haySiguiente)}px)`;
+    };
+    const volver = () => {
+      const el = mainRef.current;
+      if (!el) return;
+      el.style.transition = "transform 260ms cubic-bezier(.22,1,.36,1)";
+      el.style.transform = "translateX(0px)";
+      setTimeout(() => { if (!animandoRef.current) { el.style.transition = ""; el.style.transform = ""; } }, 300);
+    };
+    const soltar = (dx, velocidad) => {
+      const el = mainRef.current;
+      const { i, hayAnterior, haySiguiente } = vecinas();
+      const paso = decidirPaso({ dx, velocidad, ancho: (el && el.offsetWidth) || window.innerWidth, hayAnterior, haySiguiente });
+      if (paso) transicionA(ORDEN_PESTANAS[i + paso], paso);
+      else volver();
+    };
+
     const alTeclear = (e) => {
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
       if (editable(document.activeElement) || bloqueado()) return;
       e.preventDefault();
-      mover(e.key === "ArrowRight" ? 1 : -1);
+      const { i, hayAnterior, haySiguiente } = vecinas();
+      const paso = e.key === "ArrowRight" ? 1 : -1;
+      if ((paso === 1 && haySiguiente) || (paso === -1 && hayAnterior)) transicionA(ORDEN_PESTANAS[i + paso], paso);
     };
-    let inicio = null;
+
+    // Dedo. El gesto se decide en los primeros 10 px: si es más lateral que
+    // vertical, la página es tuya y se cancela el desplazamiento; si no, es
+    // desplazar la página y no se toca. Un pulsado largo (arrastrar un mazo)
+    // tarda más de 300 ms en moverse y tampoco cuenta.
+    let toque = null;
     const alTocar = (e) => {
+      toque = null;
+      if (e.touches.length !== 1 || bloqueado() || editable(e.target) || scrollLateral(e.target)) return;
       const t = e.touches[0];
-      inicio = e.touches.length === 1 ? { x: t.clientX, y: t.clientY, cuando: Date.now(), objetivo: e.target } : null;
+      toque = { x: t.clientX, y: t.clientY, cuando: Date.now(), modo: null, dx: 0, ultX: t.clientX, ultT: Date.now(), vel: 0 };
     };
-    const alSoltar = (e) => {
-      if (!inicio) return;
-      const t = e.changedTouches[0];
-      const gesto = { dx: t.clientX - inicio.x, dy: t.clientY - inicio.y, ms: Date.now() - inicio.cuando };
-      const objetivo = inicio.objetivo;
-      inicio = null;
-      const paso = pasoDeDeslizar(gesto);
-      if (!paso || bloqueado() || editable(objetivo)) return;
-      // Lo que ya se desplaza de lado (una fila de chips) se queda su gesto.
-      for (let el = objetivo; el && el !== document.body; el = el.parentElement) {
-        if (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(el).overflowX)) return;
+    const alMover = (e) => {
+      if (!toque) return;
+      const t = e.touches[0];
+      const dx = t.clientX - toque.x;
+      const dy = t.clientY - toque.y;
+      if (toque.modo === null) {
+        if (Math.hypot(dx, dy) < 10) return;
+        if (Date.now() - toque.cuando > 300) { toque = null; return; }
+        if (Math.abs(dx) > Math.abs(dy) * 1.2) toque.modo = "lado";
+        else { toque = null; return; }
       }
-      mover(paso);
+      e.preventDefault();
+      const ahora = Date.now();
+      if (ahora > toque.ultT) toque.vel = (t.clientX - toque.ultX) / (ahora - toque.ultT);
+      toque.ultX = t.clientX; toque.ultT = ahora; toque.dx = dx;
+      mostrar(dx);
     };
+    const alSoltar = () => {
+      if (!toque) return;
+      const { modo, dx, vel, ultT } = toque;
+      toque = null;
+      if (modo !== "lado") return;
+      soltar(dx, Date.now() - ultT > 80 ? 0 : vel);
+    };
+
+    // Trackpad: dos dedos de lado llegan como eventos de rueda con deltaX.
+    // Se pasa en cuanto lo movido cruza el umbral, y luego se ignora la
+    // inercia un momento para no pasar dos páginas de un solo gesto.
+    let rueda = null;
+    let enfriarHasta = 0;
+    let temporizador = null;
+    const alRueda = (e) => {
+      if (e.ctrlKey) return; // pellizco para hacer zoom
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      if (Date.now() < enfriarHasta) { e.preventDefault(); return; }
+      if (!rueda) {
+        if (bloqueado() || scrollLateral(e.target)) return;
+        rueda = { dx: 0 };
+      }
+      e.preventDefault();
+      rueda.dx -= e.deltaX * (e.deltaMode === 1 ? 16 : 1);
+      const el = mainRef.current;
+      const ancho = (el && el.offsetWidth) || window.innerWidth;
+      const { i, hayAnterior, haySiguiente } = vecinas();
+      clearTimeout(temporizador);
+      if (Math.abs(rueda.dx) >= umbralTrackpad(ancho)) {
+        const paso = rueda.dx < 0 ? 1 : -1;
+        if ((paso === 1 && haySiguiente) || (paso === -1 && hayAnterior)) {
+          rueda = null;
+          enfriarHasta = Date.now() + 700;
+          transicionA(ORDEN_PESTANAS[i + paso], paso);
+          return;
+        }
+      }
+      mostrar(rueda.dx);
+      temporizador = setTimeout(() => { rueda = null; volver(); }, 160);
+    };
+
     window.addEventListener("keydown", alTeclear);
     window.addEventListener("touchstart", alTocar, { passive: true });
+    window.addEventListener("touchmove", alMover, { passive: false });
     window.addEventListener("touchend", alSoltar, { passive: true });
+    window.addEventListener("touchcancel", alSoltar, { passive: true });
+    window.addEventListener("wheel", alRueda, { passive: false });
     return () => {
+      clearTimeout(temporizador);
       window.removeEventListener("keydown", alTeclear);
       window.removeEventListener("touchstart", alTocar);
+      window.removeEventListener("touchmove", alMover);
       window.removeEventListener("touchend", alSoltar);
+      window.removeEventListener("touchcancel", alSoltar);
+      window.removeEventListener("wheel", alRueda);
     };
   }, [user, portadaVista]);
 
@@ -1229,11 +1390,16 @@ export default function AcademiaPIR() {
     return !error;
   };
 
+  // Con sesión, la portada va ENCIMA de la app (o de la carga) en vez de en
+  // su lugar: mientras la miras los datos siguen cargando, y si sale al
+  // volver tras un rato fuera, lo que estuvieras haciendo sigue ahí debajo.
+  const portadaEncima = user && !portadaVista && !loadError ? (
+    <div data-sin-deslizar="" style={{ position: "fixed", inset: 0, zIndex: 80, overflowY: "auto" }}>
+      <AuthScreen sesion={user} onContinuar={pasarPortada} onCambiarCuenta={handleLogout} />
+    </div>
+  ) : null;
   let contenido;
-  if (user && !portadaVista && !loadError) {
-    // Mientras se ve la portada, los datos siguen cargando por detrás.
-    contenido = <AuthScreen sesion={user} onContinuar={pasarPortada} onCambiarCuenta={handleLogout} />;
-  } else if (!ready) {
+  if (!ready) {
     contenido = <PantallaCarga />;
   } else if (loadError) {
     contenido = (
@@ -1281,7 +1447,7 @@ export default function AcademiaPIR() {
           favoritos={favoritos} onToggleFavorito={toggleFavorito} rachas={rachas} onGirarRuleta={girarRuleta}
           enLinea={enLinea} preguntasProgreso={preguntasProgreso} pendientes={contarCola(pendientes)}
         />
-        <Nav section={section} setSection={setSection} alerta={!!dueloEsperando} />
+        <Nav section={section} setSection={irASeccion} alerta={!!dueloEsperando} />
         </div>
         {dueloEsperando && section !== "duelo" && (
           <button
@@ -1292,7 +1458,7 @@ export default function AcademiaPIR() {
             <Zap size={16} /> {dueloEsperando.jugador1} está buscando duelo — ¡Únete!
           </button>
         )}
-        <main style={styles.main} className="main-app">
+        <main ref={mainRef} style={styles.main} className="main-app">
           {section === "flashcards" && (
             <Flashcards
               user={user}
@@ -1372,6 +1538,7 @@ export default function AcademiaPIR() {
   return (
     <div style={{ ...styles.app, background: "var(--fondo)", zoom: ajustes.escala, "--font-display": fuenteActual.familia }}>
       {contenido}
+      {portadaEncima}
       {aviso && <BarraAviso texto={aviso.texto} esperando={aviso.esperando} />}
       {mostrarAjustes && <AjustesPanel ajustes={ajustes} setAjustes={setAjustes} user={user} onLogout={() => { setMostrarAjustes(false); handleLogout(); }} onClose={() => setMostrarAjustes(false)} />}
       {insigniaDesbloqueada && <InsigniaDesbloqueadaModal insignia={insigniaDesbloqueada} onClose={() => setInsigniaDesbloqueada(null)} />}
@@ -1496,7 +1663,7 @@ function AuthScreen({ onLogin, onSignup, sesion, onContinuar, onCambiarCuenta })
       <img src="/img/portada.jpg" alt="" aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "45% 40%" }} />
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(10,10,12,.55) 0%, rgba(10,10,12,.12) 30%, rgba(10,10,12,.55) 60%, rgba(10,10,12,.88) 100%)" }} />
       <div style={{ position: "relative", zIndex: 1, minHeight: "100dvh", maxWidth: 480, margin: "0 auto", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "max(18px, env(safe-area-inset-top)) 22px max(26px, env(safe-area-inset-bottom))" }}>
-        <span style={{ fontFamily: D, fontWeight: 800, fontSize: 12, letterSpacing: "0.17em", textTransform: "uppercase", textAlign: "center", paddingLeft: "0.17em" }}>Autopir</span>
+        <span style={{ textAlign: "center" }}><Marca tamano={14} color="#fff" /></span>
         <h1 style={{ fontFamily: D, fontWeight: 800, fontSize: "clamp(40px,12vw,58px)", lineHeight: 0.86, letterSpacing: "-0.03em", textTransform: "uppercase", margin: "40px 0 0" }}>
           {sesion || modo === "login" ? <>Bienvenido<br />de nuevo</> : <>Crea tu<br />cuenta</>}
         </h1>
@@ -1791,7 +1958,7 @@ function Header({
   return (
     <header style={styles.header} className="cabecera">
       <div className="cabecera-marca" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 13, color: "var(--negro)", letterSpacing: "0.14em" }}>AUTOPIR</span>
+        <Marca tamano={14} />
         {enLinea > 0 && (
           <span
             title={`${enLinea} ${enLinea === 1 ? "persona conectada" : "personas conectadas"} ahora mismo`}
@@ -6576,20 +6743,27 @@ function Ranking({ rachas, user }) {
 
 // La pantalla de carga: la misma que pinta index.html antes de que llegue el
 // JavaScript (clases .carga* definidas allí), para que no haya salto.
+// El logo: AUTO gordo (Cabinet 800) y PIR fino (Switzer 400). El contraste
+// de pesos es el logo; no hace falta nada más alrededor.
+function Marca({ tamano = 14, color = "var(--negro)" }) {
+  return (
+    <span aria-label="AUTOPIR" role="img" style={{ display: "inline-flex", alignItems: "baseline", fontSize: tamano, lineHeight: 1, letterSpacing: "0.1em", color, whiteSpace: "nowrap" }}>
+      <span aria-hidden="true" style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800 }}>AUTO</span>
+      <span aria-hidden="true" style={{ fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", fontWeight: 400 }}>PIR</span>
+    </span>
+  );
+}
+
 function PantallaCarga() {
   return (
     <div className="carga" role="status" aria-label="Cargando">
       <div className="carga-marca" aria-hidden="true">
-        {"AUTOPIR".split("").map((c, i) => (<span key={i} style={{ animationDelay: `${i * 70}ms` }}>{c}</span>))}
+        {"AUTOPIR".split("").map((c, i) => (<span key={i} className={i >= 4 ? "fina" : undefined} style={{ animationDelay: `${i * 70}ms` }}>{c}</span>))}
       </div>
-      <div className="carga-piensa" aria-hidden="true">
-        {GLIFOS_PIENSA.map((g, i) => <span key={i}>{g}</span>)}
-      </div>
+      <div className="carga-via"><i /></div>
     </div>
   );
 }
-// Las formas del asterisco de la carga, ida y vuelta (ver .carga-piensa).
-const GLIFOS_PIENSA = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"];
 
 function SectionTitle({ title, subtitle, action }) {
   return (
@@ -6673,7 +6847,7 @@ const CLAVES_COLOR_MAZO = Object.keys(COLORES_MAZO);
 
 const SOMBRA_SUAVE = "0 1px 2px rgba(30,28,24,0.07), 0 1px 6px rgba(30,28,24,0.05)";
 const styles = {
-  app: { fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", background: "var(--fondo)", minHeight: "100vh", color: TINTA, WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none", fontSize: 17 },
+  app: { overflowX: "clip", fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", background: "var(--fondo)", minHeight: "100vh", color: TINTA, WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none", fontSize: 17 },
   center: { display: "flex", alignItems: "center", justifyContent: "center" },
   // Los cuatro lados por separado y no el atajo `padding`: mezclar el atajo
   // con un `paddingTop` suelto dispara el aviso de React sobre shorthand y
@@ -6685,11 +6859,13 @@ const styles = {
   // así que al quedarse pegadas las pestañas no se meten debajo de la hora.
   cabeceraFija: { position: "sticky", top: 0, zIndex: 40, background: "var(--fondo)" },
   nav: { display: "flex", justifyContent: "center", gap: 6, background: "var(--fondo)", borderBottom: `1px solid ${RAYA}`, paddingTop: 6, paddingRight: 12, paddingBottom: 10, paddingLeft: 12 },
-  // Cada pestaña es un recuadro; la activa va en negro. El oscurecido al
-  // pasar el ratón está en index.html (.nav-app button:hover), porque un
-  // estilo en línea no sabe de :hover.
-  navBtn: { flex: "1 1 0", maxWidth: 150, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "var(--superficie)", color: "var(--humo)", border: `1px solid ${RAYA}`, borderRadius: 10, padding: "10px 4px", fontSize: 11.5, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", whiteSpace: "nowrap", transition: "background-color .15s, color .15s, border-color .15s" },
-  navBtnActivo: { background: "var(--negro)", color: "var(--sobre-negro)", borderColor: "var(--negro)" },
+  // Pestañas sin recuadro: entre una y otra solo una raya vertical fina que
+  // no llega a la línea de abajo (`.nav-app button + button::before` en
+  // index.html). El bloque sigue ahí, invisible: se ve al pasar el ratón
+  // (hover, también en index.html) y en la pestaña abierta, que lo lleva
+  // sombreado en gris.
+  navBtn: { flex: "1 1 0", maxWidth: 150, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "transparent", color: "var(--humo)", border: "none", borderRadius: 10, padding: "10px 4px", fontSize: 11.5, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", whiteSpace: "nowrap", transition: "background-color .15s, color .15s" },
+  navBtnActivo: { background: "var(--bloque)", color: "var(--negro)" },
   navDot: { position: "absolute", top: 10, right: 6, width: 8, height: 8, borderRadius: "50%", background: ACENTO, animation: "dueloPulso 1.2s ease-in-out infinite" },
   tabsOrigen: { display: "flex", gap: 8, marginBottom: 14 },
   tabOrigenBtn: { flex: 1, padding: "11px 14px", borderRadius: 10, border: `1px solid ${RAYA}`, background: "var(--superficie)", color: TINTA_SUAVE, fontSize: 14, fontWeight: 600, cursor: "pointer" },
