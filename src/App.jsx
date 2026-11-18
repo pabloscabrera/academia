@@ -284,6 +284,15 @@ function usuarioFromSession(session) {
 // de salir, que fue justo la queja.
 const CLAVE_SIN_PORTADA = "pir-pruebas-sin-portada";
 
+// El "Salir" de una autoevaluación o de un repaso de flashcards: el mismo
+// enlace de vuelta que el de "Mazos", pero en gris, porque salir no es la
+// acción principal de la pantalla.
+const ESTILO_SALIR = {
+  background: "none", border: "none", cursor: "pointer", padding: "4px 0", marginBottom: 12,
+  display: "flex", alignItems: "center", gap: 6,
+  fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontSize: 13, fontWeight: 600, color: "var(--humo)",
+};
+
 // Las pestañas no se desmontan al cambiar: se esconden (ver el render del
 // raíz), así que una tirada, un repaso o un duelo siguen exactamente donde los
 // dejaste. Lo que escucha al teclado o cuenta tiempo tiene que saber entonces
@@ -2636,6 +2645,17 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
     setTiradaGuardada(null);
   };
 
+  // Salir de una tirada a medias. Desde que las pestañas no se desmontan, una
+  // tirada abierta se queda abierta aunque te vayas a otro sitio, así que
+  // hace falta una salida a mano. No se pierde nada: la tirada ya está
+  // guardada con cada respuesta, y al salir se queda como "Te quedaste a
+  // medias", con Continuar y Descartar.
+  const salirDeTirada = () => {
+    setTiradaGuardada(leerTiradaGuardada(user.name));
+    setPreguntaAbierta(null);
+    setState("config");
+  };
+
   // El cronómetro queda fuera de las dependencias a propósito: si no,
   // escribiría en el disco una vez por segundo. Se guarda con cada respuesta,
   // así que al retomar se pierden como mucho los segundos de la pregunta en
@@ -2906,6 +2926,9 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
           }
           .opcion-quiz:not(:disabled):active { transform: scale(.995); }
         `}</style>
+        <button type="button" onClick={salirDeTirada} style={ESTILO_SALIR}>
+          <ChevronRight size={15} style={{ transform: "rotate(180deg)" }} /> Salir de la autoevaluación
+        </button>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, fontFamily: E.texto }}>
           <span style={{ fontSize: 13, color: relampago ? "#9C7A2C" : "var(--humo)", fontWeight: relampago ? 700 : 500, display: "flex", alignItems: "center", gap: 4 }}>
             {relampago && <Zap size={13} color="#C89B3C" />}
@@ -5556,8 +5579,23 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
 
   if (sesion) {
     const carta = sesion[idx];
+    // Salir del repaso a medias. Cada tarjeta puntuada ya se ha guardado al
+    // pulsar, así que salir no pierde nada: solo cierra la sesión y vuelve al
+    // mazo. Hace falta porque las pestañas ya no se desmontan y un repaso
+    // abierto se quedaba abierto para siempre.
+    const salirDelRepaso = () => {
+      if (pulsacionRef.current) { clearTimeout(pulsacionRef.current); pulsacionRef.current = null; }
+      setTeclaPulsada(null);
+      setSesion(null);
+      setIdx(0);
+      setRevelada(false);
+      setEditandoCarta(null);
+    };
     return (
       <div data-sin-deslizar="">
+        <button type="button" onClick={salirDelRepaso} style={ESTILO_SALIR}>
+          <ChevronRight size={15} style={{ transform: "rotate(180deg)" }} /> Salir del repaso
+        </button>
         {/* La cola crece cuando algo vuelve, así que el total sube a mitad de
             sesión: se dice de dónde sale ese número en vez de dejarlo raro. */}
         <SectionTitle

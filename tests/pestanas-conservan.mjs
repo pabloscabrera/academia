@@ -174,6 +174,34 @@ try {
   console.log(`6) scroll: en la otra pestaña ${yOtra}, al volver ${yVuelta}`);
   if (Math.abs(yVuelta - 600) > 2) throw new Error("6) no volvió a la altura en que se dejó: " + yVuelta);
 
+  // --- 7) "Salir" cierra la tirada sin perderla ---
+  await pestana(p, "exámenes").click();
+  await esperar(800);
+  const antesSalir = (await textoVisible(p)).match(/Enunciado número \d/)[0];
+  await p.getByRole("button", { name: /^Salir de la autoevaluación$/ }).click();
+  await esperar(700);
+  const trasSalir = await textoVisible(p);
+  const fuera = !/Pregunta \d+ de \d+/.test(trasSalir) && /Te quedaste a medias/i.test(trasSalir);
+  console.log(`7) Salir de la tirada: fuera=${fuera}`);
+  if (!fuera) throw new Error("7) Salir no cerró la tirada o no la dejó como 'a medias'");
+  await p.getByRole("button", { name: /Continuar/ }).click();
+  await esperar(700);
+  const retomada = await textoVisible(p);
+  console.log(`   Continuar: vuelve a "Pregunta 2 de 5"=${/Pregunta 2 de 5/.test(retomada)}, mismo enunciado=${retomada.includes(antesSalir)}`);
+  if (!/Pregunta 2 de 5/.test(retomada) || !retomada.includes(antesSalir)) throw new Error("7) Continuar no retomó la tirada donde se dejó");
+
+  // --- 8) "Salir" cierra el repaso de flashcards ---
+  await pestana(p, "flashcards").click();
+  await esperar(800);
+  await p.getByRole("button", { name: /^Salir del repaso$/ }).click();
+  await esperar(600);
+  const trasSalirRepaso = await p.evaluate(() => ({
+    tarjeta: !!document.querySelector(".flip-container"),
+    texto: document.querySelector("main").innerText,
+  }));
+  console.log(`8) Salir del repaso: tarjeta a la vista=${trasSalirRepaso.tarjeta}, botón Empezar=${/Empezar repaso/.test(trasSalirRepaso.texto)}`);
+  if (trasSalirRepaso.tarjeta || !/Empezar repaso/.test(trasSalirRepaso.texto)) throw new Error("8) Salir no cerró el repaso");
+
   if (errores.length) throw new Error("errores JS: " + errores.join(" | "));
   await ctx.close();
   console.log("\nOK: las pestañas conservan lo que había, sin bloquear ni escuchar desde escondidas");
