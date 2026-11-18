@@ -300,6 +300,10 @@ const PestanaActiva = React.createContext(true);
 const DEPURAR_RUEDA = typeof window !== "undefined" && /[?&]depurar=trackpad\b/.test(window.location.search);
 function anotarRueda(dato) {
   if (!DEPURAR_RUEDA) return;
+  // El desplazamiento vertical normal no interesa y en un momento llena el
+  // panel (la primera captura del usuario eran dieciocho "dX:0 dY:-3"): se
+  // cuenta y no se apunta.
+  if (dato.dX === 0 && !dato.accion) { window.__autopirVerticales = (window.__autopirVerticales || 0) + 1; return; }
   const lista = (window.__autopirRueda = window.__autopirRueda || []);
   lista.push({ t: Math.round(performance.now()) % 100000, ...dato });
   if (lista.length > 18) lista.splice(0, lista.length - 18);
@@ -313,8 +317,8 @@ function PanelDepuracionRueda() {
   const lista = window.__autopirRueda || [];
   return (
     <div style={{ position: "fixed", left: 8, bottom: 8, zIndex: 90, width: 300, maxHeight: "45vh", overflow: "hidden", background: "rgba(12,12,13,.86)", color: "#fff", font: "11px/1.35 ui-monospace, Menlo, monospace", padding: "8px 10px", borderRadius: 10, pointerEvents: "none" }}>
-      <div style={{ opacity: 0.7, marginBottom: 4 }}>trackpad · {navigator.userAgent.includes("iPad") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) ? "iPad" : navigator.platform}</div>
-      {lista.length === 0 ? <div>Sin eventos de rueda todavía. Desliza con dos dedos.</div> : lista.map((x, i) => (
+      <div style={{ opacity: 0.7, marginBottom: 4 }}>verticales ignorados: {window.__autopirVerticales || 0} · trackpad · {navigator.userAgent.includes("iPad") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) ? "iPad" : navigator.platform}</div>
+      {lista.length === 0 ? <div>Sin gestos laterales todavía. Desliza con dos dedos hacia un lado.</div> : lista.map((x, i) => (
         <div key={i}>{Object.entries(x).map(([k, v]) => `${k}:${v}`).join(" ")}</div>
       ))}
     </div>
