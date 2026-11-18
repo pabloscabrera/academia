@@ -22,6 +22,7 @@ import {
   mediaCalificacionPorTarjeta, estadoCuadricula,
   etiquetaOrigen, accionDeTecla,
   calificacionDeTecla, MS_PULSACION,
+  tomarPreguntas,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -1910,13 +1911,217 @@ function Nav({ section, setSection, alerta }) {
   );
 }
 
+// Elegir examen, en el diseño nuevo (prototipo "Exámenes"). Solo pinta: qué
+// preguntas salen lo deciden Simulacros y tomarPreguntas, en logica.js.
+// Tipografía propia (Cabinet / Switzer, autoalojadas en /fonts) y foto de fondo
+// en /img: son del rediseño y no tocan el resto de la app todavía.
+const ESTILO_EXAMENES = {
+  display: "'Cabinet Grotesk','Arial Black',sans-serif",
+  texto: "'Switzer','Helvetica Neue',Arial,sans-serif",
+  negro: "#0C0C0D",
+  tinta: "#17171B",
+  humo: "#6A6A72",
+  niebla: "#A2A2AB",
+  linea: "#E4E3E0",
+  mal: "#9E2B20",
+};
+
+function SelectorExamenes({
+  origenes, origen, onOrigen,
+  cursos, cursosSel, onCursosSel, conteos,
+  tema, temas, onTema,
+  incluirInventadas, onIncluirInventadas,
+  numPreguntas, onNumPreguntas, disponibles,
+  onEmpezar, onRelampago, relampagoDisponible,
+}) {
+  const E = ESTILO_EXAMENES;
+  const cantidadActual = typeof numPreguntas === "number" ? numPreguntas : 1;
+  const alternar = (c) =>
+    onCursosSel(cursosSel.includes(c) ? cursosSel.filter((x) => x !== c) : [...cursosSel, c]);
+  const paso = (d) => {
+    if (disponibles === 0) return;
+    onNumPreguntas(Math.min(Math.max(1, Math.min(cantidadActual, disponibles) + d * 5), disponibles));
+  };
+  const etiquetaSeleccion = cursosSel.length === 0
+    ? "Todos los exámenes"
+    : cursosSel.length === 1 ? "1 examen" : `${cursosSel.length} exámenes`;
+  const botonPaso = {
+    flex: "none", width: 44, height: 44, borderRadius: "50%", border: `1px solid ${E.linea}`,
+    background: "#fff", color: E.tinta, fontSize: 22, lineHeight: 1, cursor: "pointer",
+  };
+
+  return (
+    <div style={{ fontFamily: E.texto, color: E.tinta }}>
+      <h2 style={{
+        fontFamily: E.display, fontWeight: 800, fontSize: "clamp(32px,9.4vw,42px)", lineHeight: 0.9,
+        letterSpacing: "-0.03em", textTransform: "uppercase", margin: "10px 0 14px", color: E.negro,
+      }}>
+        Elige<br />examen
+      </h2>
+
+      <div style={{ display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
+        {origenes.map((o) => {
+          const on = origen === o.id;
+          return (
+            <button
+              key={o.id}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onOrigen(o.id)}
+              style={{
+                background: "none", border: "none", padding: "4px 2px 9px", cursor: "pointer",
+                fontWeight: 600, fontSize: 13, letterSpacing: "-0.01em",
+                color: on ? E.tinta : E.niebla,
+                boxShadow: on ? `inset 0 -1.5px 0 ${E.negro}` : "none",
+              }}
+            >
+              {o.texto}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{
+        display: "flex", flexDirection: "column", gap: 6, padding: 10, borderRadius: 14,
+        backgroundColor: "#6B6257", backgroundImage: "url(/img/examenes-fondo.jpg)",
+        backgroundSize: "cover", backgroundPosition: "center",
+      }}>
+        {cursos.map((c) => {
+          const n = conteos[c] || 0;
+          const vacio = n === 0;
+          const sel = cursosSel.includes(c);
+          return (
+            <button
+              key={c}
+              type="button"
+              disabled={vacio}
+              aria-pressed={sel}
+              onClick={() => alternar(c)}
+              style={{
+                display: "flex", alignItems: "baseline", gap: 12, width: "100%",
+                padding: "15px 14px", borderRadius: 12, border: "none", textAlign: "left",
+                cursor: vacio ? "default" : "pointer",
+                background: sel ? "rgba(12,12,13,0.8)" : vacio ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.85)",
+                color: sel ? "#fff" : vacio ? E.humo : E.tinta,
+                backdropFilter: "blur(9px)", WebkitBackdropFilter: "blur(9px)",
+              }}
+            >
+              <span style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 15, letterSpacing: "-0.01em" }}>{c}</span>
+              <span style={{
+                fontFamily: E.display, fontWeight: 800, fontSize: 17, letterSpacing: "-0.03em",
+                fontVariantNumeric: "tabular-nums", minWidth: 44, textAlign: "right",
+                color: vacio && !sel ? E.niebla : undefined,
+              }}>
+                {n}
+              </span>
+            </button>
+          );
+        })}
+
+        <button
+          type="button"
+          disabled={!relampagoDisponible}
+          onClick={onRelampago}
+          style={{
+            display: "flex", alignItems: "center", gap: 12, width: "100%", marginTop: 4,
+            padding: "16px 14px", borderRadius: 12, border: "none", textAlign: "left",
+            background: "rgba(255,255,255,0.85)", color: E.tinta,
+            backdropFilter: "blur(9px)", WebkitBackdropFilter: "blur(9px)",
+            cursor: relampagoDisponible ? "pointer" : "default",
+          }}
+        >
+          <span style={{
+            flex: 1, fontFamily: E.display, fontWeight: 800, fontSize: 16,
+            textTransform: "uppercase", letterSpacing: "-0.01em",
+          }}>
+            Modo relámpago
+          </span>
+          <Zap size={16} />
+        </button>
+      </div>
+      <p style={{ fontSize: 12.5, color: E.humo, margin: "8px 2px 0", lineHeight: 1.5 }}>
+        Relámpago sale de todas las preguntas de exámenes y termina en cuanto fallas una.
+      </p>
+
+      <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${E.linea}`, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", fontSize: 13, color: E.humo }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            Tema
+            <select
+              value={tema}
+              onChange={(e) => onTema(e.target.value)}
+              style={{ fontFamily: E.texto, fontSize: 13, color: E.tinta, padding: "6px 8px", borderRadius: 8, border: `1px solid ${E.linea}`, background: "#fff" }}
+            >
+              {temas.map((t) => (<option key={t} value={t}>{t}</option>))}
+            </select>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+            <input type="checkbox" checked={incluirInventadas} onChange={(e) => onIncluirInventadas(e.target.checked)} />
+            Incluir preguntas inventadas por IA
+          </label>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button type="button" aria-label="Quitar preguntas" onClick={() => paso(-1)} disabled={disponibles === 0 || cantidadActual <= 1} style={botonPaso}>−</button>
+          <input
+            type="number"
+            min={1}
+            max={disponibles}
+            aria-label="Cuántas preguntas"
+            value={typeof numPreguntas === "number" ? Math.min(numPreguntas, disponibles) : numPreguntas}
+            onChange={(e) => {
+              const v = parseInt(e.target.value, 10);
+              onNumPreguntas(Number.isNaN(v) ? "" : v);
+            }}
+            onBlur={() => onNumPreguntas((v) => Math.max(1, Math.min(v || 1, disponibles)))}
+            style={{
+              width: "3ch", fontFamily: E.display, fontWeight: 800, fontSize: 40, lineHeight: 1,
+              letterSpacing: "-0.035em", color: E.tinta, background: "none", border: "none",
+              borderRadius: 0, padding: "0 2px 3px", textAlign: "center",
+              boxShadow: `inset 0 -2px 0 ${E.linea}`, fontVariantNumeric: "tabular-nums",
+            }}
+          />
+          <button type="button" aria-label="Añadir preguntas" onClick={() => paso(1)} disabled={disponibles === 0 || cantidadActual >= disponibles} style={botonPaso}>+</button>
+          <div style={{ marginLeft: "auto", textAlign: "right", minWidth: 0, paddingLeft: 8 }}>
+            <div style={{ fontFamily: E.display, fontWeight: 800, fontSize: 12.5, textTransform: "uppercase", letterSpacing: "-0.01em" }}>
+              {disponibles} disponibles
+            </div>
+            <div style={{ fontSize: 11.5, color: E.humo, marginTop: 3 }}>{etiquetaSeleccion}</div>
+          </div>
+        </div>
+
+        {disponibles === 0 && (
+          <p style={{ fontSize: 13, color: E.mal, margin: 0, lineHeight: 1.5 }}>
+            No queda ninguna pregunta con esos filtros. Prueba con otro examen o tema, o vuelve a "Todas".
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={onEmpezar}
+          disabled={disponibles === 0}
+          style={{
+            width: "100%", background: E.negro, color: "#fff", padding: "17px 18px", borderRadius: 12,
+            border: "none", fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center",
+            justifyContent: "space-between", cursor: disponibles === 0 ? "default" : "pointer",
+            opacity: disponibles === 0 ? 0.5 : 1,
+          }}
+        >
+          <span>Empezar</span>
+          <span aria-hidden="true">→</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo, onRespuestaPregunta, favoritos, onToggleFavorito, miRacha, preguntasProgreso, fallos, filtroPedido, onFiltroAplicado }) {
   const [incluirInventadas, setIncluirInventadas] = useState(false);
   const base = useMemo(() => (incluirInventadas ? questions : questions.filter((q) => !q.inventada)), [questions, incluirInventadas]);
   // El DSM-5-TR sale aquí como un examen más, pero relámpago (más abajo)
   // sigue filtrando con esExamen, que solo acepta ediciones del PIR.
   const cursos = useMemo(() => cursosDelDesplegable(base), [base]);
-  const [curso, setCurso] = useState("Todos");
+  // Exámenes elegidos. Vacía significa "todos". Antes era un único curso.
+  const [cursosSel, setCursosSel] = useState([]);
 
   // De dónde salen las preguntas. Hasta ahora solo se podía tirar al azar de
   // un examen, así que saber por "Dónde fallas" que vas flojo en un tema no
@@ -1941,10 +2146,20 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
   // combinación se queda sin preguntas, el contador lo canta y el botón se
   // desactiva, en vez de empezar una tirada vacía.
   const filtradas = useMemo(
-    () => filtrarPreguntas(base, { curso, tema, origen }, intentadaPorId, falladaPorId),
-    [base, curso, tema, origen, intentadaPorId, falladaPorId]
+    () => filtrarPreguntas(base, { cursos: cursosSel, tema, origen }, intentadaPorId, falladaPorId),
+    [base, cursosSel, tema, origen, intentadaPorId, falladaPorId]
   );
   const disponibles = filtradas.length;
+  // Cuántas quedan por examen con el origen y el tema elegidos: lo que se ve
+  // en cada fila de la lista.
+  const examenesLista = useMemo(() => cursos.filter((c) => c !== "Todos"), [cursos]);
+  const conteosPorExamen = useMemo(() => {
+    const m = {};
+    examenesLista.forEach((c) => {
+      m[c] = filtrarPreguntas(base, { curso: c, tema, origen }, intentadaPorId, falladaPorId).length;
+    });
+    return m;
+  }, [examenesLista, base, tema, origen, intentadaPorId, falladaPorId]);
 
   const [numPreguntas, setNumPreguntas] = useState(10);
   const [state, setState] = useState("config");
@@ -1986,17 +2201,15 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
   useEffect(() => {
     if (!filtroPedido || state !== "config") return;
     const aplicado = aplicarFiltroPedido(filtroPedido, { cursos, temas });
-    setCurso(aplicado.curso);
+    setCursosSel(aplicado.curso && aplicado.curso !== "Todos" ? [aplicado.curso] : []);
     setTema(aplicado.tema);
     setOrigen(aplicado.origen);
     if (onFiltroAplicado) onFiltroAplicado();
   }, [filtroPedido, state, cursos, temas]);
 
-  // Si al cambiar de filtro quedan menos preguntas de las pedidas, se ajusta
-  // sola en vez de esperar a que el usuario vuelva al campo.
-  useEffect(() => {
-    setNumPreguntas((v) => (typeof v === "number" && v > disponibles ? Math.max(1, disponibles) : v));
-  }, [disponibles]);
+  // La cantidad pedida NO se recorta al cambiar de filtro: si se recortara, al
+  // añadir otro examen el tope volvería a subir y la cantidad se quedaría en el
+  // recorte. Quien la usa (el campo y el arranque) siempre aplica el tope real.
 
   // Lo guardado al abrir la pestaña. Se lee una sola vez: mientras haya una
   // tirada en marcha, la fuente de verdad es el estado de React.
@@ -2059,8 +2272,8 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
   const start = () => {
     if (filtradas.length === 0) return;
     const cantidad = Math.max(1, Math.min(numPreguntas || 1, filtradas.length));
-    const shuffled = [...filtradas].sort(() => Math.random() - 0.5).slice(0, cantidad);
-    setPool(shuffled); setPoolOriginal(shuffled);
+    const elegidas = tomarPreguntas(filtradas, cursosSel, cantidad);
+    setPool(elegidas); setPoolOriginal(elegidas);
     setIdx(0); setAnswers([]); setSelected(null); setRevealed(false); setSeconds(0);
     setRonda(1); setResultados({}); setPrimerIntento(null); setPreguntaAbierta(null);
     setRelampago(false); setRachaViva(0);
@@ -2212,78 +2425,30 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
             </div>
           </Card>
         )}
-        <Card>
-          <FieldLabel>Qué preguntas</FieldLabel>
-          <div style={styles.tabsOrigen}>
-            {[
-              { id: "todas", texto: "Todas" },
-              { id: "nohechas", texto: "No realizadas" },
-              { id: "fallos", texto: "Falladas" },
-            ].map((o) => (
-              <button
-                key={o.id}
-                type="button"
-                onClick={() => setOrigen(o.id)}
-                style={{ ...styles.tabOrigenBtn, ...(origen === o.id ? styles.tabOrigenActivo : {}) }}
-              >
-                {o.texto}
-              </button>
-            ))}
-          </div>
-          <p style={{ fontSize: 12.5, color: TINTA_TENUE, margin: "0 0 16px", lineHeight: 1.5 }}>
-            {origen === "nohechas"
-              ? "Solo las que no has contestado todavía. Lo que has fallado va en \u201cFalladas\u201d."
-              : origen === "fallos"
-              ? "Solo las que has fallado alguna vez, las hayas acertado después o no."
-              : "Todo el banco del examen y el tema que elijas debajo."}
-          </p>
-          <FieldLabel>Examen</FieldLabel>
-          <select value={curso} onChange={(e) => setCurso(e.target.value)} style={styles.select}>
-            {cursos.map((c) => (<option key={c} value={c}>{c}</option>))}
-          </select>
-          <FieldLabel style={{ marginTop: 16 }}>Tema</FieldLabel>
-          <select value={tema} onChange={(e) => setTema(e.target.value)} style={styles.select}>
-            {temas.map((t) => (<option key={t} value={t}>{t}</option>))}
-          </select>
-          <FieldLabel style={{ marginTop: 16 }}>Cantidad de preguntas (disponibles: {disponibles})</FieldLabel>
-          <input
-            type="number"
-            min={1}
-            max={disponibles}
-            value={numPreguntas}
-            onChange={(e) => {
-              const v = parseInt(e.target.value, 10);
-              setNumPreguntas(Number.isNaN(v) ? "" : v);
-            }}
-            onBlur={() => setNumPreguntas((v) => Math.max(1, Math.min(v || 1, disponibles)))}
-            style={styles.input}
-          />
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16, fontSize: 13, color: "#6E6A61", cursor: "pointer" }}>
-            <input type="checkbox" checked={incluirInventadas} onChange={(e) => setIncluirInventadas(e.target.checked)} />
-            Incluir preguntas inventadas por IA
-          </label>
-          {disponibles === 0 && (
-            <p style={{ fontSize: 13, color: ACENTO, margin: "16px 0 0", lineHeight: 1.5 }}>
-              No queda ninguna pregunta con esos filtros. Prueba con otro examen o tema, o vuelve a "Todas".
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={start}
-            disabled={disponibles === 0}
-            style={{ ...styles.btnPrimary, width: "100%", marginTop: 22, opacity: disponibles === 0 ? 0.5 : 1 }}
-          >
-            Empezar autoevaluación
-          </button>
-          <button
-            type="button"
-            onClick={startRelampago}
-            disabled={questions.filter((q) => !q.inventada && esExamen(q.curso)).length === 0}
-            style={{ ...styles.btnSecondary, width: "100%", marginTop: 10, justifyContent: "center", borderColor: "#C89B3C", color: "#9C7A2C" }}
-          >
-            <Zap size={14} style={{ marginRight: 6 }} /> Modo relámpago (preguntas de todos los exámenes, hasta que falles)
-          </button>
-        </Card>
+        <SelectorExamenes
+          origenes={[
+            { id: "todas", texto: "Todas" },
+            { id: "nohechas", texto: "No realizadas" },
+            { id: "fallos", texto: "Falladas" },
+          ]}
+          origen={origen}
+          onOrigen={setOrigen}
+          cursos={examenesLista}
+          cursosSel={cursosSel}
+          onCursosSel={setCursosSel}
+          conteos={conteosPorExamen}
+          tema={tema}
+          temas={temas}
+          onTema={setTema}
+          incluirInventadas={incluirInventadas}
+          onIncluirInventadas={setIncluirInventadas}
+          numPreguntas={numPreguntas}
+          onNumPreguntas={setNumPreguntas}
+          disponibles={disponibles}
+          onEmpezar={start}
+          onRelampago={startRelampago}
+          relampagoDisponible={questions.filter((q) => !q.inventada && esExamen(q.curso)).length > 0}
+        />
       </div>
     );
   }

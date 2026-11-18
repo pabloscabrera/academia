@@ -82,14 +82,65 @@ export function etiquetaOrigen(pregunta) {
 // ver y el otro lo que has visto y te salió mal, que son las dos preguntas
 // que uno se hace. De ahí que el índice que recibe sea el de lo INTENTADO
 // (`veces > 0`) y no el de lo acertado.
-export function filtrarPreguntas(base, { curso, tema, origen }, intentadaPorId, falladaPorId) {
+export function filtrarPreguntas(base, { curso, cursos, tema, origen }, intentadaPorId, falladaPorId) {
+  // `cursos` es la lista de exámenes elegidos (varios a la vez). Vacía o sin
+  // pasar significa "todos". `curso` se mantiene para quien llegue de "Dónde
+  // fallas" con un único examen.
+  const elegidos = cursos && cursos.length ? cursos : curso && curso !== "Todos" ? [curso] : null;
   return base.filter((q) => {
-    if (curso && curso !== "Todos" && q.curso !== curso) return false;
+    if (elegidos && !elegidos.includes(q.curso)) return false;
     if (tema && tema !== "Todos" && (q.tema || "").trim() !== tema) return false;
     if (origen === "nohechas" && intentadaPorId[q.id]) return false;
     if (origen === "fallos" && !falladaPorId[q.id]) return false;
     return true;
   });
+}
+
+// ---------- Varios exámenes a la vez ----------
+
+// Reparte `cuantas` preguntas entre los exámenes elegidos a partes iguales.
+// Lo que no cabe en uno (tiene menos preguntas que su parte) se reparte entre
+// los demás, así que añadir un examen pequeño no recorta el total: solo cambia
+// de dónde sale. Devuelve cuántas tocan a cada uno, en el mismo orden que
+// `topes` (preguntas disponibles de cada examen).
+export function repartirEntreExamenes(cuantas, topes) {
+  const dado = topes.map(() => 0);
+  let queda = Math.max(0, Math.min(cuantas, topes.reduce((a, b) => a + b, 0)));
+  while (queda > 0) {
+    const vivos = [];
+    for (let i = 0; i < topes.length; i++) if (dado[i] < topes[i]) vivos.push(i);
+    if (!vivos.length) break;
+    const parte = Math.max(1, Math.floor(queda / vivos.length));
+    for (let j = 0; j < vivos.length && queda > 0; j++) {
+      const k = vivos[j];
+      const da = Math.min(parte, topes[k] - dado[k], queda);
+      dado[k] += da;
+      queda -= da;
+    }
+  }
+  return dado;
+}
+
+// Baraja sin mutar la lista original. `azar` se recibe para poder fijarlo en
+// una prueba; Math.min evita salirse del array si `azar()` devuelve 1 exacto.
+export function barajar(lista, azar = Math.random) {
+  const a = lista.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.min(i, Math.floor(azar() * (i + 1)));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// Elige `cuantas` preguntas de `filtradas` repartidas entre los exámenes
+// `cursos`. Sin exámenes elegidos (o con uno solo) sale una tirada normal.
+export function tomarPreguntas(filtradas, cursos, cuantas, azar = Math.random) {
+  if (!cursos || cursos.length === 0) return barajar(filtradas, azar).slice(0, cuantas);
+  const grupos = cursos.map((c) => filtradas.filter((q) => q.curso === c));
+  const dado = repartirEntreExamenes(cuantas, grupos.map((g) => g.length));
+  const elegidas = [];
+  grupos.forEach((g, i) => barajar(g, azar).slice(0, dado[i]).forEach((q) => elegidas.push(q)));
+  return barajar(elegidas, azar);
 }
 
 export function indicePorId(filas, campo, condicion) {
