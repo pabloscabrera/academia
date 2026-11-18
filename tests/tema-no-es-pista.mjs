@@ -103,8 +103,8 @@ try {
   const { ctx, pagina, errores } = await abrir();
 
   // --- A) La tarjeta de la tirada: lo de la captura ---
-  await pagina.locator('input[type="number"]').first().fill("4");
-  await pagina.locator('input[type="number"]').first().blur();
+  await pagina.getByLabel("Cuántas preguntas").fill("4");
+  await pagina.getByLabel("Cuántas preguntas").blur();
   await esperar(300);
   await pagina.getByRole("button", { name: "Empezar", exact: true }).click();
   await esperar(800);

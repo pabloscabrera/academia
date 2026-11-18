@@ -43,3 +43,15 @@ test("umbralTrackpad: una fracción del ancho, con techo", () => {
   assert.equal(umbralTrackpad(400), 72);
   assert.equal(umbralTrackpad(1200), 140);
 });
+
+import { pareceInercia } from "../src/logica.js";
+
+test("pareceInercia: reconoce el decaimiento tras soltar", () => {
+  assert.equal(pareceInercia([30, 20, 12], 40), true);
+  // Aún subiendo o estable: sigues moviendo los dedos.
+  assert.equal(pareceInercia([20, 30, 40], 40), false);
+  assert.equal(pareceInercia([30, 28, 26], 40), false);
+  // Movimientos minúsculos no cuentan como gesto.
+  assert.equal(pareceInercia([3, 2, 1], 4), false);
+  assert.equal(pareceInercia([30, 20], 40), false);
+});

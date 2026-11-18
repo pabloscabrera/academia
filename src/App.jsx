@@ -24,7 +24,7 @@ import {
   etiquetaOrigen, accionDeTecla,
   calificacionDeTecla, MS_PULSACION,
   tomarPreguntas, rgbDeHex, rankingExamenes, esBancoComoExamen,
-  pestanaVecina, conResistencia, decidirPaso, umbralTrackpad,
+  pestanaVecina, conResistencia, decidirPaso, umbralTrackpad, pareceInercia,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -299,6 +299,20 @@ export default function AcademiaPIR() {
     try { return sessionStorage.getItem(CLAVE_SIN_PORTADA) === "1"; } catch { return false; }
   });
   const pasarPortada = () => setPortadaVista(true);
+  // Al pulsar Entrar la portada no desaparece de golpe: se difumina y se
+  // aleja mientras la app, que ya estaba debajo, pasa de borrosa a nítida
+  // (`.portada-sale` y `.app-entra` en index.html). Las dos clases se quitan
+  // al acabar: un `filter` o un `transform` en un antepasado vuelve relativo
+  // todo lo `position: fixed` de dentro.
+  const [saliendoPortada, setSaliendoPortada] = useState(false);
+  const [appEntrando, setAppEntrando] = useState(false);
+  const entrarDesdePortada = () => {
+    if (saliendoPortada) return;
+    setSaliendoPortada(true);
+    setAppEntrando(true);
+    setTimeout(() => { setPortadaVista(true); setSaliendoPortada(false); }, 650);
+    setTimeout(() => setAppEntrando(false), 850);
+  };
   const mainRef = useRef(null);
   const animandoRef = useRef(false);
   const seccionRef = useRef(section);
@@ -732,36 +746,58 @@ export default function AcademiaPIR() {
     };
 
     // Trackpad: dos dedos de lado llegan como eventos de rueda con deltaX.
-    // Se pasa en cuanto lo movido cruza el umbral, y luego se ignora la
-    // inercia un momento para no pasar dos páginas de un solo gesto.
+    // La página sigue a los dedos 1:1 y la decisión se toma al SOLTAR, que
+    // en la web no es un evento: se reconoce porque los empujones empiezan
+    // a decaer (la inercia, `pareceInercia`) o porque dejan de llegar. Tras
+    // decidir, se traga todo lo que siga llegando hasta que el trackpad se
+    // calla: si no, la cola de inercia arrancaba un gesto nuevo un momento
+    // después y pasaba otra página "cuando le daba la gana".
     let rueda = null;
-    let enfriarHasta = 0;
-    let temporizador = null;
+    let tragando = false;
+    let tragarTimer = null;
+    let finTimer = null;
+    const tragarHastaSilencio = () => {
+      tragando = true;
+      clearTimeout(tragarTimer);
+      tragarTimer = setTimeout(() => { tragando = false; }, 220);
+    };
+    const terminarRueda = () => {
+      clearTimeout(finTimer);
+      if (!rueda) return;
+      const { dx, vPico } = rueda;
+      rueda = null;
+      tragarHastaSilencio();
+      soltar(dx, vPico);
+    };
     const alRueda = (e) => {
       if (e.ctrlKey) return; // pellizco para hacer zoom
-      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-      if (Date.now() < enfriarHasta) { e.preventDefault(); return; }
+      const deltaX = e.deltaX * (e.deltaMode === 1 ? 16 : 1);
+      if (tragando) {
+        if (Math.abs(deltaX) > Math.abs(e.deltaY)) { e.preventDefault(); tragarHastaSilencio(); }
+        return;
+      }
       if (!rueda) {
+        if (Math.abs(deltaX) <= Math.abs(e.deltaY) * 1.2 || Math.abs(deltaX) < 1) return;
         if (bloqueado() || scrollLateral(e.target)) return;
-        rueda = { dx: 0 };
+        rueda = { dx: 0, ultT: performance.now(), pico: 0, ultimos: [], vPico: 0 };
       }
       e.preventDefault();
-      rueda.dx -= e.deltaX * (e.deltaMode === 1 ? 16 : 1);
+      const ahora = performance.now();
+      const dt = Math.max(ahora - rueda.ultT, 8);
+      rueda.ultT = ahora;
+      rueda.dx -= deltaX;
+      rueda.pico = Math.max(rueda.pico, Math.abs(deltaX));
+      rueda.ultimos = [...rueda.ultimos.slice(-3), deltaX];
+      const v = -deltaX / dt;
+      if (Math.sign(v) === Math.sign(rueda.dx) && Math.abs(v) > Math.abs(rueda.vPico)) rueda.vPico = v;
+      mostrar(rueda.dx);
       const el = mainRef.current;
       const ancho = (el && el.offsetWidth) || window.innerWidth;
-      const { i, hayAnterior, haySiguiente } = vecinas();
-      clearTimeout(temporizador);
-      if (Math.abs(rueda.dx) >= umbralTrackpad(ancho)) {
-        const paso = rueda.dx < 0 ? 1 : -1;
-        if ((paso === 1 && haySiguiente) || (paso === -1 && hayAnterior)) {
-          rueda = null;
-          enfriarHasta = Date.now() + 700;
-          transicionA(ORDEN_PESTANAS[i + paso], paso);
-          return;
-        }
-      }
-      mostrar(rueda.dx);
-      temporizador = setTimeout(() => { rueda = null; volver(); }, 160);
+      // Has llevado la página hasta media pantalla: pasa ya, sin esperar.
+      if (Math.abs(rueda.dx) >= Math.max(umbralTrackpad(ancho), ancho * 0.5)) { terminarRueda(); return; }
+      if (pareceInercia(rueda.ultimos, rueda.pico)) { terminarRueda(); return; }
+      clearTimeout(finTimer);
+      finTimer = setTimeout(terminarRueda, 110);
     };
 
     window.addEventListener("keydown", alTeclear);
@@ -771,7 +807,8 @@ export default function AcademiaPIR() {
     window.addEventListener("touchcancel", alSoltar, { passive: true });
     window.addEventListener("wheel", alRueda, { passive: false });
     return () => {
-      clearTimeout(temporizador);
+      clearTimeout(finTimer);
+      clearTimeout(tragarTimer);
       window.removeEventListener("keydown", alTeclear);
       window.removeEventListener("touchstart", alTocar);
       window.removeEventListener("touchmove", alMover);
@@ -1394,8 +1431,8 @@ export default function AcademiaPIR() {
   // su lugar: mientras la miras los datos siguen cargando, y si sale al
   // volver tras un rato fuera, lo que estuvieras haciendo sigue ahí debajo.
   const portadaEncima = user && !portadaVista && !loadError ? (
-    <div data-sin-deslizar="" style={{ position: "fixed", inset: 0, zIndex: 80, overflowY: "auto" }}>
-      <AuthScreen sesion={user} onContinuar={pasarPortada} onCambiarCuenta={handleLogout} />
+    <div data-sin-deslizar="" className={saliendoPortada ? "portada-sale" : undefined} style={{ position: "fixed", inset: 0, zIndex: 80, overflowY: "auto", pointerEvents: saliendoPortada ? "none" : undefined }}>
+      <AuthScreen sesion={user} onContinuar={entrarDesdePortada} onCambiarCuenta={handleLogout} />
     </div>
   ) : null;
   let contenido;
@@ -1537,7 +1574,7 @@ export default function AcademiaPIR() {
   const fuenteActual = FUENTES.find((f) => f.id === ajustes.fuente) || FUENTES[0];
   return (
     <div style={{ ...styles.app, background: "var(--fondo)", zoom: ajustes.escala, "--font-display": fuenteActual.familia }}>
-      {contenido}
+      <div className={appEntrando ? "app-entra" : undefined}>{contenido}</div>
       {portadaEncima}
       {aviso && <BarraAviso texto={aviso.texto} esperando={aviso.esperando} />}
       {mostrarAjustes && <AjustesPanel ajustes={ajustes} setAjustes={setAjustes} user={user} onLogout={() => { setMostrarAjustes(false); handleLogout(); }} onClose={() => setMostrarAjustes(false)} />}
@@ -2082,18 +2119,27 @@ function Nav({ section, setSection, alerta }) {
     { id: "estadisticas", label: "Estadísticas" },
     { id: "perfil", label: "Perfil" },
   ];
+  // El sombreado al pasar por encima va con eventos de puntero y no con
+  // :hover de CSS: en el iPad con trackpad el navegador dice que su entrada
+  // principal es táctil, `@media (hover: hover)` no casa y el sombreado no
+  // salía nunca. `pointerType` sí distingue ratón/trackpad de dedo, así que
+  // un toque no deja la pestaña sombreada pegada.
+  const [encima, setEncima] = useState(null);
   return (
-    <nav style={styles.nav} className="nav-app">
+    <nav style={styles.nav} className="nav-app" onPointerLeave={() => setEncima(null)}>
       {items.map((it) => {
         const active = section === it.id;
+        const sombreada = !active && encima === it.id;
         return (
           <button
             type="button"
             key={it.id}
             onClick={() => setSection(it.id)}
-            className={active ? "activa" : undefined}
+            onPointerEnter={(e) => { if (e.pointerType === "mouse") setEncima(it.id); }}
+            onPointerLeave={(e) => { if (e.pointerType === "mouse") setEncima((x) => (x === it.id ? null : x)); }}
+            className={[active ? "activa" : "", sombreada ? "encima" : ""].filter(Boolean).join(" ") || undefined}
             aria-current={active ? "page" : undefined}
-            style={{ ...styles.navBtn, ...(active ? styles.navBtnActivo : {}), position: "relative" }}
+            style={{ ...styles.navBtn, ...(active ? styles.navBtnActivo : {}), ...(sombreada ? styles.navBtnEncima : {}), position: "relative" }}
           >
             <span>{it.label}</span>
             {it.id === "duelo" && alerta && (
@@ -2135,6 +2181,10 @@ function SelectorExamenes({
 }) {
   const E = ESTILO_EXAMENES;
   const cantidadActual = typeof numPreguntas === "number" ? numPreguntas : 1;
+  // El último número bueno: si borras el campo y sales sin escribir nada,
+  // vuelve este en vez de inventarse un 1.
+  const ultimaValida = useRef(cantidadActual);
+  if (typeof numPreguntas === "number") ultimaValida.current = numPreguntas;
   const alternar = (c) =>
     onCursosSel(cursosSel.includes(c) ? cursosSel.filter((x) => x !== c) : [...cursosSel, c]);
   const paso = (d) => {
@@ -2280,16 +2330,22 @@ function SelectorExamenes({
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <button type="button" aria-label="Quitar preguntas" onClick={() => paso(-1)} disabled={disponibles === 0 || cantidadActual <= 1} style={botonPaso}>−</button>
           <input
-            type="number"
-            min={1}
-            max={disponibles}
+            type="text"
             aria-label="Cuántas preguntas"
             value={typeof numPreguntas === "number" ? Math.min(numPreguntas, disponibles) : numPreguntas}
             onChange={(e) => {
               const v = parseInt(e.target.value, 10);
               onNumPreguntas(Number.isNaN(v) ? "" : v);
             }}
-            onBlur={() => onNumPreguntas((v) => Math.max(1, Math.min(v || 1, disponibles)))}
+            onBlur={() => onNumPreguntas((v) => Math.max(1, Math.min(typeof v === "number" && v > 0 ? v : ultimaValida.current, disponibles)))}
+            // Al tocarlo se selecciona el número entero, así que el primer
+            // dígito que escribes lo sustituye; antes el cursor caía delante
+            // del número y había que borrarlo a mano. El preventDefault del
+            // mouseUp es para Safari, que deshace la selección al soltar.
+            onFocus={(e) => e.target.select()}
+            onMouseUp={(e) => e.preventDefault()}
+            inputMode="numeric"
+            pattern="[0-9]*"
             style={{
               width: "2.6ch", fontFamily: E.display, fontWeight: 800, fontSize: 30, lineHeight: 1,
               letterSpacing: "-0.035em", color: E.tinta, background: "none", border: "none",
@@ -2695,22 +2751,34 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
     // pulsar "Siguiente"), así que se le pasa aparte: si no, el marcador iría
     // siempre una pregunta por detrás de lo que acabas de ver en pantalla.
     const marcador = marcadorTirada(answers, ronda, primerIntento, revealed ? esCorrecta : null);
+    const totalPool = pool.length;
+    const segmentos = totalPool <= 40;
+    const tonoSegmento = (i) => {
+      if (i < idx) return answers[i] && answers[i].correct ? E.bien : E.mal;
+      if (i === idx) return revealed ? (esCorrecta ? E.bien : E.mal) : E.negro;
+      return E.linea;
+    };
     return (
-      <div data-sin-deslizar="" style={{ background: "var(--bloque)", borderRadius: 16, overflow: "hidden", border: `1px solid ${E.linea}` }}>
+      <div data-sin-deslizar="" style={{ fontFamily: E.texto, color: E.tinta }}>
         <style>{`
           @keyframes acertarPulso {
-            0% { box-shadow: 0 0 0 0 rgba(76,175,80,0.55); }
-            70% { box-shadow: 0 0 0 10px rgba(76,175,80,0); }
-            100% { box-shadow: 0 0 0 0 rgba(76,175,80,0); }
+            0% { box-shadow: 0 0 0 0 rgba(27,107,79,0.45); }
+            70% { box-shadow: 0 0 0 10px rgba(27,107,79,0); }
+            100% { box-shadow: 0 0 0 0 rgba(27,107,79,0); }
           }
           .acierto-anim { animation: acertarPulso 0.6s ease-out; }
+          .opcion-quiz { transition: border-color .15s, box-shadow .15s, transform .15s; }
+          @media (any-hover: hover) {
+            .opcion-quiz:not(:disabled):hover { border-color: var(--niebla) !important; box-shadow: 0 6px 18px -12px rgba(0,0,0,.35) !important; transform: translateY(-1px); }
+          }
+          .opcion-quiz:not(:disabled):active { transform: scale(.995); }
         `}</style>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 18px", borderBottom: `1px solid ${E.linea}`, fontFamily: E.texto }}>
-          <span style={{ fontSize: 13, color: relampago ? "#9C7A2C" : "var(--humo)", fontWeight: relampago ? 700 : 400, display: "flex", alignItems: "center", gap: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, fontFamily: E.texto }}>
+          <span style={{ fontSize: 13, color: relampago ? "#9C7A2C" : "var(--humo)", fontWeight: relampago ? 700 : 500, display: "flex", alignItems: "center", gap: 4 }}>
             {relampago && <Zap size={13} color="#C89B3C" />}
-            {relampago ? "Modo relámpago · " : (ronda > 1 ? `Repaso de falladas (ronda ${ronda}) · ` : "")}Pregunta {idx + 1} de {pool.length}
+            {relampago ? "Modo relámpago · " : (ronda > 1 ? `Repaso de falladas (ronda ${ronda}) · ` : "")}Pregunta {idx + 1} de {totalPool}
           </span>
-          <span style={{ fontSize: 13, color: "var(--humo)", fontWeight: relampago ? 700 : 400, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 13, color: "var(--humo)", fontWeight: relampago ? 700 : 500, display: "flex", alignItems: "center", gap: 10, fontVariantNumeric: "tabular-nums" }}>
             {relampago && (
               <span style={{ display: "flex", alignItems: "center", gap: 3 }} title={rachaViva > recordPrevio ? "¡Nuevo récord!" : `Récord: ${recordPrevio}`}>
                 <Flame
@@ -2726,7 +2794,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
                 ese mismo número (la racha acaba con el primer fallo), y dos
                 cifras iguales juntas solo son ruido. */}
             {!relampago && (
-              <span style={{ display: "flex", alignItems: "center", gap: 7 }} title={`${marcador.aciertos} acertadas · ${marcador.fallos} falladas${ronda > 1 ? " (de la primera vuelta)" : ""}`}>
+              <span style={{ display: "flex", alignItems: "center", gap: 9 }} title={`${marcador.aciertos} acertadas · ${marcador.fallos} falladas${ronda > 1 ? " (de la primera vuelta)" : ""}`}>
                 <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
                   <Check size={13} color="currentColor" strokeWidth={3} style={{ color: marcador.aciertos > 0 ? E.bien : RAYA }} />
                   <span style={{ color: marcador.aciertos > 0 ? E.tinta : E.niebla, fontWeight: 600 }}>{marcador.aciertos}</span>
@@ -2740,63 +2808,75 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
             <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Clock size={13} /> {mm}:{ss}</span>
           </span>
         </div>
-        <div style={{ height: 2, background: E.linea }}><div style={{ height: 2, background: E.negro, width: `${(idx / pool.length) * 100}%`, transition: "width .3s" }} /></div>
-        <div style={{ padding: "18px 18px 18px", fontFamily: E.texto, color: E.tinta }}>
+        {/* Progreso: con pocas preguntas, un segmento por pregunta pintado de
+            lo que te salió; con muchas (relámpago), una barra continua. */}
+        {segmentos ? (
+          <div aria-hidden="true" style={{ display: "flex", gap: 3, marginTop: 12 }}>
+            {pool.map((p, i) => (
+              <span key={i} style={{ flex: 1, height: 3, borderRadius: 3, background: tonoSegmento(i), transition: "background-color .25s" }} />
+            ))}
+          </div>
+        ) : (
+          <div aria-hidden="true" style={{ height: 3, borderRadius: 3, background: E.linea, marginTop: 12, overflow: "hidden" }}>
+            <div style={{ height: "100%", background: E.negro, width: `${(idx / totalPool) * 100}%`, transition: "width .3s" }} />
+          </div>
+        )}
+        <div style={{ marginTop: 16, background: "var(--bloque)", borderRadius: 24, padding: "clamp(20px, 4vw, 38px)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-            <span style={{ fontWeight: 500, fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: E.niebla }}>{etiquetaOrigen(q)}</span>
+            <span style={{ fontWeight: 600, fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: E.niebla }}>{etiquetaOrigen(q)}</span>
             {onToggleFavorito && <FavoritoBtn pregunta={q} favoritos={favoritos} onToggle={onToggleFavorito} />}
           </div>
-          <p style={{ marginTop: 10, fontSize: 18, lineHeight: 1.45, fontWeight: 600, letterSpacing: "-0.01em", color: E.negro, whiteSpace: "pre-line" }}>{q.pregunta}</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 18 }}>
+          <p style={{ margin: "12px 0 0", fontSize: "clamp(19px, 2.3vw, 24px)", lineHeight: 1.4, fontWeight: 600, letterSpacing: "-0.015em", color: E.negro, whiteSpace: "pre-line" }}>{q.pregunta}</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 11, marginTop: 26 }}>
             {q.opciones.map((op, i) => {
               const letra = String.fromCharCode(65 + i);
               const esLaCorrecta = i === q.correcta;
               const esLaElegida = revealed && i === selected && !esLaCorrecta;
-              let tono = { border: `1.5px solid ${E.linea}`, background: "var(--superficie)" };
-              let letraTono = { border: `1.5px solid ${E.linea}`, background: "transparent", color: E.humo };
+              let tono = { border: `1px solid ${E.linea}`, background: "var(--superficie)", boxShadow: "0 1px 2px rgba(0,0,0,.04)" };
+              let letraTono = { background: "var(--bloque)", color: E.humo };
               if (revealed && esLaCorrecta) {
-                tono = { border: `1.5px solid ${E.bien}`, background: E.bienSuave };
-                letraTono = { border: `1.5px solid ${E.bien}`, background: E.bien, color: "#fff" };
+                tono = { border: `1px solid ${E.bien}`, background: E.bienSuave, boxShadow: "none" };
+                letraTono = { background: E.bien, color: "#fff" };
               } else if (esLaElegida) {
-                tono = { border: `1.5px solid ${E.mal}`, background: E.malSuave };
-                letraTono = { border: `1.5px solid ${E.mal}`, background: E.mal, color: "#fff" };
+                tono = { border: `1px solid ${E.mal}`, background: E.malSuave, boxShadow: "none" };
+                letraTono = { background: E.mal, color: "#fff" };
               }
               return (
                 <button
                   type="button"
                   key={`${ronda}-${q.id}-${i}`}
-                  className={revealed && esLaCorrecta ? "acierto-anim" : ""}
+                  className={`opcion-quiz${revealed && esLaCorrecta ? " acierto-anim" : ""}`}
                   onClick={(e) => elegir(i, e)}
                   disabled={revealed}
                   style={{
-                    display: "flex", gap: 12, alignItems: "flex-start", width: "100%", textAlign: "left",
-                    padding: "15px 15px 15px 13px", borderRadius: 15, color: E.tinta,
+                    display: "flex", gap: 16, alignItems: "center", width: "100%", textAlign: "left",
+                    padding: "16px 20px 16px 16px", borderRadius: 16, color: E.tinta,
                     cursor: revealed ? "default" : "pointer",
                     opacity: revealed && !esLaCorrecta && !esLaElegida ? 0.45 : 1,
                     ...tono,
                   }}
                 >
                   <span style={{
-                    flex: "none", width: 25, height: 25, borderRadius: "50%", display: "grid", placeItems: "center",
-                    fontFamily: E.display, fontWeight: 800, fontSize: 12, marginTop: 1, ...letraTono,
+                    flex: "none", width: 34, height: 34, borderRadius: 10, display: "grid", placeItems: "center",
+                    fontFamily: E.display, fontWeight: 800, fontSize: 14, ...letraTono,
                   }}>
-                    {revealed && esLaCorrecta ? <Check size={13} strokeWidth={2.8} />
-                      : esLaElegida ? <X size={13} strokeWidth={2.8} />
+                    {revealed && esLaCorrecta ? <Check size={15} strokeWidth={2.8} />
+                      : esLaElegida ? <X size={15} strokeWidth={2.8} />
                       : letra}
                   </span>
-                  <span style={{ flex: 1, fontSize: 14.5, lineHeight: 1.45, paddingTop: 3 }}>{op}</span>
+                  <span style={{ flex: 1, fontSize: "clamp(15px, 1.6vw, 17px)", lineHeight: 1.45 }}>{op}</span>
                 </button>
               );
             })}
           </div>
           {revealed && (
-            <div style={{ marginTop: 16 }}>
-              <p style={{ fontWeight: 600, fontSize: 13.5, color: esCorrecta ? E.bien : E.mal }}>
+            <div style={{ marginTop: 20 }}>
+              <p style={{ margin: 0, fontWeight: 600, fontSize: 14.5, color: esCorrecta ? E.bien : E.mal }}>
                 {esCorrecta ? "¡Correcto!" : `Incorrecto. La respuesta correcta es la ${String.fromCharCode(65 + q.correcta)}.`}
               </p>
-              {relampago && !esCorrecta && <p style={{ marginTop: 6, fontWeight: 600, fontSize: 13, color: E.tinta }}>La racha del modo relámpago termina aquí.</p>}
+              {relampago && !esCorrecta && <p style={{ marginTop: 6, fontWeight: 600, fontSize: 13.5, color: E.tinta }}>La racha del modo relámpago termina aquí.</p>}
               {q.explicacion && (
-                <div style={{ marginTop: 12, background: E.hueso, borderRadius: 15, padding: 16, fontSize: 12.5, lineHeight: 1.6, color: E.humo, whiteSpace: "pre-line" }}>
+                <div style={{ marginTop: 12, background: "var(--superficie)", borderLeft: `3px solid ${esCorrecta ? E.bien : E.mal}`, borderRadius: 12, padding: "16px 18px", fontSize: 14.5, lineHeight: 1.6, color: E.tinta, whiteSpace: "pre-line" }}>
                   {q.explicacion}
                 </div>
               )}
@@ -2807,12 +2887,13 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
             onClick={next}
             disabled={!revealed}
             style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", marginTop: 18,
-              background: E.negro, color: "var(--sobre-negro)", padding: "17px 18px", borderRadius: 12, border: "none",
-              fontWeight: 600, fontSize: 14, cursor: revealed ? "pointer" : "default", opacity: revealed ? 1 : 0.4,
+              display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", marginTop: 24,
+              background: revealed ? E.negro : "var(--linea)", color: revealed ? "var(--sobre-negro)" : E.niebla,
+              padding: "18px 20px", borderRadius: 14, border: "none",
+              fontWeight: 600, fontSize: 15, cursor: revealed ? "pointer" : "default", transition: "background-color .2s, color .2s",
             }}
           >
-            <span>{(idx + 1 === pool.length || (relampago && revealed && !esCorrecta)) ? "Terminar" : "Siguiente"}</span>
+            <span>{(idx + 1 === totalPool || (relampago && revealed && !esCorrecta)) ? "Terminar" : "Siguiente"}</span>
             <span aria-hidden="true">→</span>
           </button>
         </div>
@@ -6866,6 +6947,7 @@ const styles = {
   // sombreado en gris.
   navBtn: { flex: "1 1 0", maxWidth: 150, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "transparent", color: "var(--humo)", border: "none", borderRadius: 10, padding: "10px 4px", fontSize: 11.5, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", whiteSpace: "nowrap", transition: "background-color .15s, color .15s" },
   navBtnActivo: { background: "var(--bloque)", color: "var(--negro)" },
+  navBtnEncima: { background: "var(--pestana-hover)", color: "var(--tinta)" },
   navDot: { position: "absolute", top: 10, right: 6, width: 8, height: 8, borderRadius: "50%", background: ACENTO, animation: "dueloPulso 1.2s ease-in-out infinite" },
   tabsOrigen: { display: "flex", gap: 8, marginBottom: 14 },
   tabOrigenBtn: { flex: 1, padding: "11px 14px", borderRadius: 10, border: `1px solid ${RAYA}`, background: "var(--superficie)", color: TINTA_SUAVE, fontSize: 14, fontWeight: 600, cursor: "pointer" },
@@ -6927,7 +7009,7 @@ const styles = {
   enRachaPunto: { position: "absolute", inset: 0, borderRadius: "50%", background: ORO },
   dueloAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "12px 16px", borderRadius: 14, border: "none", background: ACENTO, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", animation: "dueloPulso 1.6s ease-in-out infinite" },
   rachaAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "11px 16px", borderRadius: 12, border: "none", background: "var(--bloque)", color: "var(--tinta)", fontSize: 13, fontWeight: 500, cursor: "pointer" },
-  main: { padding: "24px 22px 60px", maxWidth: 820, margin: "0 auto" },
+  main: { padding: "24px 22px 60px", maxWidth: 980, margin: "0 auto" },
   card: { background: "var(--superficie)", border: `1px solid ${RAYA}`, borderRadius: 14, padding: 22, boxShadow: "0 1px 2px rgba(0,0,0,0.04), 0 10px 26px -18px rgba(0,0,0,0.32)" },
   authCard: { textAlign: "left", borderRadius: 20, border: `1.5px solid ${RAYA}`, boxShadow: "0 18px 48px rgba(30,28,24,0.10)" },
   input: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid var(--linea)", fontSize: 16, fontFamily: "inherit", color: TINTA, boxSizing: "border-box" },

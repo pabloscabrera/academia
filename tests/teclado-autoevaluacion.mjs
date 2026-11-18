@@ -80,8 +80,8 @@ const revelada = (pagina) => pagina.evaluate(`/¡Correcto!|Incorrecto\\./.test(d
 
 try {
   const { ctx, pagina, errores } = await abrir();
-  await pagina.locator('input[type="number"]').first().fill("5");
-  await pagina.locator('input[type="number"]').first().blur();
+  await pagina.getByLabel("Cuántas preguntas").fill("5");
+  await pagina.getByLabel("Cuántas preguntas").blur();
   await esperar(300);
   await pagina.getByRole("button", { name: "Empezar", exact: true }).click();
   await esperar(800);

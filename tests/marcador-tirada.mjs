@@ -110,8 +110,8 @@ const desborda = (pagina) => pagina.evaluate(`(() => {
 })()`);
 
 async function empezar(pagina, cuantas) {
-  await pagina.locator('input[type="number"]').first().fill(String(cuantas));
-  await pagina.locator('input[type="number"]').first().blur();
+  await pagina.getByLabel("Cuántas preguntas").fill(String(cuantas));
+  await pagina.getByLabel("Cuántas preguntas").blur();
   await esperar(300);
   await pagina.getByRole("button", { name: "Empezar", exact: true }).click();
   await esperar(700);
