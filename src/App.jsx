@@ -1153,7 +1153,7 @@ export default function AcademiaPIR() {
 
   let contenido;
   if (!ready) {
-    contenido = <div style={{ ...styles.center, height: "100%", minHeight: 400 }}><Loader2 className="animate-spin" size={28} color={ACENTO} /></div>;
+    contenido = <PantallaCarga />;
   } else if (loadError) {
     contenido = (
       <div style={{ padding: 24 }}>
@@ -5031,7 +5031,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
              por ahí. Sin key el nodo no se retira nunca: el contenido se
              cambia en sitio y esta clase quita la animación. */
           .flip-inner.sin-animar, .flip-inner.sin-animar .flip-face { transition: none; }
-          .flip-face { grid-area: 1 / 1; min-height: 260px; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; overflow-y: auto; padding: 28px 22px; border: 1px solid #E4E3E0; border-radius: 16px; background: #fff; box-shadow: 0 14px 34px -28px rgba(0,0,0,.6); }
+          .flip-face { position: relative; grid-area: 1 / 1; min-height: 260px; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; overflow-y: auto; padding: 28px 22px; border: 1px solid #E4E3E0; border-radius: 16px; background: #fff; box-shadow: 0 14px 34px -28px rgba(0,0,0,.6); }
           .flip-face.flip-back { background: #F7F6F3; }
           .gr-btn { transition: background-color .18s, color .18s, border-color .18s; }
           .gr-btn:active:not([disabled]) { background-color: rgb(var(--c)) !important; border-color: rgb(var(--c)) !important; color: #fff !important; }
@@ -5072,13 +5072,13 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
                  vieja que pueda asomar. */}
           <div className={`flip-inner${revelada ? " flipped" : ""}${dorsoDe === idx ? "" : " sin-animar"}`}>
             <div className="flip-face">
-              <div style={{ fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "#A2A2AB", marginBottom: 10 }}>{carta.mazo}</div>
+              <div style={{ position: "absolute", top: 16, left: 18, right: 18, fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "#A2A2AB", lineHeight: 1.4 }}>{carta.mazo}</div>
               <p style={{ fontFamily: "'Cabinet Grotesk','Arial Black',sans-serif", fontWeight: 700, fontSize: 25, lineHeight: 1.14, letterSpacing: "-0.025em", color: "#17171B", margin: 0 }}>{carta.frontal}</p>
             </div>
             <div className="flip-face flip-back">
               {dorsoDe === idx ? (
                 <>
-                  <div style={{ fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "#A2A2AB", marginBottom: 10 }}>{carta.mazo}</div>
+                  <div style={{ position: "absolute", top: 16, left: 18, right: 18, fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "#A2A2AB", lineHeight: 1.4 }}>{carta.mazo}</div>
                   <p style={{ fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 19, lineHeight: 1.38, letterSpacing: "-0.01em", color: "#17171B", margin: 0 }}>{carta.posterior}</p>
                 </>
               ) : null}
@@ -6348,14 +6348,30 @@ function FalloRepetible({ f, index, favoritos, onToggleFavorito }) {
 }
 
 function EnRachaBadge() {
+  // Quien está en racha AHORA mismo: un punto negro que late y la palabra.
   return (
-    <span style={styles.enRachaBadge}>
-      <span style={{ position: "relative", width: 6, height: 6, flexShrink: 0 }}>
-        <span style={styles.enRachaPunto} />
-        <span style={{ ...styles.enRachaPunto, animation: "pulsoEnLinea 1.8s ease-out infinite" }} />
-      </span>
-      en racha
+    <span title="Racha en marcha" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#6A6A72" }}>
+      <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: "#0C0C0D", flex: "none" }} />en racha
     </span>
+  );
+}
+
+// Una fila del ranking, en el lenguaje del rediseño: posición y cifra en
+// Cabinet, nombre en Switzer, y la tuya marcada en gris claro.
+function FilaRanking({ pos, nombre, valor, tu, enVivo, primera }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 14, padding: tu ? "14px 12px" : "14px 4px",
+      borderTop: primera || tu ? "none" : "1px solid #E4E3E0", borderRadius: tu ? 10 : 0,
+      background: tu ? "#F2F1EE" : "transparent", fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif",
+    }}>
+      <span style={{ width: 22, fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 15, color: pos === 1 ? "#0C0C0D" : "#A2A2AB", fontVariantNumeric: "tabular-nums" }}>{pos}</span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: "#17171B" }}>
+        {nombre}{tu && <span style={{ fontWeight: 500, color: "#6A6A72" }}> · tú</span>}
+      </span>
+      {enVivo && <EnRachaBadge />}
+      <span style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 22, letterSpacing: "-0.03em", color: "#0C0C0D", fontVariantNumeric: "tabular-nums", minWidth: 36, textAlign: "right" }}>{valor}</span>
+    </div>
   );
 }
 
@@ -6363,8 +6379,6 @@ function Ranking({ rachas, user }) {
   const [modo, setModo] = useState("quiz");
   const campoRecord = modo === "quiz" ? "racha_record" : "racha_duelos_record";
   const campoVivo = modo === "quiz" ? "racha_actual" : "racha_duelo_actual";
-  const IconoModo = modo === "quiz" ? Flame : Swords;
-  const colorModo = modo === "quiz" ? "#C89B3C" : "#A6362B";
 
   const filas = [...rachas]
     .filter((r) => (r[campoRecord] || 0) > 0)
@@ -6375,81 +6389,56 @@ function Ranking({ rachas, user }) {
     .filter((r) => r.semana_actual === lunesActual && (r.correctas_semana || 0) > 0)
     .sort((a, b) => (b.correctas_semana || 0) - (a.correctas_semana || 0));
 
+  const pestana = (id, texto) => (
+    <button type="button" onClick={() => setModo(id)} aria-pressed={modo === id} style={{
+      background: "none", border: "none", padding: "4px 2px 10px", cursor: "pointer", fontFamily: "inherit",
+      fontWeight: 600, fontSize: 14, color: modo === id ? "#17171B" : "#A2A2AB",
+      boxShadow: modo === id ? "inset 0 -1.5px 0 #0C0C0D" : "none",
+    }}>{texto}</button>
+  );
+  const etiqueta = { display: "block", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.17em", textTransform: "uppercase", color: "#A2A2AB" };
+
   return (
-    <div>
+    <div style={{ fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif" }}>
       <SectionTitle title="Ranking" />
-
-      <div style={styles.tabsOrigen}>
-        <button type="button" onClick={() => setModo("quiz")} style={{ ...styles.tabOrigenBtn, ...(modo === "quiz" ? styles.tabOrigenActivo : {}) }}>
-          Autoevaluaciones
-        </button>
-        <button type="button" onClick={() => setModo("duelo")} style={{ ...styles.tabOrigenBtn, ...(modo === "duelo" ? styles.tabOrigenActivo : {}) }}>
-          Duelo
-        </button>
+      <div style={{ display: "flex", gap: 20, marginBottom: 6 }}>
+        {pestana("quiz", "Modo relámpago")}
+        {pestana("duelo", "Duelo")}
       </div>
+      <p style={{ fontSize: 12.5, color: "#6A6A72", margin: "0 0 10px" }}>
+        {modo === "quiz" ? "Mejor racha de aciertos seguidos en modo relámpago." : "Mejor racha de duelos ganados seguidos."}
+      </p>
+      {filas.length === 0
+        ? <p style={{ fontSize: 13, color: "#A2A2AB", padding: "6px 2px" }}>Todavía no hay récords en este modo.</p>
+        : filas.map((r, i) => (
+          <FilaRanking key={r.name} pos={i + 1} nombre={r.name} valor={r[campoRecord]} tu={r.name === user.name} enVivo={(r[campoVivo] || 0) > 0} primera={i === 0} />
+        ))}
 
-      <div style={styles.tablaRanking}>
-        {filas.length === 0 ? (
-          <p style={{ fontSize: 13, color: TINTA_TENUE, padding: "6px 2px 2px" }}>Todavía no hay récords en este modo.</p>
-        ) : (
-          filas.map((r, i) => {
-            const enVivo = (r[campoVivo] || 0) > 0;
-            return (
-              <div key={r.name} style={{ ...styles.rankRow, background: r.name === user.name ? ACENTO_SUAVE : styles.rankRow.background }}>
-                <span style={{ width: 24, fontSize: 14, color: i < 3 ? "#C89B3C" : TINTA_TENUE, fontFamily: "var(--font-display)" }}>{i + 1}</span>
-                <span style={{ flex: 1, fontSize: 15, color: TINTA }}>{r.name}</span>
-                {enVivo && <EnRachaBadge />}
-                <span style={{ fontSize: 16, color: colorModo, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
-                  <IconoModo size={14} /> {r[campoRecord]}
-                </span>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      <div style={{ marginTop: 30 }}>
-        <SectionTitle title="Liga semanal" subtitle="Aciertos desde el lunes. Se reinicia cada semana." />
-        <ColumnaRanking titulo="Esta semana" icono={Trophy} color={ACENTO}>
-          <ListaRachas
-            datos={ligaSemanal} campo="correctas_semana" icono={Trophy} colorIcono={ACENTO}
-            user={user} vacioTexto="Todavía nadie ha respondido esta semana."
-          />
-        </ColumnaRanking>
+      <div style={{ marginTop: 36 }}>
+        <span style={etiqueta}>Se reinicia cada lunes</span>
+        <h2 style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 26, lineHeight: 0.95, letterSpacing: "-0.02em", textTransform: "uppercase", color: "#0C0C0D", margin: "8px 0 6px" }}>Liga semanal</h2>
+        <p style={{ fontSize: 12.5, color: "#6A6A72", margin: "0 0 10px" }}>Aciertos desde el lunes.</p>
+        {ligaSemanal.length === 0
+          ? <p style={{ fontSize: 13, color: "#A2A2AB", padding: "6px 2px" }}>Todavía nadie ha respondido esta semana.</p>
+          : ligaSemanal.map((r, i) => (
+            <FilaRanking key={r.name} pos={i + 1} nombre={r.name} valor={r.correctas_semana} tu={r.name === user.name} primera={i === 0} />
+          ))}
       </div>
     </div>
   );
 }
 
-function ColumnaRanking({ titulo, icono: Icono, color, children }) {
+// La pantalla de carga: la misma que pinta index.html antes de que llegue el
+// JavaScript (clases .carga* definidas allí), para que no haya salto.
+function PantallaCarga() {
   return (
-    <div style={{ ...styles.columnaRanking, borderTop: `3px solid ${color}` }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
-        <Icono size={15} color={color} />
-        <span style={{ fontSize: 14, fontWeight: 600, color: "#17171B" }}>{titulo}</span>
+    <div className="carga" role="status" aria-label="Cargando">
+      <div className="carga-marca" aria-hidden="true">
+        {"AUTOPIR".split("").map((c, i) => (<span key={i} style={{ animationDelay: `${i * 70}ms` }}>{c}</span>))}
       </div>
-      {children}
+      <div className="carga-via"><i /></div>
+      <div className="carga-dice">Preparando tus preguntas</div>
     </div>
-  );
-}
-
-function ListaRachas({ datos, campo, icono: Icono, colorIcono, user, vacioTexto, enVivo }) {
-  if (datos.length === 0) {
-    return <p style={{ fontSize: 13, color: "#A2A2AB", padding: "6px 0 4px" }}>{vacioTexto}</p>;
-  }
-  return (
-    <>
-      {datos.map((r, i) => (
-        <div key={r.name} style={{ ...styles.rankRow, background: r.name === user.name ? ACENTO_SUAVE : styles.rankRow.background }}>
-          <span style={{ width: 24, fontSize: 14, color: i < 3 ? "#C89B3C" : "#A2A2AB", fontFamily: "var(--font-display)" }}>{i + 1}</span>
-          <span style={{ flex: 1, fontSize: 15, color: "#17171B" }}>{r.name}</span>
-          {enVivo && <EnRachaBadge />}
-          <span style={{ fontSize: 16, color: colorIcono, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
-            <Icono size={14} /> {r[campo]}
-          </span>
-        </div>
-      ))}
-    </>
   );
 }
 
