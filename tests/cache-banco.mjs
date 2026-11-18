@@ -87,7 +87,7 @@ try {
     await esperar(5000);
     const texto = await pagina.locator("body").innerText();
     if (texto.includes("Algo se ha roto")) throw new Error("la app se rompió:\n" + texto.slice(0, 400));
-    if (!texto.includes("Autoevaluaciones")) throw new Error("no se pintó la pantalla de dentro:\n" + texto.slice(0, 300));
+    if (!/exámenes/i.test(texto)) throw new Error("no se pintó la pantalla de dentro:\n" + texto.slice(0, 300));
   };
 
   // 1) Primera visita: no hay copia local, así que se descarga el banco.

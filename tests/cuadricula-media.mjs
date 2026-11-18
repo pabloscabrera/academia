@@ -65,7 +65,7 @@ await pagina.getByRole("button", { name: /Flashcards/i }).first().click();
 await esperar(900);
 await pagina.getByText("Porcentajes", { exact: false }).first().click();
 await esperar(900);
-await pagina.getByRole("button", { name: /Estad/ }).click();
+await pagina.getByRole("button", { name: /Estad/ }).last().click();
 await esperar(1500);
 const cuerpo = await pagina.locator("body").innerText();
 const i = cuerpo.indexOf("Tarjeta a tarjeta");
