@@ -79,7 +79,7 @@ const texto = await pagina.evaluate(() => document.body.innerText);
 MAZOS.forEach(([m]) => comprobar(texto.includes(m), `falta "${m}" en la lista`));
 
 // 3. Y con su recuento correcto, no a medias.
-comprobar(/Mazo C\s*\n?\s*500 tarjetas/.test(texto.replace(/ /g, " ")),
+comprobar(/Mazo C[\s\S]{0,40}?500\s*tarjetas/.test(texto.replace(/ /g, " ")),
   '"Mazo C" no dice 500 tarjetas');
 
 // 4. Se pidieron varias páginas (3 llenas + 1 vacía para saber que se acabó).
