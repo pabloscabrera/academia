@@ -284,6 +284,14 @@ function usuarioFromSession(session) {
 // de salir, que fue justo la queja.
 const CLAVE_SIN_PORTADA = "pir-pruebas-sin-portada";
 
+// Las pestañas no se desmontan al cambiar: se esconden (ver el render del
+// raíz), así que una tirada, un repaso o un duelo siguen exactamente donde los
+// dejaste. Lo que escucha al teclado o cuenta tiempo tiene que saber entonces
+// si su pestaña es la que se ve, o el "1" que pulsas en Flashcards contestaría
+// la pregunta de una autoevaluación escondida. Fuera de una pestaña (el Banco,
+// paneles) vale `true`.
+const PestanaActiva = React.createContext(true);
+
 // Diagnóstico del trackpad: con `?depurar=trackpad` en la dirección se pinta
 // un panel con lo que llega de la rueda y lo que se decide con cada evento.
 // Existe porque el iPad no se puede probar desde aquí (solo hay Chromium) y
@@ -321,6 +329,13 @@ export default function AcademiaPIR() {
   const [loadError, setLoadError] = useState(null);
   const [user, setUser] = useState(null);
   const [section, setSection] = useState("simulacros");
+  // Pestañas ya abiertas: se montan la primera vez que se visitan y a partir
+  // de ahí solo se esconden. Cambiar de pestaña (con el dedo, el trackpad, una
+  // flecha o un toque) no se lleva por delante lo que estabas haciendo.
+  const [visitadas, setVisitadas] = useState(["simulacros"]);
+  if (!visitadas.includes(section)) setVisitadas((v) => (v.includes(section) ? v : [...v, section]));
+  // Y cada una vuelve a la altura en que la dejaste.
+  const scrollPorSeccion = useRef({});
   // La portada sale cada vez que ENTRAS, aunque ya tengas la sesión
   // iniciada: al abrir la app y al volver tras un rato fuera. Con sesión no
   // pide nada, solo "Entrar". Vive solo en memoria, a propósito.
@@ -657,7 +672,12 @@ export default function AcademiaPIR() {
     const actual = seccionRef.current;
     if (!nueva || nueva === actual) return;
     const sinMovimiento = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (!el || animandoRef.current || sinMovimiento) { setSection(nueva); return; }
+    if (!el || animandoRef.current || sinMovimiento) {
+      scrollPorSeccion.current[actual] = window.scrollY;
+      flushSync(() => setSection(nueva));
+      window.scrollTo(0, scrollPorSeccion.current[nueva] || 0);
+      return;
+    }
     animandoRef.current = true;
     const ancho = el.offsetWidth || window.innerWidth;
     el.style.transition = `transform ${SALIDA_MS}ms cubic-bezier(.4,0,.9,.6)`;
@@ -667,8 +687,9 @@ export default function AcademiaPIR() {
       el.style.transform = `translateX(${dir * ancho}px)`;
       // Síncrono: la página nueva tiene que estar ya dibujada fuera de la
       // pantalla antes de empezar a entrar, o entraría la vieja.
+      scrollPorSeccion.current[actual] = window.scrollY;
       flushSync(() => setSection(nueva));
-      if (window.scrollY > 0) window.scrollTo(0, 0);
+      window.scrollTo(0, scrollPorSeccion.current[nueva] || 0);
       void el.offsetWidth;
       el.style.transition = `transform ${ENTRADA_MS}ms cubic-bezier(.22,1,.36,1)`;
       el.style.transform = "translateX(0px)";
@@ -693,7 +714,9 @@ export default function AcademiaPIR() {
   // llevaría por delante lo que estás haciendo.
   useEffect(() => {
     if (!user || !portadaVista) return undefined;
-    const bloqueado = () => animandoRef.current || !!document.querySelector("[data-sin-deslizar]");
+    // Lo que está en una pestaña escondida no cuenta: una tirada a medias en
+    // Exámenes no puede bloquear los gestos cuando estás en Estadísticas.
+    const bloqueado = () => animandoRef.current || [...document.querySelectorAll("[data-sin-deslizar]")].some((n) => !n.closest("[hidden]"));
     const editable = (el) => !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
     // Lo que ya se desplaza de lado (una fila de chips) se queda su gesto.
     const scrollLateral = (el) => {
@@ -1550,7 +1573,9 @@ export default function AcademiaPIR() {
           </button>
         )}
         <main ref={mainRef} style={styles.main} className="main-app">
-          {section === "flashcards" && (
+          {visitadas.includes("flashcards") && (
+            <div hidden={section !== "flashcards"} data-pestana="flashcards">
+            <PestanaActiva.Provider value={section === "flashcards"}>
             <Flashcards
               user={user}
               flashcards={flashcards}
@@ -1569,8 +1594,12 @@ export default function AcademiaPIR() {
               estilosMazo={estilosMazo}
               onEstiloMazo={guardarEstiloMazo}
             />
+            </PestanaActiva.Provider>
+            </div>
           )}
-          {section === "estadisticas" && (
+          {visitadas.includes("estadisticas") && (
+            <div hidden={section !== "estadisticas"} data-pestana="estadisticas">
+            <PestanaActiva.Provider value={section === "estadisticas"}>
             <Estadisticas
               miRacha={rachas.find((r) => r.name === user.name)}
               questions={questions}
@@ -1578,8 +1607,12 @@ export default function AcademiaPIR() {
               preguntasProgreso={preguntasProgreso}
               onPracticar={(filtro) => { setFiltroPedido(filtro); setSection("simulacros"); }}
             />
+            </PestanaActiva.Provider>
+            </div>
           )}
-          {section === "perfil" && (
+          {visitadas.includes("perfil") && (
+            <div hidden={section !== "perfil"} data-pestana="perfil">
+            <PestanaActiva.Provider value={section === "perfil"}>
             <MiPerfil
               user={user}
               miRacha={rachas.find((r) => r.name === user.name)}
@@ -1591,8 +1624,12 @@ export default function AcademiaPIR() {
               onGirarRuleta={girarRuleta}
               onPracticar={(filtro) => { setFiltroPedido(filtro); setSection("simulacros"); }}
             />
+            </PestanaActiva.Provider>
+            </div>
           )}
-          {section === "simulacros" && (
+          {visitadas.includes("simulacros") && (
+            <div hidden={section !== "simulacros"} data-pestana="simulacros">
+            <PestanaActiva.Provider value={section === "simulacros"}>
             <Simulacros
               questions={questions}
               user={user}
@@ -1608,8 +1645,12 @@ export default function AcademiaPIR() {
               filtroPedido={filtroPedido}
               onFiltroAplicado={() => setFiltroPedido(null)}
             />
+            </PestanaActiva.Provider>
+            </div>
           )}
-          {section === "duelo" && (
+          {visitadas.includes("duelo") && (
+            <div hidden={section !== "duelo"} data-pestana="duelo">
+            <PestanaActiva.Provider value={section === "duelo"}>
             <Duelo
               user={user}
               questions={questions}
@@ -1619,6 +1660,8 @@ export default function AcademiaPIR() {
               autoUnirse={autoUnirseDuelo}
               onAutoUnirseConsumido={() => setAutoUnirseDuelo(false)}
             />
+            </PestanaActiva.Provider>
+            </div>
           )}
         </main>
       </div>
@@ -2237,6 +2280,11 @@ function SelectorExamenes({
   onEmpezar, onRelampago, relampagoDisponible,
 }) {
   const E = ESTILO_EXAMENES;
+  // El examen bajo el ratón sale hacia delante: se agranda un pelo, sube y se
+  // oscurece (menos que uno marcado), y los demás retroceden un poco, así que
+  // al pasar de uno a otro el foco se desliza por la lista. Solo con ratón o
+  // trackpad: en táctil un toque dejaría la fila "encima" pegada.
+  const [encima, setEncima] = useState(null);
   // El campo va VACÍO hasta que escribes (o usas − / +), con la cantidad por
   // defecto en gris de fondo. Al tocarlo se vacía del todo y lo que había
   // queda en gris: el primer número que pulsas es el nuevo, sin cursor
@@ -2292,7 +2340,7 @@ function SelectorExamenes({
         })}
       </div>
 
-      <div style={{
+      <div onPointerLeave={() => setEncima(null)} style={{
         display: "flex", flexDirection: "column", gap: 6, padding: 10, borderRadius: 14,
         backgroundColor: "#6B6257", backgroundImage: "linear-gradient(var(--velo-foto), var(--velo-foto)), url(/img/examenes-fondo.jpg)",
         backgroundSize: "cover", backgroundPosition: "center",
@@ -2301,6 +2349,8 @@ function SelectorExamenes({
           const n = conteos[c] || 0;
           const vacio = n === 0;
           const sel = cursosSel.includes(c);
+          const resaltada = encima === c && !vacio;
+          const atenuada = encima !== null && encima !== c && !sel;
           return (
             <button
               key={c}
@@ -2308,13 +2358,20 @@ function SelectorExamenes({
               disabled={vacio}
               aria-pressed={sel}
               onClick={() => alternar(c)}
+              onPointerEnter={(e) => { if (e.pointerType === "mouse") setEncima(c); }}
+              className={resaltada ? "fila-examen encima" : "fila-examen"}
               style={{
                 display: "flex", alignItems: "baseline", gap: 12, width: "100%",
                 padding: "15px 14px", borderRadius: 12, border: "none", textAlign: "left",
                 cursor: vacio ? "default" : "pointer",
-                background: sel ? "var(--velo-sel)" : vacio ? "var(--velo-vacio)" : "var(--velo-claro)",
+                position: "relative", zIndex: resaltada ? 1 : 0,
+                background: sel ? "var(--velo-sel)" : vacio ? "var(--velo-vacio)" : resaltada ? "var(--velo-encima)" : "var(--velo-claro)",
                 color: sel ? "var(--sobre-negro)" : vacio ? E.humo : E.tinta,
                 backdropFilter: "blur(9px)", WebkitBackdropFilter: "blur(9px)",
+                transform: resaltada ? "translateY(-2px) scale(1.012)" : atenuada ? "scale(0.996)" : "none",
+                opacity: atenuada ? 0.8 : 1,
+                boxShadow: resaltada ? "0 14px 30px -14px rgba(0,0,0,.55)" : "0 0 0 rgba(0,0,0,0)",
+                transition: "transform 420ms cubic-bezier(.2,.9,.25,1), background-color 420ms cubic-bezier(.2,.9,.25,1), box-shadow 420ms cubic-bezier(.2,.9,.25,1), opacity 420ms ease, color 240ms ease",
               }}
             >
               <span style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 15, letterSpacing: "-0.01em" }}>{c}</span>
@@ -2333,6 +2390,7 @@ function SelectorExamenes({
           type="button"
           disabled={!relampagoDisponible}
           onClick={onRelampago}
+          onPointerEnter={() => setEncima(null)}
           style={{
             display: "flex", alignItems: "center", gap: 12, width: "100%", marginTop: 4,
             padding: "16px 14px", borderRadius: 12, border: "none", textAlign: "left",
@@ -2442,6 +2500,7 @@ function SelectorExamenes({
 }
 
 function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo, onRespuestaPregunta, favoritos, onToggleFavorito, miRacha, preguntasProgreso, fallos, filtroPedido, onFiltroAplicado }) {
+  const activa = React.useContext(PestanaActiva);
   const [incluirInventadas, setIncluirInventadas] = useState(false);
   const base = useMemo(() => (incluirInventadas ? questions : questions.filter((q) => !q.inventada)), [questions, incluirInventadas]);
   // El DSM-5-TR sale aquí como un examen más, pero relámpago (más abajo)
@@ -2512,11 +2571,13 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
 
   useEffect(() => {
     let timer;
-    if (state === "running") {
+    // En otra pestaña el reloj se para: el tiempo de la tirada es el que
+    // pasas contestando, no el que la dejas aparcada.
+    if (state === "running" && activa) {
       timer = setInterval(() => setSeconds((s) => s + 1), 1000);
     }
     return () => clearInterval(timer);
-  }, [state]);
+  }, [state, activa]);
 
   // OJO con el sitio: estos dos efectos leen `state` y `disponibles`, así que
   // tienen que ir DESPUÉS de los useState. Estaban más arriba, y como el array
@@ -2697,7 +2758,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
   // Qué hace cada tecla lo decide `accionDeTecla`, que se prueba sola; aquí
   // solo quedan las guardas del navegador.
   useEffect(() => {
-    if (state !== "running") return undefined;
+    if (state !== "running" || !activa) return undefined;
     const alPulsar = (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const d = e.target;
@@ -2719,7 +2780,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
     };
     window.addEventListener("keydown", alPulsar);
     return () => window.removeEventListener("keydown", alPulsar);
-  }, [state, revealed, pool, idx, elegir, next]);
+  }, [state, activa, revealed, pool, idx, elegir, next]);
 
   if (questions.length === 0) {
     return (
@@ -5025,6 +5086,7 @@ function GrupoEstadistica({ titulo, filas }) {
 }
 
 function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo, onCopiarMazo, onCopiarFlashcard, estilosMazo, onEstiloMazo }) {
+  const activa = React.useContext(PestanaActiva);
   const hoy = new Date().toISOString().slice(0, 10);
   // Mismo techo que se aplicará al pulsar, para que lo que anuncia el botón
   // sea exactamente lo que va a pasar.
@@ -5402,7 +5464,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
       const etiqueta = d && d.tagName ? d.tagName.toLowerCase() : "";
       if (etiqueta === "input" || etiqueta === "textarea" || etiqueta === "select") return;
       if (d && d.isContentEditable) return;
-      if (!sesion || revelada || editandoCarta) return;
+      if (!activa || !sesion || revelada || editandoCarta) return;
       // Antes de revelar no hay ningún botón propio del repaso a la vista,
       // así que un botón con el foco es de FUERA (la pestaña que acabas de
       // tocar, "Empezar repaso"…). Antes el atajo se apartaba ante cualquier
@@ -5419,7 +5481,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     // En captura: que nada por el camino se quede la tecla antes.
     window.addEventListener("keydown", alPulsar, true);
     return () => window.removeEventListener("keydown", alPulsar, true);
-  }, [sesion, revelada, editandoCarta, idx]);
+  }, [activa, sesion, revelada, editandoCarta, idx]);
 
   // 1/2/3/4 califican: Otra vez / Difícil / Bien / Fácil, en el orden en que se
   // dibujan los botones. La regla vive en `calificacionDeTecla` y no repartida
@@ -5440,7 +5502,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
       const etiqueta = d && d.tagName ? d.tagName.toLowerCase() : "";
       if (etiqueta === "input" || etiqueta === "textarea" || etiqueta === "select") return;
       if (d && d.isContentEditable) return;
-      if (!sesion || editandoCarta || enviando) return;
+      if (!activa || !sesion || editandoCarta || enviando) return;
       const i = calificacionDeTecla(e.key, { revelada, numBotones: CALIFICACIONES_FLASHCARD.length });
       if (i === null) return;
       e.preventDefault();
@@ -5454,7 +5516,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     };
     window.addEventListener("keydown", alPulsar);
     return () => window.removeEventListener("keydown", alPulsar);
-  }, [sesion, revelada, editandoCarta, enviando, calificar]);
+  }, [activa, sesion, revelada, editandoCarta, enviando, calificar]);
 
   // La limpieza va en su propio efecto con dependencias vacías: así solo corre
   // al desmontar y nunca cancela una pulsación en marcha.
@@ -7035,7 +7097,7 @@ const styles = {
   // (hover, también en index.html) y en la pestaña abierta, que lo lleva
   // sombreado en gris.
   navBtn: { flex: "1 1 0", maxWidth: 150, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "transparent", color: "var(--humo)", border: "none", borderRadius: 10, padding: "10px 4px", fontSize: 11.5, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", whiteSpace: "nowrap", transition: "background-color .15s, color .15s" },
-  navBtnActivo: { background: "var(--bloque)", color: "var(--negro)" },
+  navBtnActivo: { background: "var(--pestana-activa)", color: "var(--negro)" },
   navBtnEncima: { background: "var(--pestana-hover)", color: "var(--tinta)" },
   navDot: { position: "absolute", top: 10, right: 6, width: 8, height: 8, borderRadius: "50%", background: ACENTO, animation: "dueloPulso 1.2s ease-in-out infinite" },
   tabsOrigen: { display: "flex", gap: 8, marginBottom: 14 },
