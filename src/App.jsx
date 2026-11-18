@@ -51,7 +51,7 @@ const PORTADA_TEXTO = "#F0E9D8";
 const PORTADA_PLACEHOLDER = "#8A7F68";
 const PORTADA_BORDE = "rgba(217,169,77,.22)";
 
-const AJUSTES_DEFECTO = { escala: 1, fondo: "#FFFFFF", fuente: "cabinet", fechaObjetivo: "" };
+const AJUSTES_DEFECTO = { escala: 1, fondo: "#FFFFFF", fuente: "cabinet", fechaObjetivo: "", tema: "sistema" };
 const ESCALAS = [
   { id: "pequena", label: "A", escala: 0.9, tamPreview: 13 },
   { id: "normal", label: "A", escala: 1, tamPreview: 16 },
@@ -311,6 +311,8 @@ export default function AcademiaPIR() {
         a.rediseno = true;
         a.rediseno2 = true;
       }
+      // El color de fondo ya no se elige: lo decide el tema (claro u oscuro).
+      a.fondo = "#FFFFFF";
       return a;
     } catch {
       return AJUSTES_DEFECTO;
@@ -325,6 +327,22 @@ export default function AcademiaPIR() {
   const [filtroPedido, setFiltroPedido] = useState(null);
 
   useEffect(() => { savePersonal("pir-ajustes", ajustes); }, [ajustes]);
+  // Tema: claro, oscuro o el del sistema. Se marca en <html> y las reglas de
+  // index.html hacen el resto. En "sistema" se escucha el cambio del móvil.
+  useEffect(() => {
+    const mq = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+    const aplicar = () => {
+      const t = ajustes.tema || "sistema";
+      const oscuro = t === "oscuro" || (t === "sistema" && !!mq && mq.matches);
+      document.documentElement.setAttribute("data-tema", oscuro ? "oscuro" : "claro");
+    };
+    aplicar();
+    if (mq && mq.addEventListener) {
+      mq.addEventListener("change", aplicar);
+      return () => mq.removeEventListener("change", aplicar);
+    }
+    return undefined;
+  }, [ajustes.tema]);
 
   useEffect(() => {
     // Las cuatro van a la vez. En fila india cada una esperaba a que volviera
@@ -1201,21 +1219,6 @@ export default function AcademiaPIR() {
             <Zap size={16} /> {dueloEsperando.jugador1} está buscando duelo — ¡Únete!
           </button>
         )}
-        {(() => {
-          const miRachaActual = rachas.find((r) => r.name === user.name);
-          const hoy = new Date().toISOString().slice(0, 10);
-          const correctasHoyActual = miRachaActual && miRachaActual.fecha_correctas_hoy === hoy ? (miRachaActual.correctas_hoy || 0) : 0;
-          const rachaDiasActual = (miRachaActual && miRachaActual.racha_dias_actual) || 0;
-          if (rachaDiasActual > 0 && correctasHoyActual < META_DIARIA_RACHA && section !== "simulacros") {
-            const faltan = META_DIARIA_RACHA - correctasHoyActual;
-            return (
-              <button type="button" onClick={() => setSection("simulacros")} style={styles.rachaAviso}>
-                <Flame size={16} color="#A6362B" fill="#A6362B" /> Te quedan {faltan} acierto{faltan === 1 ? "" : "s"} para no perder tu racha de {rachaDiasActual} día{rachaDiasActual === 1 ? "" : "s"}
-              </button>
-            );
-          }
-          return null;
-        })()}
         <main style={styles.main} className="main-app">
           {section === "flashcards" && (
             <Flashcards
@@ -1297,7 +1300,7 @@ export default function AcademiaPIR() {
     <div style={{ ...styles.app, background: ajustes.fondo, zoom: ajustes.escala, "--font-display": fuenteActual.familia }}>
       {contenido}
       {aviso && <BarraAviso texto={aviso.texto} esperando={aviso.esperando} />}
-      {mostrarAjustes && <AjustesPanel ajustes={ajustes} setAjustes={setAjustes} onClose={() => setMostrarAjustes(false)} />}
+      {mostrarAjustes && <AjustesPanel ajustes={ajustes} setAjustes={setAjustes} user={user} onLogout={() => { setMostrarAjustes(false); handleLogout(); }} onClose={() => setMostrarAjustes(false)} />}
       {insigniaDesbloqueada && <InsigniaDesbloqueadaModal insignia={insigniaDesbloqueada} onClose={() => setInsigniaDesbloqueada(null)} />}
     </div>
   );
@@ -1523,59 +1526,81 @@ function FondoPortada() {
   );
 }
 
-function AjustesPanel({ ajustes, setAjustes, onClose }) {
+function AjustesPanel({ ajustes, setAjustes, onClose, user, onLogout }) {
+  // Como los ajustes de cualquier app de iOS: secciones con su título y filas
+  // agrupadas en bloques redondeados. Apariencia (tema y tamaño de texto),
+  // Estudio (fecha del examen), Cuenta y Acerca de.
+  const T = { d: "'Cabinet Grotesk', 'Arial Black', sans-serif", tinta: "#17171B", humo: "#6A6A72", linea: "#E4E3E0", mal: "#9E2B20" };
+  const tituloSeccion = { fontSize: 11, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: T.humo, margin: "20px 6px 8px" };
+  const grupo = { background: "#F7F6F3", borderRadius: 14, overflow: "hidden" };
+  const fila = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "13px 16px", minHeight: 50, boxSizing: "border-box", fontSize: 15, color: T.tinta };
+  const separador = <div style={{ height: 1, background: T.linea, marginLeft: 16 }} />;
+  const segmento = (opciones, valor, poner) => (
+    <div style={{ display: "flex", gap: 2, padding: 3, borderRadius: 10, background: "#EFEDE8" }}>
+      {opciones.map((o) => {
+        const on = valor === o.id;
+        return (
+          <button key={o.id} type="button" aria-pressed={on} onClick={() => poner(o.id)} style={{
+            flex: 1, padding: "8px 4px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit",
+            fontWeight: 600, fontSize: o.tam || 13, color: T.tinta,
+            background: on ? "#FFFFFF" : "transparent",
+            boxShadow: on ? "0 1px 3px rgba(0,0,0,0.14)" : "none",
+          }}>{o.texto}</button>
+        );
+      })}
+    </div>
+  );
+  const tema = ajustes.tema || "sistema";
   return (
-    <div style={styles.modalOverlay} onClick={onClose}>
-      <div style={styles.modalCard} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-          <span style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 22, letterSpacing: "-0.02em", textTransform: "uppercase", color: "#0C0C0D" }}>Ajustes</span>
-          <button type="button" onClick={onClose} style={styles.iconBtn}><X size={18} color="#6A6A72" /></button>
+    <div style={{ ...styles.modalOverlay, alignItems: "flex-end", padding: 0 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: "#FFFFFF", width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box",
+        borderRadius: "20px 20px 0 0", padding: "18px 16px max(22px, env(safe-area-inset-bottom))",
+        fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif",
+      }}>
+        <div style={{ width: 38, height: 5, borderRadius: 3, background: T.linea, margin: "0 auto 14px" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 6px" }}>
+          <span style={{ fontFamily: T.d, fontWeight: 800, fontSize: 24, letterSpacing: "-0.02em", textTransform: "uppercase", color: "#0C0C0D" }}>Ajustes</span>
+          <button type="button" onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, fontSize: 15, color: T.tinta, padding: 6 }}>Hecho</button>
         </div>
 
-        <FieldLabel>Fecha para llegar preparado</FieldLabel>
-        <p style={{ fontSize: 12, color: TINTA_TENUE, margin: "0 0 8px", lineHeight: 1.45 }}>
-          Ponla antes del examen si quieres llegar con margen. Las estadísticas de flashcards calculan
-          desde aquí cuántas tarjetas nuevas te da tiempo a estrenar.
-        </p>
-        <input
-          type="date"
-          value={ajustes.fechaObjetivo || ""}
-          onChange={(e) => setAjustes({ ...ajustes, fechaObjetivo: e.target.value })}
-          style={{ ...styles.input, marginBottom: 22 }}
-        />
+        <div style={tituloSeccion}>Apariencia</div>
+        <div style={grupo}>
+          <div style={{ padding: "13px 16px 14px" }}>
+            <div style={{ fontSize: 15, color: T.tinta, marginBottom: 10 }}>Tema</div>
+            {segmento([{ id: "claro", texto: "Claro" }, { id: "oscuro", texto: "Oscuro" }, { id: "sistema", texto: "Automático" }], tema, (v) => setAjustes((prev) => ({ ...prev, tema: v })))}
+          </div>
+          {separador}
+          <div style={{ padding: "13px 16px 14px" }}>
+            <div style={{ fontSize: 15, color: T.tinta, marginBottom: 10 }}>Tamaño del texto</div>
+            {segmento(ESCALAS.map((e) => ({ id: e.escala, texto: "A", tam: e.tamPreview })), ajustes.escala, (v) => setAjustes((prev) => ({ ...prev, escala: v })))}
+          </div>
+        </div>
+        <p style={{ fontSize: 12, color: T.humo, margin: "8px 6px 0", lineHeight: 1.45 }}>Automático sigue el modo claro u oscuro de tu móvil.</p>
 
-        <FieldLabel>Tamaño de letra</FieldLabel>
-        <div style={{ display: "flex", gap: 8, marginBottom: 22 }}>
-          {ESCALAS.map((e) => (
-            <button
-              key={e.id}
-              type="button"
-              onClick={() => setAjustes((prev) => ({ ...prev, escala: e.escala }))}
-              style={{ ...styles.escalaBtn, ...(ajustes.escala === e.escala ? styles.escalaBtnActivo : {}), fontSize: e.tamPreview }}
-            >
-              A
-            </button>
-          ))}
+        <div style={tituloSeccion}>Estudio</div>
+        <div style={grupo}>
+          <label style={fila}>
+            <span>Fecha del examen</span>
+            <input type="date" value={ajustes.fechaObjetivo || ""} onChange={(e) => setAjustes((prev) => ({ ...prev, fechaObjetivo: e.target.value }))}
+              style={{ border: "none", background: "transparent", fontFamily: "inherit", fontSize: 15, color: T.humo, textAlign: "right", minWidth: 0 }} />
+          </label>
+        </div>
+        <p style={{ fontSize: 12, color: T.humo, margin: "8px 6px 0", lineHeight: 1.45 }}>Las estadísticas de flashcards calculan desde aquí cuántas tarjetas nuevas te da tiempo a estrenar.</p>
+
+        <div style={tituloSeccion}>Cuenta</div>
+        <div style={grupo}>
+          <div style={fila}><span>Usuario</span><span style={{ color: T.humo }}>{user ? user.name : ""}</span></div>
+          {separador}
+          <button type="button" onClick={onLogout} style={{ ...fila, width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", color: T.mal, fontWeight: 600 }}>Cerrar sesión</button>
         </div>
 
-        <FieldLabel>Color de fondo</FieldLabel>
-        <div style={{ display: "flex", gap: 10, marginBottom: 22, flexWrap: "wrap" }}>
-          {COLORES_FONDO.map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => setAjustes((prev) => ({ ...prev, fondo: c }))}
-              title={c}
-              style={{ ...styles.colorSwatch, background: c, borderColor: ajustes.fondo === c ? TINTA : RAYA }}
-            >
-              {ajustes.fondo === c && <Check size={14} color={TINTA} />}
-            </button>
-          ))}
+        <div style={tituloSeccion}>Acerca de</div>
+        <div style={grupo}>
+          <div style={fila}><span>AUTOPIR</span><span style={{ color: T.humo }}>Versión 2.0</span></div>
+          {separador}
+          <button type="button" onClick={() => setAjustes(AJUSTES_DEFECTO)} style={{ ...fila, width: "100%", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>Restablecer ajustes</button>
         </div>
-
-        <button type="button" onClick={() => setAjustes(AJUSTES_DEFECTO)} style={styles.btnSecondary}>
-          Restablecer
-        </button>
       </div>
     </div>
   );
@@ -6595,7 +6620,7 @@ const styles = {
   dueloAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "12px 16px", borderRadius: 14, border: "none", background: ACENTO, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", animation: "dueloPulso 1.6s ease-in-out infinite" },
   rachaAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "11px 16px", borderRadius: 12, border: "none", background: "#F2F1EE", color: "#17171B", fontSize: 13, fontWeight: 500, cursor: "pointer" },
   main: { padding: "24px 22px 110px", maxWidth: 820, margin: "0 auto" },
-  card: { background: "#FFFFFF", border: `1px solid ${RAYA}`, borderRadius: 14, padding: 22, boxShadow: "none" },
+  card: { background: "#FFFFFF", border: `1px solid ${RAYA}`, borderRadius: 14, padding: 22, boxShadow: "0 1px 2px rgba(0,0,0,0.04), 0 10px 26px -18px rgba(0,0,0,0.32)" },
   authCard: { textAlign: "left", borderRadius: 20, border: `1.5px solid ${RAYA}`, boxShadow: "0 18px 48px rgba(30,28,24,0.10)" },
   input: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid #E4E3E0", fontSize: 16, fontFamily: "inherit", color: TINTA, boxSizing: "border-box" },
   select: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid #E4E3E0", fontSize: 16, fontFamily: "inherit", color: TINTA, background: "#fff" },
