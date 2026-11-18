@@ -1203,6 +1203,7 @@ export default function AcademiaPIR() {
             100% { transform: scale(2.2); opacity: 0; }
           }
         `}</style>
+        <div className="cabecera-fija" style={styles.cabeceraFija}>
         <Header
           user={user} onLogout={handleLogout} miRacha={rachas.find((r) => r.name === user.name)} onAjustes={() => setMostrarAjustes(true)}
           questions={questions} onAddQuestion={addQuestion} onUpdateQuestion={updateQuestion} onDeleteQuestion={deleteQuestion}
@@ -1210,6 +1211,7 @@ export default function AcademiaPIR() {
           enLinea={enLinea} preguntasProgreso={preguntasProgreso} pendientes={contarCola(pendientes)}
         />
         <Nav section={section} setSection={setSection} alerta={!!dueloEsperando} />
+        </div>
         {dueloEsperando && section !== "duelo" && (
           <button
             type="button"
@@ -1747,14 +1749,14 @@ function Header({
       </div>
       <div className="cabecera-iconos" style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <button type="button" onClick={() => setMostrarRanking(true)} style={styles.iconBtn} title="Ranking">
-          <Trophy size={18} strokeWidth={1.6} color="#17171B" />
+          <Trophy size={15} strokeWidth={1.7} color="#17171B" />
         </button>
         <button type="button" onClick={() => setMostrarBanco(true)} style={styles.iconBtn} title="Banco de preguntas">
-          <ListChecks size={18} strokeWidth={1.6} color="#17171B" />
+          <ListChecks size={15} strokeWidth={1.7} color="#17171B" />
         </button>
         <div style={{ position: "relative" }}>
           <button type="button" onClick={nuevaFrase} style={styles.iconBtn} title="Frase motivadora">
-            <Lightbulb size={18} strokeWidth={1.6} color="#17171B" />
+            <Lightbulb size={15} strokeWidth={1.7} color="#17171B" />
           </button>
           {mostrarFrase && (
             <>
@@ -1769,10 +1771,10 @@ function Header({
           )}
         </div>
         <button type="button" onClick={onAjustes} style={styles.iconBtn} title="Ajustes">
-          <Settings size={18} strokeWidth={1.6} color="#17171B" />
+          <Settings size={15} strokeWidth={1.7} color="#17171B" />
         </button>
         <button type="button" onClick={onLogout} style={styles.iconBtn} title="Salir">
-          <LogOut size={18} strokeWidth={1.6} color="#17171B" />
+          <LogOut size={15} strokeWidth={1.7} color="#17171B" />
         </button>
       </div>
       {mostrarRanking && (
@@ -6459,10 +6461,12 @@ function PantallaCarga() {
   return (
     <div className="carga" role="status" aria-label="Cargando">
       <div className="carga-marca" aria-hidden="true">
-        {"AUTOPIR".split("").map((c, i) => (<span key={i} style={{ animationDelay: `${i * 70}ms` }}>{c}</span>))}
+        <span className="carga-trazo">AUTOPIR</span>
+        <span className="carga-tinta">AUTOPIR</span>
       </div>
-      <div className="carga-via"><i /></div>
-      <div className="carga-dice">Preparando tus preguntas</div>
+      <div className="carga-casillas" aria-hidden="true">
+        {["A", "B", "C", "D"].map((l) => <span key={l}>{l}</span>)}
+      </div>
     </div>
   );
 }
@@ -6555,8 +6559,12 @@ const styles = {
   // con un `paddingTop` suelto dispara el aviso de React sobre shorthand y
   // longhand al redibujar. `env(safe-area-inset-top)` reserva la franja del
   // reloj en modo pantalla de inicio; en navegador vale 0 y manda el 18.
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", paddingTop: "max(18px, env(safe-area-inset-top))", paddingRight: 24, paddingBottom: 18, paddingLeft: 24, borderBottom: `1px solid ${RAYA}` },
-  nav: { position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, display: "flex", justifyContent: "center", gap: 2, background: "#fff", borderTop: `1px solid ${RAYA}`, paddingTop: 4, paddingRight: 12, paddingBottom: "max(6px, env(safe-area-inset-bottom))", paddingLeft: 12 },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", paddingTop: "max(14px, env(safe-area-inset-top))", paddingRight: 20, paddingBottom: 4, paddingLeft: 24 },
+  // Cabecera y pestañas van juntas y se quedan arriba al desplazar, como
+  // antes del rediseño. La cabecera ya reserva la franja del reloj de iOS,
+  // así que al quedarse pegadas las pestañas no se meten debajo de la hora.
+  cabeceraFija: { position: "sticky", top: 0, zIndex: 40, background: "#fff" },
+  nav: { display: "flex", justifyContent: "center", gap: 2, background: "#fff", borderBottom: `1px solid ${RAYA}`, paddingTop: 0, paddingRight: 12, paddingBottom: 0, paddingLeft: 12 },
   navBtn: { flex: "1 1 0", maxWidth: 140, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "none", border: "none", padding: "12px 2px 12px", fontSize: 11.5, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", whiteSpace: "nowrap" },
   navDot: { position: "absolute", top: 10, right: 6, width: 8, height: 8, borderRadius: "50%", background: ACENTO, animation: "dueloPulso 1.2s ease-in-out infinite" },
   tabsOrigen: { display: "flex", gap: 8, marginBottom: 14 },
@@ -6619,7 +6627,7 @@ const styles = {
   enRachaPunto: { position: "absolute", inset: 0, borderRadius: "50%", background: ORO },
   dueloAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "12px 16px", borderRadius: 14, border: "none", background: ACENTO, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", animation: "dueloPulso 1.6s ease-in-out infinite" },
   rachaAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "11px 16px", borderRadius: 12, border: "none", background: "#F2F1EE", color: "#17171B", fontSize: 13, fontWeight: 500, cursor: "pointer" },
-  main: { padding: "24px 22px 110px", maxWidth: 820, margin: "0 auto" },
+  main: { padding: "24px 22px 60px", maxWidth: 820, margin: "0 auto" },
   card: { background: "#FFFFFF", border: `1px solid ${RAYA}`, borderRadius: 14, padding: 22, boxShadow: "0 1px 2px rgba(0,0,0,0.04), 0 10px 26px -18px rgba(0,0,0,0.32)" },
   authCard: { textAlign: "left", borderRadius: 20, border: `1.5px solid ${RAYA}`, boxShadow: "0 18px 48px rgba(30,28,24,0.10)" },
   input: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid #E4E3E0", fontSize: 16, fontFamily: "inherit", color: TINTA, boxSizing: "border-box" },
@@ -6627,7 +6635,7 @@ const styles = {
   btnPrimary: { background: "#0C0C0D", color: "#fff", border: "none", borderRadius: 12, padding: "15px 22px", fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" },
   botonCerrarPantalla: { background: "#fff", color: TINTA, border: `1.5px solid ${RAYA_FUERTE}`, borderRadius: 999, padding: "0 16px", height: 44, fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "inherit" },
   btnSecondary: { background: "#fff", color: TINTA, border: `1.5px solid ${RAYA}`, borderRadius: 12, padding: "12px 18px", fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center" },
-  iconBtn: { background: "none", border: "none", cursor: "pointer", padding: 6 },
+  iconBtn: { background: "none", border: "none", cursor: "pointer", padding: 6, display: "inline-flex" },
   chip: { border: "1.5px solid", borderRadius: 22, padding: "9px 18px", fontSize: 16, cursor: "pointer" },
   chipEtiqueta: { border: `1.5px solid ${RAYA}`, borderRadius: 20, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, background: "#fff", color: TINTA_SUAVE, cursor: "pointer" },
   chipEtiquetaActiva: { background: TINTA, borderColor: TINTA, color: "#fff" },
