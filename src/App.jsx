@@ -283,6 +283,35 @@ function usuarioFromSession(session) {
 // una pestaña de Safari que no se cierra eso duraba días — la portada dejaba
 // de salir, que fue justo la queja.
 const CLAVE_SIN_PORTADA = "pir-pruebas-sin-portada";
+
+// Diagnóstico del trackpad: con `?depurar=trackpad` en la dirección se pinta
+// un panel con lo que llega de la rueda y lo que se decide con cada evento.
+// Existe porque el iPad no se puede probar desde aquí (solo hay Chromium) y
+// el trackpad se comporta distinto en Safari: una captura del panel dice qué
+// recibe la página de verdad. Sin el parámetro no hace nada.
+const DEPURAR_RUEDA = typeof window !== "undefined" && /[?&]depurar=trackpad\b/.test(window.location.search);
+function anotarRueda(dato) {
+  if (!DEPURAR_RUEDA) return;
+  const lista = (window.__autopirRueda = window.__autopirRueda || []);
+  lista.push({ t: Math.round(performance.now()) % 100000, ...dato });
+  if (lista.length > 18) lista.splice(0, lista.length - 18);
+}
+function PanelDepuracionRueda() {
+  const [, setTic] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTic((n) => n + 1), 150);
+    return () => clearInterval(id);
+  }, []);
+  const lista = window.__autopirRueda || [];
+  return (
+    <div style={{ position: "fixed", left: 8, bottom: 8, zIndex: 90, width: 300, maxHeight: "45vh", overflow: "hidden", background: "rgba(12,12,13,.86)", color: "#fff", font: "11px/1.35 ui-monospace, Menlo, monospace", padding: "8px 10px", borderRadius: 10, pointerEvents: "none" }}>
+      <div style={{ opacity: 0.7, marginBottom: 4 }}>trackpad · {navigator.userAgent.includes("iPad") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) ? "iPad" : navigator.platform}</div>
+      {lista.length === 0 ? <div>Sin eventos de rueda todavía. Desliza con dos dedos.</div> : lista.map((x, i) => (
+        <div key={i}>{Object.entries(x).map(([k, v]) => `${k}:${v}`).join(" ")}</div>
+      ))}
+    </div>
+  );
+}
 // Volver a la app tras este rato fuera también es "entrar".
 const MS_FUERA_PARA_PORTADA = 30 * 60 * 1000;
 const ORDEN_PESTANAS = ["simulacros", "flashcards", "duelo", "estadisticas", "perfil"];
@@ -760,6 +789,16 @@ export default function AcademiaPIR() {
     let tragando = false;
     let tragarTimer = null;
     let finTimer = null;
+    // La página se mueve como mucho una vez por fotograma: el trackpad puede
+    // mandar varios eventos entre dos fotogramas y moverla en cada uno solo
+    // añade saltitos.
+    let pendiente = null;
+    let marco = 0;
+    const mostrarEnFotograma = (dx) => {
+      pendiente = dx;
+      if (!marco) marco = requestAnimationFrame(() => { marco = 0; if (pendiente !== null) mostrar(pendiente); pendiente = null; });
+    };
+    const cancelarFotograma = () => { if (marco) cancelAnimationFrame(marco); marco = 0; pendiente = null; };
     const tragarHastaSilencio = () => {
       tragando = true;
       clearTimeout(tragarTimer);
@@ -768,27 +807,32 @@ export default function AcademiaPIR() {
     const finDeRueda = () => {
       const r = rueda;
       rueda = null;
-      if (r && r.eje === "lado") volver();
+      cancelarFotograma();
+      if (r && r.eje === "lado") { anotarRueda({ accion: "vuelve", dx: Math.round(-r.sx) }); volver(); }
     };
     const alRueda = (e) => {
       if (e.ctrlKey) return; // pellizco para hacer zoom
       const k = e.deltaMode === 1 ? 16 : 1;
       const deltaX = e.deltaX * k;
       const deltaY = e.deltaY * k;
+      anotarRueda({ dX: Math.round(deltaX), dY: Math.round(deltaY), modo: e.deltaMode, cancelable: e.cancelable, tragando });
       if (tragando) {
         if (Math.abs(deltaX) > Math.abs(deltaY)) e.preventDefault();
         tragarHastaSilencio();
         return;
       }
       if (!rueda) {
-        if (bloqueado() || scrollLateral(e.target)) return;
+        if (bloqueado() || scrollLateral(e.target)) { anotarRueda({ accion: "bloqueado" }); return; }
         rueda = { sx: 0, sy: 0, eje: null };
       }
       clearTimeout(finTimer);
       finTimer = setTimeout(finDeRueda, 150);
       rueda.sx += deltaX;
       rueda.sy += deltaY;
-      if (rueda.eje === null) rueda.eje = ejeDelGesto(rueda.sx, rueda.sy);
+      if (rueda.eje === null) {
+        rueda.eje = ejeDelGesto(rueda.sx, rueda.sy);
+        if (rueda.eje) anotarRueda({ accion: "eje " + rueda.eje });
+      }
       if (rueda.eje !== "lado") return;
       e.preventDefault();
       const dx = -rueda.sx;
@@ -799,12 +843,14 @@ export default function AcademiaPIR() {
       const hayVecina = paso === 1 ? haySiguiente : hayAnterior;
       if (hayVecina && Math.abs(dx) >= umbralTrackpad(ancho)) {
         clearTimeout(finTimer);
+        cancelarFotograma();
+        anotarRueda({ accion: "pasa", dx: Math.round(dx) });
         rueda = null;
         tragarHastaSilencio();
         transicionA(ORDEN_PESTANAS[i + paso], paso);
         return;
       }
-      mostrar(dx);
+      mostrarEnFotograma(dx);
     };
 
     window.addEventListener("keydown", alTeclear);
@@ -814,6 +860,7 @@ export default function AcademiaPIR() {
     window.addEventListener("touchcancel", alSoltar, { passive: true });
     window.addEventListener("wheel", alRueda, { passive: false });
     return () => {
+      cancelarFotograma();
       clearTimeout(finTimer);
       clearTimeout(tragarTimer);
       window.removeEventListener("keydown", alTeclear);
@@ -1583,6 +1630,7 @@ export default function AcademiaPIR() {
     <div style={{ ...styles.app, background: "var(--fondo)", zoom: ajustes.escala, "--font-display": fuenteActual.familia }}>
       <div className={appEntrando ? "app-entra" : undefined}>{contenido}</div>
       {portadaEncima}
+      {DEPURAR_RUEDA && <PanelDepuracionRueda />}
       {aviso && <BarraAviso texto={aviso.texto} esperando={aviso.esperando} />}
       {mostrarAjustes && <AjustesPanel ajustes={ajustes} setAjustes={setAjustes} user={user} onLogout={() => { setMostrarAjustes(false); handleLogout(); }} onClose={() => setMostrarAjustes(false)} />}
       {insigniaDesbloqueada && <InsigniaDesbloqueadaModal insignia={insigniaDesbloqueada} onClose={() => setInsigniaDesbloqueada(null)} />}
@@ -1708,13 +1756,13 @@ function AuthScreen({ onLogin, onSignup, sesion, onContinuar, onCambiarCuenta })
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(10,10,12,.55) 0%, rgba(10,10,12,.12) 30%, rgba(10,10,12,.55) 60%, rgba(10,10,12,.88) 100%)" }} />
       <div style={{ position: "relative", zIndex: 1, minHeight: "100dvh", maxWidth: 480, margin: "0 auto", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "max(18px, env(safe-area-inset-top)) 22px max(26px, env(safe-area-inset-bottom))" }}>
         <span style={{ textAlign: "center" }}><Marca tamano={14} color="#fff" /></span>
-        <h1 style={{ fontFamily: D, fontWeight: 800, fontSize: "clamp(40px,12vw,58px)", lineHeight: 0.86, letterSpacing: "-0.03em", textTransform: "uppercase", margin: "40px 0 0" }}>
+        <h1 style={{ fontFamily: D, fontWeight: 800, fontSize: "clamp(40px,12vw,58px)", lineHeight: 0.86, letterSpacing: "-0.03em", textTransform: "uppercase", margin: "40px 0 0", textAlign: "center" }}>
           {sesion || modo === "login" ? <>Bienvenido<br />de nuevo</> : <>Crea tu<br />cuenta</>}
         </h1>
         <div style={{ flex: 1, minHeight: 40 }} />
         {sesion ? (
           <div>
-            <p style={{ fontSize: 15, lineHeight: 1.5, margin: "0 0 16px", color: "rgba(255,255,255,0.88)" }}>
+            <p style={{ fontSize: 15, lineHeight: 1.5, margin: "0 0 16px", color: "rgba(255,255,255,0.88)", textAlign: "center" }}>
               Tienes la sesión iniciada como <strong style={{ color: "#fff" }}>{sesion.name}</strong>.
             </p>
             <button type="button" onClick={onContinuar} style={btnPortada}>
@@ -1725,7 +1773,7 @@ function AuthScreen({ onLogin, onSignup, sesion, onContinuar, onCambiarCuenta })
             </button>
           </div>
         ) : (<>
-        <div style={{ display: "flex", gap: 20, marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 20, marginBottom: 16, justifyContent: "center" }}>
           <button type="button" onClick={() => cambiarModo("login")} style={tabPortada(modo === "login")}>Iniciar sesión</button>
           <button type="button" onClick={() => cambiarModo("signup")} style={tabPortada(modo === "signup")}>Crear cuenta</button>
         </div>
@@ -5354,15 +5402,23 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
       const etiqueta = d && d.tagName ? d.tagName.toLowerCase() : "";
       if (etiqueta === "input" || etiqueta === "textarea" || etiqueta === "select") return;
       if (d && d.isContentEditable) return;
-      // Con Intro sobre un botón, dejar que el botón haga lo suyo.
-      if (e.key === "Enter" && etiqueta === "button") return;
       if (!sesion || revelada || editandoCarta) return;
+      // Antes de revelar no hay ningún botón propio del repaso a la vista,
+      // así que un botón con el foco es de FUERA (la pestaña que acabas de
+      // tocar, "Empezar repaso"…). Antes el atajo se apartaba ante cualquier
+      // botón para no pisarlo, y en el iPad el foco se queda en uno de esos:
+      // Intro no hacía nada. Solo se aparta si el foco está dentro de otra
+      // pantalla abierta encima (el Banco, el Ranking, un panel).
+      const capa = d && d.closest ? d.closest("[data-sin-deslizar]") : null;
+      if (capa && !capa.contains(document.querySelector(".flip-container"))) return;
       e.preventDefault();
+      if (etiqueta === "button" && d.blur) d.blur();
       setDorsoDe(idx);
       setRevelada(true);
     };
-    window.addEventListener("keydown", alPulsar);
-    return () => window.removeEventListener("keydown", alPulsar);
+    // En captura: que nada por el camino se quede la tecla antes.
+    window.addEventListener("keydown", alPulsar, true);
+    return () => window.removeEventListener("keydown", alPulsar, true);
   }, [sesion, revelada, editandoCarta, idx]);
 
   // 1/2/3/4 califican: Otra vez / Difícil / Bien / Fácil, en el orden en que se
@@ -5432,9 +5488,14 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
         <div style={{ height: 2, background: "var(--linea)", margin: "10px 0 0" }}>
           <div style={{ height: 2, background: "var(--negro)", width: `${(idx / sesion.length) * 100}%`, transition: "width .45s cubic-bezier(.22,1,.36,1)" }} />
         </div>
+        {/* La tarjeta va en el centro de la pantalla y con forma de tarjeta
+            (7:5, como una ficha), no como una banda a lo ancho pegada arriba.
+            Debajo hay un hueco de alto fijo para la pista o los botones, para
+            que la tarjeta no salte hacia arriba al revelarla. */}
+        <div style={{ maxWidth: 560, margin: "0 auto", minHeight: "calc(100dvh - 300px)", display: "flex", flexDirection: "column", justifyContent: "center", paddingTop: 20 }}>
         <style>{`
-          .flip-container { perspective: 1600px; margin-top: 16px; }
-          .flip-inner { display: grid; width: 100%; transition: transform 0.5s; -webkit-transform-style: preserve-3d; transform-style: preserve-3d; }
+          .flip-container { perspective: 1600px; }
+          .flip-inner { display: grid; width: 100%; aspect-ratio: 7 / 5; transition: transform 0.5s; -webkit-transform-style: preserve-3d; transform-style: preserve-3d; }
           .flip-inner.flipped { transform: rotateY(180deg); }
           /* Tarjeta recién cambiada: ni un grado de giro y ni un milisegundo de
              transición. Antes esto se conseguía con una key que montaba un nodo
@@ -5445,7 +5506,12 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
              por ahí. Sin key el nodo no se retira nunca: el contenido se
              cambia en sitio y esta clase quita la animación. */
           .flip-inner.sin-animar, .flip-inner.sin-animar .flip-face { transition: none; }
-          .flip-face { position: relative; grid-area: 1 / 1; min-height: 260px; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; overflow-y: auto; padding: 28px 22px; border: 1px solid var(--linea); border-radius: 16px; background: var(--superficie); box-shadow: 0 14px 34px -28px rgba(0,0,0,.6); }
+          /* La proporción es la de una tarjeta de cartulina (apaisada en
+             pantalla ancha, cuadrada en el móvil), pero es un MÍNIMO: sin
+             overflow propio en las caras, un texto largo estira la tarjeta en
+             vez de quedarse cortado con una barra de desplazamiento dentro. */
+          @media (max-width: 620px) { .flip-inner { aspect-ratio: 1 / 1; } }
+          .flip-face { position: relative; grid-area: 1 / 1; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; padding: 44px 24px 34px; border: 1px solid var(--linea); border-radius: 20px; background: var(--superficie); box-shadow: 0 24px 50px -34px rgba(0,0,0,.55); }
           .flip-face.flip-back { background: var(--bloque); }
           .gr-btn { transition: background-color .18s, color .18s, border-color .18s; }
           .gr-btn:active:not([disabled]) { background-color: rgb(var(--c)) !important; border-color: rgb(var(--c)) !important; color: #fff !important; }
@@ -5487,20 +5553,21 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
           <div className={`flip-inner${revelada ? " flipped" : ""}${dorsoDe === idx ? "" : " sin-animar"}`}>
             <div className="flip-face">
               <div style={{ position: "absolute", top: 16, left: 18, right: 18, fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--niebla)", lineHeight: 1.4 }}>{carta.mazo}</div>
-              <p style={{ fontFamily: "'Cabinet Grotesk','Arial Black',sans-serif", fontWeight: 700, fontSize: 25, lineHeight: 1.14, letterSpacing: "-0.025em", color: "var(--tinta)", margin: 0 }}>{carta.frontal}</p>
+              <p style={{ fontFamily: "'Cabinet Grotesk','Arial Black',sans-serif", fontWeight: 700, fontSize: "clamp(20px, 5.4vw, 25px)", lineHeight: 1.14, letterSpacing: "-0.025em", color: "var(--tinta)", margin: 0 }}>{carta.frontal}</p>
             </div>
             <div className="flip-face flip-back">
               {dorsoDe === idx ? (
                 <>
                   <div style={{ position: "absolute", top: 16, left: 18, right: 18, fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--niebla)", lineHeight: 1.4 }}>{carta.mazo}</div>
-                  <p style={{ fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 19, lineHeight: 1.38, letterSpacing: "-0.01em", color: "var(--tinta)", margin: 0 }}>{carta.posterior}</p>
+                  <p style={{ fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: "clamp(16.5px, 4.4vw, 19px)", lineHeight: 1.38, letterSpacing: "-0.01em", color: "var(--tinta)", margin: 0 }}>{carta.posterior}</p>
                 </>
               ) : null}
             </div>
           </div>
         </div>
+        <div style={{ minHeight: 150 }}>
         {!revelada ? (
-          <p style={{ fontSize: 12.5, color: "var(--niebla)", textAlign: "center", marginTop: 14 }}>Toca la tarjeta para ver la respuesta</p>
+          <p style={{ fontSize: 12.5, color: "var(--niebla)", textAlign: "center", marginTop: 14 }}>Toca la tarjeta o pulsa Intro para ver la respuesta</p>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 16 }}>
             {CALIFICACIONES_FLASHCARD.map((c, i) => {
@@ -5595,6 +5662,8 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
             </div>
           </Card>
         )}
+        </div>
+        </div>
       </div>
     );
   }

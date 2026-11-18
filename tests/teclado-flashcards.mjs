@@ -152,6 +152,36 @@ try {
   if (escrito !== "13") throw new Error(`E) el campo no recibió lo tecleado: ${JSON.stringify(escrito)}`);
   if (repasosTrasEscribir !== 3) throw new Error("E) teclear en el campo calificó la tarjeta: " + JSON.stringify(calidades));
 
+  // --- F) Intro revela aunque el foco se haya quedado en una pestaña ---
+  // En el iPad el foco se queda en el último botón tocado (la pestaña de
+  // Flashcards), y la versión anterior se apartaba si el foco estaba en un
+  // botón: Intro no hacía nada. Tampoco puede "pulsar" esa pestaña.
+  await pagina.getByRole("button", { name: /Cancelar/i }).first().click().catch(() => {});
+  await esperar(300);
+  const tarjetaF = await numeroDeTarjeta(pagina);
+  await pagina.evaluate(() => {
+    const b = [...document.querySelectorAll(".nav-app button")].find((x) => /flashcards/i.test(x.textContent));
+    b.focus();
+  });
+  const repasosAntesF = calidades.length;
+  // Califica la que tenía revelada para llegar a una sin revelar.
+  await pagina.keyboard.press("3");
+  await esperar(700);
+  await pagina.evaluate(() => {
+    const b = [...document.querySelectorAll(".nav-app button")].find((x) => /duelo/i.test(x.textContent));
+    b.focus();
+  });
+  await pagina.keyboard.press("Enter");
+  await esperar(700);
+  const estadoF = await pagina.evaluate(() => ({
+    girada: !!document.querySelector(".flip-inner.flipped"),
+    enRepaso: !!document.querySelector(".flip-container"),
+    texto: document.body.innerText,
+  }));
+  console.log(`F) Intro con el foco en una pestaña: girada=${estadoF.girada}, sigue en el repaso=${estadoF.enRepaso} (tarjeta ${tarjetaF}, repasos ${repasosAntesF}->${calidades.length})`);
+  if (!estadoF.enRepaso) throw new Error("F) Intro sobre la pestaña cambió de sección y se llevó el repaso");
+  if (!estadoF.girada) throw new Error("F) Intro no reveló la tarjeta con el foco en una pestaña");
+
   if (errores.length) throw new Error("errores JS: " + errores.join(" | "));
   await ctx.close();
   console.log("\nOK: 1-4 califican, la animación se ve antes de pasar, y los campos siguen siendo campos");
