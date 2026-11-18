@@ -30,9 +30,9 @@ const META_DIARIA_RACHA = 10;
 
 // ---- identidad visual: "cuaderno de examen" ----
 const TINTA = "#1E1C18";
-const TINTA_SUAVE = "#6E6A61";
-const TINTA_TENUE = "#9B9689";
-const RAYA = "#C9C5B7";
+const TINTA_SUAVE = "#6A6A72";
+const TINTA_TENUE = "#A2A2AB";
+const RAYA = "#E4E3E0";
 const RAYA_FUERTE = "#1E1C18";
 const ACENTO = "#A6362B";
 const ACENTO_SUAVE = "#F7E9E6";
@@ -51,15 +51,16 @@ const PORTADA_TEXTO = "#F0E9D8";
 const PORTADA_PLACEHOLDER = "#8A7F68";
 const PORTADA_BORDE = "rgba(217,169,77,.22)";
 
-const AJUSTES_DEFECTO = { escala: 1, fondo: "#EEECE4", fuente: "fraunces", fechaObjetivo: "" };
+const AJUSTES_DEFECTO = { escala: 1, fondo: "#FFFFFF", fuente: "cabinet", fechaObjetivo: "" };
 const ESCALAS = [
   { id: "pequena", label: "A", escala: 0.9, tamPreview: 13 },
   { id: "normal", label: "A", escala: 1, tamPreview: 16 },
   { id: "grande", label: "A", escala: 1.15, tamPreview: 19 },
   { id: "muygrande", label: "A", escala: 1.3, tamPreview: 22 },
 ];
-const COLORES_FONDO = ["#EEECE4", "#E7E6E1", "#F2E7CC", "#E1E6E7", "#FFFFFF", "#F4E3DF"];
+const COLORES_FONDO = ["#FFFFFF", "#F2F1EE", "#EEECE4", "#E7E6E1", "#E1E6E7", "#F4E3DF"];
 const FUENTES = [
+  { id: "cabinet", label: "Cabinet", familia: "'Cabinet Grotesk', 'Arial Black', sans-serif", italica: false },
   { id: "fraunces", label: "Fraunces", familia: "'Fraunces', Georgia, serif", italica: true },
   { id: "classic", label: "Clásica", familia: "'Source Serif 4', Georgia, serif", italica: true },
   { id: "sans", label: "Solo sans", familia: "'IBM Plex Sans', -apple-system, sans-serif", italica: false },
@@ -298,7 +299,16 @@ export default function AcademiaPIR() {
   const [ajustes, setAjustes] = useState(() => {
     try {
       const raw = localStorage.getItem("pir-ajustes");
-      return raw ? { ...AJUSTES_DEFECTO, ...JSON.parse(raw) } : AJUSTES_DEFECTO;
+      if (!raw) return AJUSTES_DEFECTO;
+      const a = { ...AJUSTES_DEFECTO, ...JSON.parse(raw) };
+      // Rediseño: quien tenía los valores por defecto antiguos pasa a los
+      // nuevos UNA vez; lo que alguien eligió a propósito se respeta.
+      if (!a.rediseno) {
+        if (a.fuente === "fraunces") a.fuente = "cabinet";
+        if (a.fondo === "#EEECE4") a.fondo = "#FFFFFF";
+        a.rediseno = true;
+      }
+      return a;
     } catch {
       return AJUSTES_DEFECTO;
     }
@@ -1224,6 +1234,15 @@ export default function AcademiaPIR() {
               onEstiloMazo={guardarEstiloMazo}
             />
           )}
+          {section === "estadisticas" && (
+            <Estadisticas
+              miRacha={rachas.find((r) => r.name === user.name)}
+              questions={questions}
+              fallos={fallos}
+              preguntasProgreso={preguntasProgreso}
+              onPracticar={(filtro) => { setFiltroPedido(filtro); setSection("simulacros"); }}
+            />
+          )}
           {section === "perfil" && (
             <MiPerfil
               user={user}
@@ -1384,116 +1403,57 @@ function AuthScreen({ onLogin, onSignup }) {
     }
   };
 
-  const tabPortada = { flex: 1, padding: "15px 16px", borderRadius: 14, border: `1.5px solid ${PORTADA_BORDE}`, background: "#241D13", color: "#B8AB8C", fontSize: 16, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
-  const tabPortadaActivo = { background: PORTADA_DORADO, border: `1.5px solid ${PORTADA_DORADO}`, color: PORTADA_TARJETA };
-  const inputPortada = { ...styles.input, background: "#241D13", border: `1.5px solid ${PORTADA_BORDE}`, color: PORTADA_TEXTO, padding: "14px 20px", fontSize: 17, borderRadius: 14 };
-  const btnPortada = { ...styles.btnPrimary, position: "relative", zIndex: 1, width: "100%", margin: 0, borderRadius: 12.5, padding: "15px 24px", fontSize: 17, background: PORTADA_DORADO, color: PORTADA_TARJETA, justifyContent: "center" };
+  // Portada del rediseño: la foto de la psicóloga a sangre (prototipo
+  // "Portadas con foto", B), el nombre arriba, el titular en versales y el
+  // formulario de siempre debajo. Solo cambia el aspecto: entrar, crear cuenta
+  // y el código de invitación funcionan igual.
+  const D = "'Cabinet Grotesk', 'Arial Black', sans-serif";
+  const inputPortada = { ...styles.input, background: "rgba(255,255,255,0.96)", border: "1.5px solid rgba(255,255,255,0.0)", color: "#17171B", padding: "14px 16px", fontSize: 16, borderRadius: 12 };
+  const tabPortada = (activo) => ({ background: "none", border: "none", cursor: "pointer", padding: "4px 2px 10px", fontFamily: "inherit", fontWeight: 600, fontSize: 14, color: activo ? "#fff" : "rgba(255,255,255,0.6)", boxShadow: activo ? "inset 0 -1.5px 0 #fff" : "none" });
+  const btnPortada = { width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff", color: "#0C0C0D", border: "none", borderRadius: 12, padding: "16px 18px", fontWeight: 600, fontSize: 15, cursor: "pointer", fontFamily: "inherit" };
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100dvh", position: "relative", overflow: "hidden", padding: "32px 0", boxSizing: "border-box" }}>
-      <FondoPortada />
-      <style>{`
-        .portada-input::placeholder { color: ${PORTADA_PLACEHOLDER}; }
-        /* Un destello que cruza el botón cada pocos segundos, en vez del aro
-           de luz que daba vueltas sin parar: dura poco más de un segundo y
-           el resto del tiempo no hay nada moviéndose. Va por encima del
-           botón (z-index 2), no detrás, para que se vea sobre el dorado. */
-        @keyframes portadaDestello {
-          0%, 62% { transform: translateX(-170%) skewX(-16deg); opacity: 0; }
-          67% { opacity: 1; }
-          86% { transform: translateX(320%) skewX(-16deg); opacity: 0; }
-          100% { transform: translateX(320%) skewX(-16deg); opacity: 0; }
-        }
-        .portada-btn-destello {
-          position: absolute; top: 0; bottom: 0; left: 0; width: 38%;
-          z-index: 2; pointer-events: none; border-radius: 12.5px;
-          background: linear-gradient(100deg, transparent 0%, rgba(255,248,226,.92) 50%, transparent 100%);
-          animation: portadaDestello 4.5s ease-in-out infinite;
-        }
-        @media (prefers-reduced-motion: reduce) { .portada-btn-destello { animation: none; opacity: 0; } }
-      `}</style>
-      <div style={{ maxWidth: 480, width: "100%", padding: "0 24px", textAlign: "center", position: "relative", zIndex: 1 }}>
-        <div style={{ marginBottom: 34 }}>
-          <WordmarkPortada texto="AUTOPIR" />
-        </div>
-        <div style={{ ...styles.tabsOrigen, marginBottom: 18 }}>
-          <button type="button" onClick={() => cambiarModo("login")} style={{ ...tabPortada, ...(modo === "login" ? tabPortadaActivo : {}) }}>Iniciar sesión</button>
-          <button type="button" onClick={() => cambiarModo("signup")} style={{ ...tabPortada, ...(modo === "signup" ? tabPortadaActivo : {}) }}>Crear cuenta</button>
+    <div style={{ minHeight: "100dvh", position: "relative", overflow: "hidden", background: "#111", fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", color: "#fff" }}>
+      <img src="/img/portada.jpg" alt="" aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "45% 40%" }} />
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(10,10,12,.55) 0%, rgba(10,10,12,.12) 30%, rgba(10,10,12,.55) 60%, rgba(10,10,12,.88) 100%)" }} />
+      <div style={{ position: "relative", zIndex: 1, minHeight: "100dvh", maxWidth: 480, margin: "0 auto", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "max(18px, env(safe-area-inset-top)) 22px max(26px, env(safe-area-inset-bottom))" }}>
+        <span style={{ fontFamily: D, fontWeight: 800, fontSize: 12, letterSpacing: "0.17em", textTransform: "uppercase" }}>Autopir</span>
+        <h1 style={{ fontFamily: D, fontWeight: 800, fontSize: "clamp(40px,12vw,58px)", lineHeight: 0.86, letterSpacing: "-0.03em", textTransform: "uppercase", margin: "40px 0 0" }}>
+          {modo === "login" ? <>Bienvenido<br />de nuevo</> : <>Crea tu<br />cuenta</>}
+        </h1>
+        <div style={{ flex: 1, minHeight: 40 }} />
+        <div style={{ display: "flex", gap: 20, marginBottom: 16 }}>
+          <button type="button" onClick={() => cambiarModo("login")} style={tabPortada(modo === "login")}>Iniciar sesión</button>
+          <button type="button" onClick={() => cambiarModo("signup")} style={tabPortada(modo === "signup")}>Crear cuenta</button>
         </div>
         {cuentaCreada ? (
-          <Card style={{ ...styles.authCard, background: PORTADA_TARJETA, border: `1.5px solid ${PORTADA_BORDE}`, padding: 34 }}>
-            <p style={{ fontSize: 16, color: PORTADA_TEXTO, lineHeight: 1.5, margin: 0 }}>
+          <div>
+            <p style={{ fontSize: 15, lineHeight: 1.5, margin: "0 0 16px", color: "rgba(255,255,255,0.88)" }}>
               Cuenta creada. Ya puedes entrar con tu usuario y contraseña.
             </p>
-            <div style={{ position: "relative", borderRadius: 14, padding: 1.5, overflow: "hidden", marginTop: 18, background: "#4a3a1c" }}>
-              <button
-                type="button"
-                onClick={() => { setPassword(""); setPassword2(""); cambiarModo("login"); }}
-                style={btnPortada}
-              >
-                Ir a entrar
-              </button>
-              <span className="portada-btn-destello" />
-            </div>
-          </Card>
+            <button type="button" onClick={() => { setPassword(""); setPassword2(""); cambiarModo("login"); }} style={btnPortada}>
+              <span>Ir a entrar</span><span aria-hidden="true">→</span>
+            </button>
+          </div>
         ) : (
-          <Card style={{ ...styles.authCard, background: PORTADA_TARJETA, border: `1.5px solid ${PORTADA_BORDE}`, padding: 34 }}>
-            <input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              placeholder="Nombre de usuario"
-              className="portada-input"
-              style={{ ...inputPortada, marginBottom: 14 }}
-              autoCapitalize="none"
-              autoCorrect="off"
-              autoFocus
-            />
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              placeholder="Contraseña"
-              type="password"
-              className="portada-input"
-              style={{ ...inputPortada, marginBottom: modo === "signup" ? 14 : 0 }}
-            />
+          <div>
+            <input value={username} onChange={(e) => setUsername(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Nombre de usuario" style={{ ...inputPortada, marginBottom: 10 }} autoCapitalize="none" autoCorrect="off" autoFocus />
+            <input value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Contraseña" type="password" style={{ ...inputPortada, marginBottom: 10 }} />
             {modo === "signup" && (
               <>
-                <input
-                  value={password2}
-                  onChange={(e) => setPassword2(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && submit()}
-                  placeholder="Repite la contraseña"
-                  type="password"
-                  className="portada-input"
-                  style={{ ...inputPortada, marginBottom: 14 }}
-                />
-                <input
-                  value={codigo}
-                  onChange={(e) => setCodigo(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && submit()}
-                  placeholder="Código de invitación"
-                  className="portada-input"
-                  style={inputPortada}
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                />
-                <p style={{ fontSize: 13, color: PORTADA_PLACEHOLDER, margin: "10px 2px 0", lineHeight: 1.45 }}>
-                  {codigoDelEnlace()
-                    ? "Código cogido del enlace de invitación."
-                    : "Sin código no se puede crear la cuenta. Pídeselo a Pablo."}
+                <input value={password2} onChange={(e) => setPassword2(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Repite la contraseña" type="password" style={{ ...inputPortada, marginBottom: 10 }} />
+                <input value={codigo} onChange={(e) => setCodigo(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Código de invitación" style={{ ...inputPortada, marginBottom: 6 }} autoCapitalize="none" autoCorrect="off" />
+                <p style={{ fontSize: 12.5, color: "rgba(255,255,255,0.75)", margin: "4px 2px 6px", lineHeight: 1.45 }}>
+                  {codigoDelEnlace() ? "Código cogido del enlace de invitación." : "Sin código no se puede crear la cuenta. Pídeselo a Pablo."}
                 </p>
               </>
             )}
-            {error && <p style={{ color: ACENTO, fontSize: 14, marginTop: 12 }}>{error}</p>}
-            <div style={{ position: "relative", borderRadius: 14, padding: 1.5, overflow: "hidden", marginTop: 18, background: "#4a3a1c" }}>
-              <button type="button" onClick={submit} disabled={cargando} style={{ ...btnPortada, opacity: cargando ? 0.6 : 1 }}>
-                {cargando ? <Loader2 className="animate-spin" size={18} /> : modo === "login" ? "Entrar" : "Crear cuenta"}
-              </button>
-              <span className="portada-btn-destello" />
-            </div>
-          </Card>
+            {error && <p style={{ color: "#FFB4A8", fontSize: 14, margin: "4px 2px 8px", fontWeight: 600 }}>{error}</p>}
+            <button type="button" onClick={submit} disabled={cargando} style={{ ...btnPortada, marginTop: 6, opacity: cargando ? 0.7 : 1 }}>
+              <span>{cargando ? "Un momento…" : modo === "login" ? "Entrar" : "Crear cuenta"}</span>
+              {cargando ? <Loader2 className="animate-spin" size={18} /> : <span aria-hidden="true">→</span>}
+            </button>
+          </div>
         )}
       </div>
     </div>
@@ -1882,24 +1842,23 @@ function Header({
 
 function Nav({ section, setSection, alerta }) {
   const items = [
-    { id: "simulacros", label: "Autoevaluaciones", icon: Clock },
-    { id: "duelo", label: "Duelo 1v1", icon: Zap },
-    { id: "flashcards", label: "Flashcards", icon: Layers },
-    { id: "perfil", label: "Mi perfil", icon: User },
+    { id: "simulacros", label: "Exámenes" },
+    { id: "flashcards", label: "Flashcards" },
+    { id: "duelo", label: "Duelo" },
+    { id: "estadisticas", label: "Estadísticas" },
+    { id: "perfil", label: "Perfil" },
   ];
   return (
     <nav style={styles.nav} className="nav-app">
       {items.map((it) => {
-        const Icon = it.icon;
         const active = section === it.id;
         return (
           <button
             type="button"
             key={it.id}
             onClick={() => setSection(it.id)}
-            style={{ ...styles.navBtn, color: active ? "#1E1C18" : "#9B9689", borderBottom: active ? `2px solid ${ACENTO}` : "2px solid transparent", position: "relative" }}
+            style={{ ...styles.navBtn, color: active ? "#17171B" : "#A2A2AB", borderBottom: active ? "1.5px solid #0C0C0D" : "1.5px solid transparent", position: "relative" }}
           >
-            <Icon size={15} />
             <span>{it.label}</span>
             {it.id === "duelo" && alerta && (
               <span style={styles.navDot} />
@@ -3878,16 +3837,21 @@ function DondeFallas({ questions, fallos, preguntasProgreso, onPracticar }) {
   );
 }
 
-function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorito, onGirarRuleta, preguntasProgreso, onPracticar }) {
-  const [verTodosFallos, setVerTodosFallos] = useState(false);
-  const [abiertaId, setAbiertaId] = useState(null);
+// Perfil: lo que se repasa. Favoritas primero y Falladas después, y en las dos
+// se contesta ANTES de ver la respuesta (todo va orientado al repaso). Se pinta
+// de 12 en 12 con "Ver más" para que una lista de cien no tarde en abrir.
+const TANDA_PERFIL = 12;
+
+function MiPerfil({ user, questions, fallos, favoritos, onToggleFavorito }) {
+  const [lista, setLista] = useState("favoritas");
+  const [visibles, setVisibles] = useState(TANDA_PERFIL);
+  useEffect(() => { setVisibles(TANDA_PERFIL); }, [lista]);
 
   const preguntasPorId = useMemo(() => {
     const m = {};
     questions.forEach((q) => { m[q.id] = q; });
     return m;
   }, [questions]);
-
   const fallosConPregunta = useMemo(
     () => fallos
       .map((f) => ({ ...f, pregunta: preguntasPorId[f.pregunta_id] }))
@@ -3897,48 +3861,61 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
   );
   const favoritasConPregunta = useMemo(
     () => favoritos
-      .map((f) => ({ ...f, pregunta: preguntasPorId[f.pregunta_id] }))
+      .map((f) => ({ pregunta_id: f.pregunta_id, pregunta: preguntasPorId[f.pregunta_id] }))
       .filter((f) => f.pregunta),
     [favoritos, preguntasPorId]
   );
 
-  const fallosVisibles = verTodosFallos ? fallosConPregunta : fallosConPregunta.slice(0, 10);
-  const abierta = abiertaId != null ? (preguntasPorId[abiertaId] || null) : null;
+  const items = lista === "favoritas" ? favoritasConPregunta : fallosConPregunta;
+  const vacio = lista === "favoritas"
+    ? "Toca la estrella en cualquier pregunta para guardarla aquí."
+    : "Todavía no has fallado ninguna pregunta.";
 
   return (
     <div>
-      <SectionTitle title="Mi perfil" subtitle={user.name} />
-
-      <div style={{ marginBottom: 32 }}>
-        <DondeFallas questions={questions} fallos={fallos} preguntasProgreso={preguntasProgreso} onPracticar={onPracticar} />
+      <SectionTitle title="Perfil" subtitle={user.name} />
+      <div style={{ ...styles.tabsOrigen, marginBottom: 14 }}>
+        <button type="button" onClick={() => setLista("favoritas")} style={{ ...styles.tabOrigenBtn, ...(lista === "favoritas" ? styles.tabOrigenActivo : {}) }}>
+          Favoritas ({favoritasConPregunta.length})
+        </button>
+        <button type="button" onClick={() => setLista("falladas")} style={{ ...styles.tabOrigenBtn, ...(lista === "falladas" ? styles.tabOrigenActivo : {}) }}>
+          Falladas ({fallosConPregunta.length})
+        </button>
       </div>
+      {items.length === 0 && <p style={{ fontSize: 13.5, color: TINTA_SUAVE }}>{vacio}</p>}
+      {items.slice(0, visibles).map((f, i) => (
+        <FalloRepetible key={f.pregunta_id} f={f} index={i + 1} favoritos={favoritos} onToggleFavorito={onToggleFavorito} />
+      ))}
+      {items.length > visibles && (
+        <button type="button" onClick={() => setVisibles((v) => v + TANDA_PERFIL)} style={{ ...styles.btnSecondary, width: "100%", justifyContent: "center", marginTop: 8 }}>
+          Ver más ({items.length - visibles} restantes)
+        </button>
+      )}
+    </div>
+  );
+}
 
-      <div style={{ marginTop: 8 }}>
-        <SectionTitle
-          title="Historial de fallos"
-          subtitle={fallosConPregunta.length === 0 ? "Todavía no has fallado ninguna pregunta." : "Las que más se te atascan, primero."}
-        />
-        {fallosVisibles.map((f, i) => (
-          <FalloRepetible key={f.pregunta_id} f={f} index={i + 1} favoritos={favoritos} onToggleFavorito={onToggleFavorito} />
-        ))}
-        {fallosConPregunta.length > 10 && (
-          <button type="button" onClick={() => setVerTodosFallos((v) => !v)} style={styles.linkBtn}>
-            {verTodosFallos ? "Ver menos" : `Ver las ${fallosConPregunta.length} preguntas falladas`}
-          </button>
-        )}
+// Estadísticas: lo que antes estaba en Perfil menos las listas de repaso.
+// Arriba el total y el acierto; debajo "Dónde fallas" por examen y por tema.
+function Estadisticas({ miRacha, questions, fallos, preguntasProgreso, onPracticar }) {
+  const respondidas = (miRacha && miRacha.total_respondidas) || 0;
+  const correctas = (miRacha && miRacha.total_correctas) || 0;
+  const pct = respondidas > 0 ? Math.round((correctas / respondidas) * 100) : null;
+  const banco = questions.filter((q) => !q.inventada).length;
+  const mil = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return (
+    <div>
+      <SectionTitle title="Estadísticas" />
+      <div style={{ borderRadius: 20, padding: "28px 22px 30px", background: "#17171B", color: "#fff", marginBottom: 28 }}>
+        <span style={{ display: "block", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.17em", textTransform: "uppercase", color: "rgba(255,255,255,.6)" }}>Llevas</span>
+        <span style={{ display: "block", fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: "clamp(56px,17vw,88px)", lineHeight: 0.9, letterSpacing: "-0.045em", margin: "8px 0 6px", fontVariantNumeric: "tabular-nums" }}>
+          {mil(respondidas)}
+        </span>
+        <span style={{ display: "block", fontSize: 14, lineHeight: 1.5, color: "rgba(255,255,255,.75)" }}>
+          preguntas respondidas de las {mil(banco)} del banco{pct != null ? `, con un ${pct}% de acierto` : ""}.
+        </span>
       </div>
-
-      <div style={{ marginTop: 32 }}>
-        <PreguntasPlegables
-          titulo="Favoritas"
-          subtitulo={favoritasConPregunta.length === 0 ? "Toca la estrella en cualquier pregunta para guardarla aquí." : null}
-          items={favoritasConPregunta}
-          abiertaId={abiertaId}
-          setAbiertaId={setAbiertaId}
-          favoritos={favoritos}
-          onToggleFavorito={onToggleFavorito}
-        />
-      </div>
+      <DondeFallas questions={questions} fallos={fallos} preguntasProgreso={preguntasProgreso} onPracticar={onPracticar} />
     </div>
   );
 }
@@ -6303,7 +6280,7 @@ function FalloRepetible({ f, index, favoritos, onToggleFavorito }) {
               {etiquetaOrigen(q)} · Pregunta {index}
             </div>
             <div style={{ fontSize: 11, color: "#9B9689", marginTop: 2 }}>
-              fallada {f.veces} {f.veces === 1 ? "vez" : "veces"}
+              {f.veces != null ? `fallada ${f.veces} ${f.veces === 1 ? "vez" : "veces"}` : "Favorita"}
             </div>
           </div>
           {abierta ? <ChevronDown size={16} color="#9B9689" /> : <ChevronRight size={16} color="#9B9689" />}
@@ -6460,8 +6437,8 @@ function SectionTitle({ title, subtitle, action }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16 }}>
       <div>
-        <h2 style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "#1E1C18", margin: 0 }}>{title}</h2>
-        {subtitle && <p style={{ fontSize: 13, color: "#9B9689", margin: "4px 0 0" }}>{subtitle}</p>}
+        <h2 style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 26, lineHeight: 0.95, letterSpacing: "-0.02em", textTransform: "uppercase", color: "#0C0C0D", margin: 0 }}>{title}</h2>
+        {subtitle && <p style={{ fontSize: 13, color: "#6A6A72", margin: "6px 0 0" }}>{subtitle}</p>}
       </div>
       {action}
     </div>
@@ -6538,7 +6515,7 @@ const CLAVES_COLOR_MAZO = Object.keys(COLORES_MAZO);
 
 const SOMBRA_SUAVE = "0 1px 2px rgba(30,28,24,0.07), 0 1px 6px rgba(30,28,24,0.05)";
 const styles = {
-  app: { fontFamily: "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", background: "#EEECE4", minHeight: "100vh", color: TINTA, WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none", fontSize: 17 },
+  app: { fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", background: "#FFFFFF", minHeight: "100vh", color: TINTA, WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none", fontSize: 17 },
   center: { display: "flex", alignItems: "center", justifyContent: "center" },
   // Los cuatro lados por separado y no el atajo `padding`: mezclar el atajo
   // con un `paddingTop` suelto dispara el aviso de React sobre shorthand y
@@ -6546,11 +6523,11 @@ const styles = {
   // reloj en modo pantalla de inicio; en navegador vale 0 y manda el 18.
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", paddingTop: "max(18px, env(safe-area-inset-top))", paddingRight: 24, paddingBottom: 18, paddingLeft: 24, borderBottom: `1px solid ${RAYA}` },
   nav: { display: "flex", gap: 6, padding: "0 18px", borderBottom: `1px solid ${RAYA}`, overflowX: "auto" },
-  navBtn: { display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: "16px 14px", fontSize: 16, cursor: "pointer", whiteSpace: "nowrap" },
+  navBtn: { display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: "15px 12px 13px", fontSize: 11.5, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", whiteSpace: "nowrap" },
   navDot: { position: "absolute", top: 10, right: 6, width: 8, height: 8, borderRadius: "50%", background: ACENTO, animation: "dueloPulso 1.2s ease-in-out infinite" },
   tabsOrigen: { display: "flex", gap: 8, marginBottom: 14 },
-  tabOrigenBtn: { flex: 1, padding: "11px 14px", borderRadius: 12, border: `1.5px solid ${RAYA}`, background: "#fff", color: TINTA_SUAVE, fontSize: 14, fontWeight: 600, cursor: "pointer" },
-  tabOrigenActivo: { background: TINTA, borderColor: TINTA, color: "#fff" },
+  tabOrigenBtn: { flex: 1, padding: "11px 14px", borderRadius: 10, border: `1px solid ${RAYA}`, background: "#fff", color: TINTA_SUAVE, fontSize: 14, fontWeight: 600, cursor: "pointer" },
+  tabOrigenActivo: { background: "#0C0C0D", borderColor: "#0C0C0D", color: "#fff" },
   tabOrigenActivoIA: { background: "#8A5A9E", borderColor: "#8A5A9E", color: "#fff" },
   // `boxSizing` aquí no es cosmética: con `width: 100%` más padding y borde, y
   // sin un `border-box` global en el proyecto, cada fila sobresalía 31 px de su
@@ -6609,13 +6586,13 @@ const styles = {
   dueloAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "12px 16px", borderRadius: 14, border: "none", background: ACENTO, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", animation: "dueloPulso 1.6s ease-in-out infinite" },
   rachaAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "11px 16px", borderRadius: 14, border: `1.5px solid ${ACENTO_SUAVE}`, background: ACENTO_SUAVE, color: "#7A2E21", fontSize: 13.5, fontWeight: 600, cursor: "pointer" },
   main: { padding: "24px 22px 50px", maxWidth: 820, margin: "0 auto" },
-  card: { background: "#F6F4EC", border: `1.5px solid ${RAYA}`, borderRadius: 16, padding: 26, boxShadow: SOMBRA_SUAVE },
+  card: { background: "#FFFFFF", border: `1px solid ${RAYA}`, borderRadius: 14, padding: 22, boxShadow: "none" },
   authCard: { textAlign: "left", borderRadius: 20, border: `1.5px solid ${RAYA}`, boxShadow: "0 18px 48px rgba(30,28,24,0.10)" },
-  input: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid #D9D5C4", fontSize: 17, fontFamily: "inherit", color: TINTA, boxSizing: "border-box" },
-  select: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid #D9D5C4", fontSize: 17, fontFamily: "inherit", color: TINTA, background: "#fff" },
-  btnPrimary: { background: TINTA, color: "#fff", border: "none", borderRadius: 12, padding: "15px 22px", fontSize: 17, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" },
+  input: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid #E4E3E0", fontSize: 16, fontFamily: "inherit", color: TINTA, boxSizing: "border-box" },
+  select: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid #E4E3E0", fontSize: 16, fontFamily: "inherit", color: TINTA, background: "#fff" },
+  btnPrimary: { background: "#0C0C0D", color: "#fff", border: "none", borderRadius: 12, padding: "15px 22px", fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" },
   botonCerrarPantalla: { background: "#fff", color: TINTA, border: `1.5px solid ${RAYA_FUERTE}`, borderRadius: 999, padding: "0 16px", height: 44, fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "inherit" },
-  btnSecondary: { background: "transparent", color: TINTA, border: `1.5px solid ${TINTA}`, borderRadius: 12, padding: "12px 18px", fontSize: 16, cursor: "pointer", display: "inline-flex", alignItems: "center" },
+  btnSecondary: { background: "#fff", color: TINTA, border: `1.5px solid ${RAYA}`, borderRadius: 12, padding: "12px 18px", fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center" },
   iconBtn: { background: "none", border: "none", cursor: "pointer", padding: 6 },
   chip: { border: "1.5px solid", borderRadius: 22, padding: "9px 18px", fontSize: 16, cursor: "pointer" },
   chipEtiqueta: { border: `1.5px solid ${RAYA}`, borderRadius: 20, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, background: "#fff", color: TINTA_SUAVE, cursor: "pointer" },
