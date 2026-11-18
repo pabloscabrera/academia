@@ -22,6 +22,7 @@ import {
   mediaCalificacionPorTarjeta, estadoCuadricula,
   etiquetaOrigen, accionDeTecla,
   calificacionDeTecla, MS_PULSACION,
+  tomarPreguntas, rgbDeHex,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -29,9 +30,9 @@ const META_DIARIA_RACHA = 10;
 
 // ---- identidad visual: "cuaderno de examen" ----
 const TINTA = "#1E1C18";
-const TINTA_SUAVE = "#6E6A61";
-const TINTA_TENUE = "#9B9689";
-const RAYA = "#C9C5B7";
+const TINTA_SUAVE = "#6A6A72";
+const TINTA_TENUE = "#A2A2AB";
+const RAYA = "#E4E3E0";
 const RAYA_FUERTE = "#1E1C18";
 const ACENTO = "#A6362B";
 const ACENTO_SUAVE = "#F7E9E6";
@@ -50,15 +51,16 @@ const PORTADA_TEXTO = "#F0E9D8";
 const PORTADA_PLACEHOLDER = "#8A7F68";
 const PORTADA_BORDE = "rgba(217,169,77,.22)";
 
-const AJUSTES_DEFECTO = { escala: 1, fondo: "#EEECE4", fuente: "fraunces", fechaObjetivo: "" };
+const AJUSTES_DEFECTO = { escala: 1, fondo: "#FFFFFF", fuente: "cabinet", fechaObjetivo: "" };
 const ESCALAS = [
   { id: "pequena", label: "A", escala: 0.9, tamPreview: 13 },
   { id: "normal", label: "A", escala: 1, tamPreview: 16 },
   { id: "grande", label: "A", escala: 1.15, tamPreview: 19 },
   { id: "muygrande", label: "A", escala: 1.3, tamPreview: 22 },
 ];
-const COLORES_FONDO = ["#EEECE4", "#E7E6E1", "#F2E7CC", "#E1E6E7", "#FFFFFF", "#F4E3DF"];
+const COLORES_FONDO = ["#FFFFFF", "#F2F1EE", "#EEECE4", "#E7E6E1", "#E1E6E7", "#F4E3DF"];
 const FUENTES = [
+  { id: "cabinet", label: "Cabinet", familia: "'Cabinet Grotesk', 'Arial Black', sans-serif", italica: false },
   { id: "fraunces", label: "Fraunces", familia: "'Fraunces', Georgia, serif", italica: true },
   { id: "classic", label: "Clásica", familia: "'Source Serif 4', Georgia, serif", italica: true },
   { id: "sans", label: "Solo sans", familia: "'IBM Plex Sans', -apple-system, sans-serif", italica: false },
@@ -297,7 +299,16 @@ export default function AcademiaPIR() {
   const [ajustes, setAjustes] = useState(() => {
     try {
       const raw = localStorage.getItem("pir-ajustes");
-      return raw ? { ...AJUSTES_DEFECTO, ...JSON.parse(raw) } : AJUSTES_DEFECTO;
+      if (!raw) return AJUSTES_DEFECTO;
+      const a = { ...AJUSTES_DEFECTO, ...JSON.parse(raw) };
+      // Rediseño: quien tenía los valores por defecto antiguos pasa a los
+      // nuevos UNA vez; lo que alguien eligió a propósito se respeta.
+      if (!a.rediseno) {
+        if (a.fuente === "fraunces") a.fuente = "cabinet";
+        if (a.fondo === "#EEECE4") a.fondo = "#FFFFFF";
+        a.rediseno = true;
+      }
+      return a;
     } catch {
       return AJUSTES_DEFECTO;
     }
@@ -1223,6 +1234,15 @@ export default function AcademiaPIR() {
               onEstiloMazo={guardarEstiloMazo}
             />
           )}
+          {section === "estadisticas" && (
+            <Estadisticas
+              miRacha={rachas.find((r) => r.name === user.name)}
+              questions={questions}
+              fallos={fallos}
+              preguntasProgreso={preguntasProgreso}
+              onPracticar={(filtro) => { setFiltroPedido(filtro); setSection("simulacros"); }}
+            />
+          )}
           {section === "perfil" && (
             <MiPerfil
               user={user}
@@ -1383,116 +1403,57 @@ function AuthScreen({ onLogin, onSignup }) {
     }
   };
 
-  const tabPortada = { flex: 1, padding: "15px 16px", borderRadius: 14, border: `1.5px solid ${PORTADA_BORDE}`, background: "#241D13", color: "#B8AB8C", fontSize: 16, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" };
-  const tabPortadaActivo = { background: PORTADA_DORADO, border: `1.5px solid ${PORTADA_DORADO}`, color: PORTADA_TARJETA };
-  const inputPortada = { ...styles.input, background: "#241D13", border: `1.5px solid ${PORTADA_BORDE}`, color: PORTADA_TEXTO, padding: "14px 20px", fontSize: 17, borderRadius: 14 };
-  const btnPortada = { ...styles.btnPrimary, position: "relative", zIndex: 1, width: "100%", margin: 0, borderRadius: 12.5, padding: "15px 24px", fontSize: 17, background: PORTADA_DORADO, color: PORTADA_TARJETA, justifyContent: "center" };
+  // Portada del rediseño: la foto de la psicóloga a sangre (prototipo
+  // "Portadas con foto", B), el nombre arriba, el titular en versales y el
+  // formulario de siempre debajo. Solo cambia el aspecto: entrar, crear cuenta
+  // y el código de invitación funcionan igual.
+  const D = "'Cabinet Grotesk', 'Arial Black', sans-serif";
+  const inputPortada = { ...styles.input, background: "rgba(255,255,255,0.96)", border: "1.5px solid rgba(255,255,255,0.0)", color: "#17171B", padding: "14px 16px", fontSize: 16, borderRadius: 12 };
+  const tabPortada = (activo) => ({ background: "none", border: "none", cursor: "pointer", padding: "4px 2px 10px", fontFamily: "inherit", fontWeight: 600, fontSize: 14, color: activo ? "#fff" : "rgba(255,255,255,0.6)", boxShadow: activo ? "inset 0 -1.5px 0 #fff" : "none" });
+  const btnPortada = { width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff", color: "#0C0C0D", border: "none", borderRadius: 12, padding: "16px 18px", fontWeight: 600, fontSize: 15, cursor: "pointer", fontFamily: "inherit" };
 
   return (
-    <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "100dvh", position: "relative", overflow: "hidden", padding: "32px 0", boxSizing: "border-box" }}>
-      <FondoPortada />
-      <style>{`
-        .portada-input::placeholder { color: ${PORTADA_PLACEHOLDER}; }
-        /* Un destello que cruza el botón cada pocos segundos, en vez del aro
-           de luz que daba vueltas sin parar: dura poco más de un segundo y
-           el resto del tiempo no hay nada moviéndose. Va por encima del
-           botón (z-index 2), no detrás, para que se vea sobre el dorado. */
-        @keyframes portadaDestello {
-          0%, 62% { transform: translateX(-170%) skewX(-16deg); opacity: 0; }
-          67% { opacity: 1; }
-          86% { transform: translateX(320%) skewX(-16deg); opacity: 0; }
-          100% { transform: translateX(320%) skewX(-16deg); opacity: 0; }
-        }
-        .portada-btn-destello {
-          position: absolute; top: 0; bottom: 0; left: 0; width: 38%;
-          z-index: 2; pointer-events: none; border-radius: 12.5px;
-          background: linear-gradient(100deg, transparent 0%, rgba(255,248,226,.92) 50%, transparent 100%);
-          animation: portadaDestello 4.5s ease-in-out infinite;
-        }
-        @media (prefers-reduced-motion: reduce) { .portada-btn-destello { animation: none; opacity: 0; } }
-      `}</style>
-      <div style={{ maxWidth: 480, width: "100%", padding: "0 24px", textAlign: "center", position: "relative", zIndex: 1 }}>
-        <div style={{ marginBottom: 34 }}>
-          <WordmarkPortada texto="AUTOPIR" />
-        </div>
-        <div style={{ ...styles.tabsOrigen, marginBottom: 18 }}>
-          <button type="button" onClick={() => cambiarModo("login")} style={{ ...tabPortada, ...(modo === "login" ? tabPortadaActivo : {}) }}>Iniciar sesión</button>
-          <button type="button" onClick={() => cambiarModo("signup")} style={{ ...tabPortada, ...(modo === "signup" ? tabPortadaActivo : {}) }}>Crear cuenta</button>
+    <div style={{ minHeight: "100dvh", position: "relative", overflow: "hidden", background: "#111", fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", color: "#fff" }}>
+      <img src="/img/portada.jpg" alt="" aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "45% 40%" }} />
+      <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(10,10,12,.55) 0%, rgba(10,10,12,.12) 30%, rgba(10,10,12,.55) 60%, rgba(10,10,12,.88) 100%)" }} />
+      <div style={{ position: "relative", zIndex: 1, minHeight: "100dvh", maxWidth: 480, margin: "0 auto", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "max(18px, env(safe-area-inset-top)) 22px max(26px, env(safe-area-inset-bottom))" }}>
+        <span style={{ fontFamily: D, fontWeight: 800, fontSize: 12, letterSpacing: "0.17em", textTransform: "uppercase" }}>Autopir</span>
+        <h1 style={{ fontFamily: D, fontWeight: 800, fontSize: "clamp(40px,12vw,58px)", lineHeight: 0.86, letterSpacing: "-0.03em", textTransform: "uppercase", margin: "40px 0 0" }}>
+          {modo === "login" ? <>Bienvenido<br />de nuevo</> : <>Crea tu<br />cuenta</>}
+        </h1>
+        <div style={{ flex: 1, minHeight: 40 }} />
+        <div style={{ display: "flex", gap: 20, marginBottom: 16 }}>
+          <button type="button" onClick={() => cambiarModo("login")} style={tabPortada(modo === "login")}>Iniciar sesión</button>
+          <button type="button" onClick={() => cambiarModo("signup")} style={tabPortada(modo === "signup")}>Crear cuenta</button>
         </div>
         {cuentaCreada ? (
-          <Card style={{ ...styles.authCard, background: PORTADA_TARJETA, border: `1.5px solid ${PORTADA_BORDE}`, padding: 34 }}>
-            <p style={{ fontSize: 16, color: PORTADA_TEXTO, lineHeight: 1.5, margin: 0 }}>
+          <div>
+            <p style={{ fontSize: 15, lineHeight: 1.5, margin: "0 0 16px", color: "rgba(255,255,255,0.88)" }}>
               Cuenta creada. Ya puedes entrar con tu usuario y contraseña.
             </p>
-            <div style={{ position: "relative", borderRadius: 14, padding: 1.5, overflow: "hidden", marginTop: 18, background: "#4a3a1c" }}>
-              <button
-                type="button"
-                onClick={() => { setPassword(""); setPassword2(""); cambiarModo("login"); }}
-                style={btnPortada}
-              >
-                Ir a entrar
-              </button>
-              <span className="portada-btn-destello" />
-            </div>
-          </Card>
+            <button type="button" onClick={() => { setPassword(""); setPassword2(""); cambiarModo("login"); }} style={btnPortada}>
+              <span>Ir a entrar</span><span aria-hidden="true">→</span>
+            </button>
+          </div>
         ) : (
-          <Card style={{ ...styles.authCard, background: PORTADA_TARJETA, border: `1.5px solid ${PORTADA_BORDE}`, padding: 34 }}>
-            <input
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              placeholder="Nombre de usuario"
-              className="portada-input"
-              style={{ ...inputPortada, marginBottom: 14 }}
-              autoCapitalize="none"
-              autoCorrect="off"
-              autoFocus
-            />
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              placeholder="Contraseña"
-              type="password"
-              className="portada-input"
-              style={{ ...inputPortada, marginBottom: modo === "signup" ? 14 : 0 }}
-            />
+          <div>
+            <input value={username} onChange={(e) => setUsername(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Nombre de usuario" style={{ ...inputPortada, marginBottom: 10 }} autoCapitalize="none" autoCorrect="off" autoFocus />
+            <input value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Contraseña" type="password" style={{ ...inputPortada, marginBottom: 10 }} />
             {modo === "signup" && (
               <>
-                <input
-                  value={password2}
-                  onChange={(e) => setPassword2(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && submit()}
-                  placeholder="Repite la contraseña"
-                  type="password"
-                  className="portada-input"
-                  style={{ ...inputPortada, marginBottom: 14 }}
-                />
-                <input
-                  value={codigo}
-                  onChange={(e) => setCodigo(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && submit()}
-                  placeholder="Código de invitación"
-                  className="portada-input"
-                  style={inputPortada}
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                />
-                <p style={{ fontSize: 13, color: PORTADA_PLACEHOLDER, margin: "10px 2px 0", lineHeight: 1.45 }}>
-                  {codigoDelEnlace()
-                    ? "Código cogido del enlace de invitación."
-                    : "Sin código no se puede crear la cuenta. Pídeselo a Pablo."}
+                <input value={password2} onChange={(e) => setPassword2(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Repite la contraseña" type="password" style={{ ...inputPortada, marginBottom: 10 }} />
+                <input value={codigo} onChange={(e) => setCodigo(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Código de invitación" style={{ ...inputPortada, marginBottom: 6 }} autoCapitalize="none" autoCorrect="off" />
+                <p style={{ fontSize: 12.5, color: "rgba(255,255,255,0.75)", margin: "4px 2px 6px", lineHeight: 1.45 }}>
+                  {codigoDelEnlace() ? "Código cogido del enlace de invitación." : "Sin código no se puede crear la cuenta. Pídeselo a Pablo."}
                 </p>
               </>
             )}
-            {error && <p style={{ color: ACENTO, fontSize: 14, marginTop: 12 }}>{error}</p>}
-            <div style={{ position: "relative", borderRadius: 14, padding: 1.5, overflow: "hidden", marginTop: 18, background: "#4a3a1c" }}>
-              <button type="button" onClick={submit} disabled={cargando} style={{ ...btnPortada, opacity: cargando ? 0.6 : 1 }}>
-                {cargando ? <Loader2 className="animate-spin" size={18} /> : modo === "login" ? "Entrar" : "Crear cuenta"}
-              </button>
-              <span className="portada-btn-destello" />
-            </div>
-          </Card>
+            {error && <p style={{ color: "#FFB4A8", fontSize: 14, margin: "4px 2px 8px", fontWeight: 600 }}>{error}</p>}
+            <button type="button" onClick={submit} disabled={cargando} style={{ ...btnPortada, marginTop: 6, opacity: cargando ? 0.7 : 1 }}>
+              <span>{cargando ? "Un momento…" : modo === "login" ? "Entrar" : "Crear cuenta"}</span>
+              {cargando ? <Loader2 className="animate-spin" size={18} /> : <span aria-hidden="true">→</span>}
+            </button>
+          </div>
         )}
       </div>
     </div>
@@ -1881,24 +1842,23 @@ function Header({
 
 function Nav({ section, setSection, alerta }) {
   const items = [
-    { id: "simulacros", label: "Autoevaluaciones", icon: Clock },
-    { id: "duelo", label: "Duelo 1v1", icon: Zap },
-    { id: "flashcards", label: "Flashcards", icon: Layers },
-    { id: "perfil", label: "Mi perfil", icon: User },
+    { id: "simulacros", label: "Exámenes" },
+    { id: "flashcards", label: "Flashcards" },
+    { id: "duelo", label: "Duelo" },
+    { id: "estadisticas", label: "Estadísticas" },
+    { id: "perfil", label: "Perfil" },
   ];
   return (
     <nav style={styles.nav} className="nav-app">
       {items.map((it) => {
-        const Icon = it.icon;
         const active = section === it.id;
         return (
           <button
             type="button"
             key={it.id}
             onClick={() => setSection(it.id)}
-            style={{ ...styles.navBtn, color: active ? "#1E1C18" : "#9B9689", borderBottom: active ? `2px solid ${ACENTO}` : "2px solid transparent", position: "relative" }}
+            style={{ ...styles.navBtn, color: active ? "#17171B" : "#A2A2AB", borderBottom: active ? "1.5px solid #0C0C0D" : "1.5px solid transparent", position: "relative" }}
           >
-            <Icon size={15} />
             <span>{it.label}</span>
             {it.id === "duelo" && alerta && (
               <span style={styles.navDot} />
@@ -1910,13 +1870,221 @@ function Nav({ section, setSection, alerta }) {
   );
 }
 
+// Elegir examen, en el diseño nuevo (prototipo "Exámenes"). Solo pinta: qué
+// preguntas salen lo deciden Simulacros y tomarPreguntas, en logica.js.
+// Tipografía propia (Cabinet / Switzer, autoalojadas en /fonts) y foto de fondo
+// en /img: son del rediseño y no tocan el resto de la app todavía.
+const ESTILO_EXAMENES = {
+  display: "'Cabinet Grotesk','Arial Black',sans-serif",
+  texto: "'Switzer','Helvetica Neue',Arial,sans-serif",
+  negro: "#0C0C0D",
+  tinta: "#17171B",
+  humo: "#6A6A72",
+  niebla: "#A2A2AB",
+  linea: "#E4E3E0",
+  mal: "#9E2B20",
+  malSuave: "#FBEFED",
+  bien: "#1B6B4F",
+  bienSuave: "#ECF5F1",
+  bloque: "#F7F6F3",
+};
+
+function SelectorExamenes({
+  origenes, origen, onOrigen,
+  cursos, cursosSel, onCursosSel, conteos,
+  tema, temas, onTema,
+  incluirInventadas, onIncluirInventadas,
+  numPreguntas, onNumPreguntas, disponibles,
+  onEmpezar, onRelampago, relampagoDisponible,
+}) {
+  const E = ESTILO_EXAMENES;
+  const cantidadActual = typeof numPreguntas === "number" ? numPreguntas : 1;
+  const alternar = (c) =>
+    onCursosSel(cursosSel.includes(c) ? cursosSel.filter((x) => x !== c) : [...cursosSel, c]);
+  const paso = (d) => {
+    if (disponibles === 0) return;
+    onNumPreguntas(Math.min(Math.max(1, Math.min(cantidadActual, disponibles) + d * 5), disponibles));
+  };
+  const etiquetaSeleccion = cursosSel.length === 0
+    ? "Todos los exámenes"
+    : cursosSel.length === 1 ? "1 examen" : `${cursosSel.length} exámenes`;
+  const botonPaso = {
+    flex: "none", width: 44, height: 44, borderRadius: "50%", border: `1px solid ${E.linea}`,
+    background: "#fff", color: E.tinta, fontSize: 22, lineHeight: 1, cursor: "pointer",
+  };
+
+  return (
+    <div style={{ fontFamily: E.texto, color: E.tinta }}>
+      <h2 style={{
+        fontFamily: E.display, fontWeight: 800, fontSize: "clamp(32px,9.4vw,42px)", lineHeight: 0.9,
+        letterSpacing: "-0.03em", textTransform: "uppercase", margin: "10px 0 14px", color: E.negro,
+      }}>
+        Elige<br />examen
+      </h2>
+
+      <div style={{ display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
+        {origenes.map((o) => {
+          const on = origen === o.id;
+          return (
+            <button
+              key={o.id}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onOrigen(o.id)}
+              style={{
+                background: "none", border: "none", padding: "4px 2px 9px", cursor: "pointer",
+                fontWeight: 600, fontSize: 13, letterSpacing: "-0.01em",
+                color: on ? E.tinta : E.niebla,
+                boxShadow: on ? `inset 0 -1.5px 0 ${E.negro}` : "none",
+              }}
+            >
+              {o.texto}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{
+        display: "flex", flexDirection: "column", gap: 6, padding: 10, borderRadius: 14,
+        backgroundColor: "#6B6257", backgroundImage: "url(/img/examenes-fondo.jpg)",
+        backgroundSize: "cover", backgroundPosition: "center",
+      }}>
+        {cursos.map((c) => {
+          const n = conteos[c] || 0;
+          const vacio = n === 0;
+          const sel = cursosSel.includes(c);
+          return (
+            <button
+              key={c}
+              type="button"
+              disabled={vacio}
+              aria-pressed={sel}
+              onClick={() => alternar(c)}
+              style={{
+                display: "flex", alignItems: "baseline", gap: 12, width: "100%",
+                padding: "15px 14px", borderRadius: 12, border: "none", textAlign: "left",
+                cursor: vacio ? "default" : "pointer",
+                background: sel ? "rgba(12,12,13,0.8)" : vacio ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.85)",
+                color: sel ? "#fff" : vacio ? E.humo : E.tinta,
+                backdropFilter: "blur(9px)", WebkitBackdropFilter: "blur(9px)",
+              }}
+            >
+              <span style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 15, letterSpacing: "-0.01em" }}>{c}</span>
+              <span style={{
+                fontFamily: E.display, fontWeight: 800, fontSize: 17, letterSpacing: "-0.03em",
+                fontVariantNumeric: "tabular-nums", minWidth: 44, textAlign: "right",
+                color: vacio && !sel ? E.niebla : undefined,
+              }}>
+                {n}
+              </span>
+            </button>
+          );
+        })}
+
+        <button
+          type="button"
+          disabled={!relampagoDisponible}
+          onClick={onRelampago}
+          style={{
+            display: "flex", alignItems: "center", gap: 12, width: "100%", marginTop: 4,
+            padding: "16px 14px", borderRadius: 12, border: "none", textAlign: "left",
+            background: "rgba(255,255,255,0.85)", color: E.tinta,
+            backdropFilter: "blur(9px)", WebkitBackdropFilter: "blur(9px)",
+            cursor: relampagoDisponible ? "pointer" : "default",
+          }}
+        >
+          <span style={{
+            flex: 1, fontFamily: E.display, fontWeight: 800, fontSize: 16,
+            textTransform: "uppercase", letterSpacing: "-0.01em",
+          }}>
+            Modo relámpago
+          </span>
+          <Zap size={16} />
+        </button>
+      </div>
+      <p style={{ fontSize: 12.5, color: E.humo, margin: "8px 2px 0", lineHeight: 1.5 }}>
+        Relámpago sale de todas las preguntas de exámenes y termina en cuanto fallas una.
+      </p>
+
+      <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${E.linea}`, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", fontSize: 13, color: E.humo }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            Tema
+            <select
+              value={tema}
+              onChange={(e) => onTema(e.target.value)}
+              style={{ fontFamily: E.texto, fontSize: 13, color: E.tinta, padding: "6px 8px", borderRadius: 8, border: `1px solid ${E.linea}`, background: "#fff" }}
+            >
+              {temas.map((t) => (<option key={t} value={t}>{t}</option>))}
+            </select>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+            <input type="checkbox" checked={incluirInventadas} onChange={(e) => onIncluirInventadas(e.target.checked)} />
+            Incluir preguntas inventadas por IA
+          </label>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button type="button" aria-label="Quitar preguntas" onClick={() => paso(-1)} disabled={disponibles === 0 || cantidadActual <= 1} style={botonPaso}>−</button>
+          <input
+            type="number"
+            min={1}
+            max={disponibles}
+            aria-label="Cuántas preguntas"
+            value={typeof numPreguntas === "number" ? Math.min(numPreguntas, disponibles) : numPreguntas}
+            onChange={(e) => {
+              const v = parseInt(e.target.value, 10);
+              onNumPreguntas(Number.isNaN(v) ? "" : v);
+            }}
+            onBlur={() => onNumPreguntas((v) => Math.max(1, Math.min(v || 1, disponibles)))}
+            style={{
+              width: "3ch", fontFamily: E.display, fontWeight: 800, fontSize: 40, lineHeight: 1,
+              letterSpacing: "-0.035em", color: E.tinta, background: "none", border: "none",
+              borderRadius: 0, padding: "0 2px 3px", textAlign: "center",
+              boxShadow: `inset 0 -2px 0 ${E.linea}`, fontVariantNumeric: "tabular-nums",
+            }}
+          />
+          <button type="button" aria-label="Añadir preguntas" onClick={() => paso(1)} disabled={disponibles === 0 || cantidadActual >= disponibles} style={botonPaso}>+</button>
+          <div style={{ marginLeft: "auto", textAlign: "right", minWidth: 0, paddingLeft: 8 }}>
+            <div style={{ fontFamily: E.display, fontWeight: 800, fontSize: 12.5, textTransform: "uppercase", letterSpacing: "-0.01em" }}>
+              {disponibles} disponibles
+            </div>
+            <div style={{ fontSize: 11.5, color: E.humo, marginTop: 3 }}>{etiquetaSeleccion}</div>
+          </div>
+        </div>
+
+        {disponibles === 0 && (
+          <p style={{ fontSize: 13, color: E.mal, margin: 0, lineHeight: 1.5 }}>
+            No queda ninguna pregunta con esos filtros. Prueba con otro examen o tema, o vuelve a "Todas".
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={onEmpezar}
+          disabled={disponibles === 0}
+          style={{
+            width: "100%", background: E.negro, color: "#fff", padding: "17px 18px", borderRadius: 12,
+            border: "none", fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center",
+            justifyContent: "space-between", cursor: disponibles === 0 ? "default" : "pointer",
+            opacity: disponibles === 0 ? 0.5 : 1,
+          }}
+        >
+          <span>Empezar</span>
+          <span aria-hidden="true">→</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo, onRespuestaPregunta, favoritos, onToggleFavorito, miRacha, preguntasProgreso, fallos, filtroPedido, onFiltroAplicado }) {
   const [incluirInventadas, setIncluirInventadas] = useState(false);
   const base = useMemo(() => (incluirInventadas ? questions : questions.filter((q) => !q.inventada)), [questions, incluirInventadas]);
   // El DSM-5-TR sale aquí como un examen más, pero relámpago (más abajo)
   // sigue filtrando con esExamen, que solo acepta ediciones del PIR.
   const cursos = useMemo(() => cursosDelDesplegable(base), [base]);
-  const [curso, setCurso] = useState("Todos");
+  // Exámenes elegidos. Vacía significa "todos". Antes era un único curso.
+  const [cursosSel, setCursosSel] = useState([]);
 
   // De dónde salen las preguntas. Hasta ahora solo se podía tirar al azar de
   // un examen, así que saber por "Dónde fallas" que vas flojo en un tema no
@@ -1941,10 +2109,20 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
   // combinación se queda sin preguntas, el contador lo canta y el botón se
   // desactiva, en vez de empezar una tirada vacía.
   const filtradas = useMemo(
-    () => filtrarPreguntas(base, { curso, tema, origen }, intentadaPorId, falladaPorId),
-    [base, curso, tema, origen, intentadaPorId, falladaPorId]
+    () => filtrarPreguntas(base, { cursos: cursosSel, tema, origen }, intentadaPorId, falladaPorId),
+    [base, cursosSel, tema, origen, intentadaPorId, falladaPorId]
   );
   const disponibles = filtradas.length;
+  // Cuántas quedan por examen con el origen y el tema elegidos: lo que se ve
+  // en cada fila de la lista.
+  const examenesLista = useMemo(() => cursos.filter((c) => c !== "Todos"), [cursos]);
+  const conteosPorExamen = useMemo(() => {
+    const m = {};
+    examenesLista.forEach((c) => {
+      m[c] = filtrarPreguntas(base, { curso: c, tema, origen }, intentadaPorId, falladaPorId).length;
+    });
+    return m;
+  }, [examenesLista, base, tema, origen, intentadaPorId, falladaPorId]);
 
   const [numPreguntas, setNumPreguntas] = useState(10);
   const [state, setState] = useState("config");
@@ -1986,17 +2164,15 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
   useEffect(() => {
     if (!filtroPedido || state !== "config") return;
     const aplicado = aplicarFiltroPedido(filtroPedido, { cursos, temas });
-    setCurso(aplicado.curso);
+    setCursosSel(aplicado.curso && aplicado.curso !== "Todos" ? [aplicado.curso] : []);
     setTema(aplicado.tema);
     setOrigen(aplicado.origen);
     if (onFiltroAplicado) onFiltroAplicado();
   }, [filtroPedido, state, cursos, temas]);
 
-  // Si al cambiar de filtro quedan menos preguntas de las pedidas, se ajusta
-  // sola en vez de esperar a que el usuario vuelva al campo.
-  useEffect(() => {
-    setNumPreguntas((v) => (typeof v === "number" && v > disponibles ? Math.max(1, disponibles) : v));
-  }, [disponibles]);
+  // La cantidad pedida NO se recorta al cambiar de filtro: si se recortara, al
+  // añadir otro examen el tope volvería a subir y la cantidad se quedaría en el
+  // recorte. Quien la usa (el campo y el arranque) siempre aplica el tope real.
 
   // Lo guardado al abrir la pestaña. Se lee una sola vez: mientras haya una
   // tirada en marcha, la fuente de verdad es el estado de React.
@@ -2059,8 +2235,8 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
   const start = () => {
     if (filtradas.length === 0) return;
     const cantidad = Math.max(1, Math.min(numPreguntas || 1, filtradas.length));
-    const shuffled = [...filtradas].sort(() => Math.random() - 0.5).slice(0, cantidad);
-    setPool(shuffled); setPoolOriginal(shuffled);
+    const elegidas = tomarPreguntas(filtradas, cursosSel, cantidad);
+    setPool(elegidas); setPoolOriginal(elegidas);
     setIdx(0); setAnswers([]); setSelected(null); setRevealed(false); setSeconds(0);
     setRonda(1); setResultados({}); setPrimerIntento(null); setPreguntaAbierta(null);
     setRelampago(false); setRachaViva(0);
@@ -2127,8 +2303,11 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
       return;
     }
 
+    // Se guarda el PRIMER intento de cada pregunta: la repetición de las
+    // falladas no lo pisa. Así la pantalla de resultados sigue marcando el
+    // error aunque luego se acierte (lo pidió así, y es lo que enseña la nota).
     const nuevosResultados = { ...resultados };
-    nextAnswers.forEach((a) => { nuevosResultados[a.qId] = a; });
+    nextAnswers.forEach((a) => { if (!nuevosResultados[a.qId]) nuevosResultados[a.qId] = a; });
     setResultados(nuevosResultados);
 
     if (ronda === 1) {
@@ -2212,78 +2391,30 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
             </div>
           </Card>
         )}
-        <Card>
-          <FieldLabel>Qué preguntas</FieldLabel>
-          <div style={styles.tabsOrigen}>
-            {[
-              { id: "todas", texto: "Todas" },
-              { id: "nohechas", texto: "No realizadas" },
-              { id: "fallos", texto: "Falladas" },
-            ].map((o) => (
-              <button
-                key={o.id}
-                type="button"
-                onClick={() => setOrigen(o.id)}
-                style={{ ...styles.tabOrigenBtn, ...(origen === o.id ? styles.tabOrigenActivo : {}) }}
-              >
-                {o.texto}
-              </button>
-            ))}
-          </div>
-          <p style={{ fontSize: 12.5, color: TINTA_TENUE, margin: "0 0 16px", lineHeight: 1.5 }}>
-            {origen === "nohechas"
-              ? "Solo las que no has contestado todavía. Lo que has fallado va en \u201cFalladas\u201d."
-              : origen === "fallos"
-              ? "Solo las que has fallado alguna vez, las hayas acertado después o no."
-              : "Todo el banco del examen y el tema que elijas debajo."}
-          </p>
-          <FieldLabel>Examen</FieldLabel>
-          <select value={curso} onChange={(e) => setCurso(e.target.value)} style={styles.select}>
-            {cursos.map((c) => (<option key={c} value={c}>{c}</option>))}
-          </select>
-          <FieldLabel style={{ marginTop: 16 }}>Tema</FieldLabel>
-          <select value={tema} onChange={(e) => setTema(e.target.value)} style={styles.select}>
-            {temas.map((t) => (<option key={t} value={t}>{t}</option>))}
-          </select>
-          <FieldLabel style={{ marginTop: 16 }}>Cantidad de preguntas (disponibles: {disponibles})</FieldLabel>
-          <input
-            type="number"
-            min={1}
-            max={disponibles}
-            value={numPreguntas}
-            onChange={(e) => {
-              const v = parseInt(e.target.value, 10);
-              setNumPreguntas(Number.isNaN(v) ? "" : v);
-            }}
-            onBlur={() => setNumPreguntas((v) => Math.max(1, Math.min(v || 1, disponibles)))}
-            style={styles.input}
-          />
-          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16, fontSize: 13, color: "#6E6A61", cursor: "pointer" }}>
-            <input type="checkbox" checked={incluirInventadas} onChange={(e) => setIncluirInventadas(e.target.checked)} />
-            Incluir preguntas inventadas por IA
-          </label>
-          {disponibles === 0 && (
-            <p style={{ fontSize: 13, color: ACENTO, margin: "16px 0 0", lineHeight: 1.5 }}>
-              No queda ninguna pregunta con esos filtros. Prueba con otro examen o tema, o vuelve a "Todas".
-            </p>
-          )}
-          <button
-            type="button"
-            onClick={start}
-            disabled={disponibles === 0}
-            style={{ ...styles.btnPrimary, width: "100%", marginTop: 22, opacity: disponibles === 0 ? 0.5 : 1 }}
-          >
-            Empezar autoevaluación
-          </button>
-          <button
-            type="button"
-            onClick={startRelampago}
-            disabled={questions.filter((q) => !q.inventada && esExamen(q.curso)).length === 0}
-            style={{ ...styles.btnSecondary, width: "100%", marginTop: 10, justifyContent: "center", borderColor: "#C89B3C", color: "#9C7A2C" }}
-          >
-            <Zap size={14} style={{ marginRight: 6 }} /> Modo relámpago (preguntas de todos los exámenes, hasta que falles)
-          </button>
-        </Card>
+        <SelectorExamenes
+          origenes={[
+            { id: "todas", texto: "Todas" },
+            { id: "nohechas", texto: "No realizadas" },
+            { id: "fallos", texto: "Falladas" },
+          ]}
+          origen={origen}
+          onOrigen={setOrigen}
+          cursos={examenesLista}
+          cursosSel={cursosSel}
+          onCursosSel={setCursosSel}
+          conteos={conteosPorExamen}
+          tema={tema}
+          temas={temas}
+          onTema={setTema}
+          incluirInventadas={incluirInventadas}
+          onIncluirInventadas={setIncluirInventadas}
+          numPreguntas={numPreguntas}
+          onNumPreguntas={setNumPreguntas}
+          disponibles={disponibles}
+          onEmpezar={start}
+          onRelampago={startRelampago}
+          relampagoDisponible={questions.filter((q) => !q.inventada && esExamen(q.curso)).length > 0}
+        />
       </div>
     );
   }
@@ -2293,12 +2424,13 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
     const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
     const ss = String(seconds % 60).padStart(2, "0");
     const esCorrecta = selected === q.correcta;
+    const E = ESTILO_EXAMENES;
     // La que tienes revelada delante todavía no está en `answers` (entra al
     // pulsar "Siguiente"), así que se le pasa aparte: si no, el marcador iría
     // siempre una pregunta por detrás de lo que acabas de ver en pantalla.
     const marcador = marcadorTirada(answers, ronda, primerIntento, revealed ? esCorrecta : null);
     return (
-      <div>
+      <div style={{ background: "#fff", borderRadius: 15, overflow: "hidden", border: `1px solid ${E.linea}` }}>
         <style>{`
           @keyframes acertarPulso {
             0% { box-shadow: 0 0 0 0 rgba(76,175,80,0.55); }
@@ -2307,7 +2439,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
           }
           .acierto-anim { animation: acertarPulso 0.6s ease-out; }
         `}</style>
-        <div style={styles.runHeader}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 18px", borderBottom: `1px solid ${E.linea}`, fontFamily: E.texto }}>
           <span style={{ fontSize: 13, color: relampago ? "#9C7A2C" : "#6E6A61", fontWeight: relampago ? 700 : 400, display: "flex", alignItems: "center", gap: 4 }}>
             {relampago && <Zap size={13} color="#C89B3C" />}
             {relampago ? "Modo relámpago · " : (ronda > 1 ? `Repaso de falladas (ronda ${ronda}) · ` : "")}Pregunta {idx + 1} de {pool.length}
@@ -2330,53 +2462,94 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
             {!relampago && (
               <span style={{ display: "flex", alignItems: "center", gap: 7 }} title={`${marcador.aciertos} acertadas · ${marcador.fallos} falladas${ronda > 1 ? " (de la primera vuelta)" : ""}`}>
                 <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                  <Check size={13} color={marcador.aciertos > 0 ? CORRECTO : RAYA} strokeWidth={3} />
-                  <span style={{ color: marcador.aciertos > 0 ? TINTA : TINTA_TENUE, fontWeight: 600 }}>{marcador.aciertos}</span>
+                  <Check size={13} color={marcador.aciertos > 0 ? E.bien : RAYA} strokeWidth={3} />
+                  <span style={{ color: marcador.aciertos > 0 ? E.tinta : E.niebla, fontWeight: 600 }}>{marcador.aciertos}</span>
                 </span>
                 <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                  <X size={13} color={marcador.fallos > 0 ? ACENTO : RAYA} strokeWidth={3} />
-                  <span style={{ color: marcador.fallos > 0 ? TINTA : TINTA_TENUE, fontWeight: 600 }}>{marcador.fallos}</span>
+                  <X size={13} color={marcador.fallos > 0 ? E.mal : RAYA} strokeWidth={3} />
+                  <span style={{ color: marcador.fallos > 0 ? E.tinta : E.niebla, fontWeight: 600 }}>{marcador.fallos}</span>
                 </span>
               </span>
             )}
             <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Clock size={13} /> {mm}:{ss}</span>
           </span>
         </div>
-        <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${(idx / pool.length) * 100}%` }} /></div>
-        <Card style={{ marginTop: 16, ...styles.daypoCard }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div style={{ fontSize: 11, color: TINTA_SUAVE, fontFamily: "Arial, Helvetica, sans-serif" }}>{etiquetaOrigen(q)}</div>
+        <div style={{ height: 2, background: E.linea }}><div style={{ height: 2, background: E.negro, width: `${(idx / pool.length) * 100}%`, transition: "width .3s" }} /></div>
+        <div style={{ padding: "18px 18px 18px", fontFamily: E.texto, color: E.tinta }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <span style={{ fontWeight: 500, fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: E.niebla }}>{etiquetaOrigen(q)}</span>
             {onToggleFavorito && <FavoritoBtn pregunta={q} favoritos={favoritos} onToggle={onToggleFavorito} />}
           </div>
-          <p style={styles.daypoPregunta}>{q.pregunta}</p>
-          {q.opciones.map((op, i) => {
-            const letra = String.fromCharCode(65 + i);
-            let estilo = { ...styles.daypoOpcion };
-            let claseExtra = "";
-            if (revealed) {
-              if (i === q.correcta) { estilo = { ...estilo, ...styles.daypoOpcionCorrecta }; claseExtra = "acierto-anim"; }
-              else if (i === selected) estilo = { ...estilo, ...styles.daypoOpcionIncorrecta };
-            }
-            return (
-              <button type="button" key={`${ronda}-${q.id}-${i}`} className={claseExtra} onClick={(e) => elegir(i, e)} disabled={revealed} style={estilo}>
-                <span style={styles.daypoLetra}>{letra}</span>
-                <span style={{ flex: 1 }}>{op}</span>
-                {revealed && i === q.correcta && <Check size={18} color={CORRECTO} />}
-                {revealed && i === selected && i !== q.correcta && <X size={18} color="#A6362B" />}
-              </button>
-            );
-          })}
+          <p style={{ marginTop: 10, fontSize: 17.5, lineHeight: 1.42, letterSpacing: "-0.005em", whiteSpace: "pre-line" }}>{q.pregunta}</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 18 }}>
+            {q.opciones.map((op, i) => {
+              const letra = String.fromCharCode(65 + i);
+              const esLaCorrecta = i === q.correcta;
+              const esLaElegida = revealed && i === selected && !esLaCorrecta;
+              let tono = { border: `1.5px solid ${E.linea}`, background: "#fff" };
+              let letraTono = { border: `1.5px solid ${E.linea}`, background: "transparent", color: E.humo };
+              if (revealed && esLaCorrecta) {
+                tono = { border: `1.5px solid ${E.bien}`, background: E.bienSuave };
+                letraTono = { border: `1.5px solid ${E.bien}`, background: E.bien, color: "#fff" };
+              } else if (esLaElegida) {
+                tono = { border: `1.5px solid ${E.mal}`, background: E.malSuave };
+                letraTono = { border: `1.5px solid ${E.mal}`, background: E.mal, color: "#fff" };
+              }
+              return (
+                <button
+                  type="button"
+                  key={`${ronda}-${q.id}-${i}`}
+                  className={revealed && esLaCorrecta ? "acierto-anim" : ""}
+                  onClick={(e) => elegir(i, e)}
+                  disabled={revealed}
+                  style={{
+                    display: "flex", gap: 12, alignItems: "flex-start", width: "100%", textAlign: "left",
+                    padding: "15px 15px 15px 13px", borderRadius: 15, color: E.tinta,
+                    cursor: revealed ? "default" : "pointer",
+                    opacity: revealed && !esLaCorrecta && !esLaElegida ? 0.45 : 1,
+                    ...tono,
+                  }}
+                >
+                  <span style={{
+                    flex: "none", width: 25, height: 25, borderRadius: "50%", display: "grid", placeItems: "center",
+                    fontFamily: E.display, fontWeight: 800, fontSize: 12, marginTop: 1, ...letraTono,
+                  }}>
+                    {revealed && esLaCorrecta ? <Check size={13} strokeWidth={2.8} />
+                      : esLaElegida ? <X size={13} strokeWidth={2.8} />
+                      : letra}
+                  </span>
+                  <span style={{ flex: 1, fontSize: 14.5, lineHeight: 1.45, paddingTop: 3 }}>{op}</span>
+                </button>
+              );
+            })}
+          </div>
           {revealed && (
-            <div style={{ ...styles.daypoFeedback, ...(esCorrecta ? styles.daypoFeedbackOk : styles.daypoFeedbackMal) }}>
-              {esCorrecta ? "¡Correcto!" : `Incorrecto. La respuesta correcta es la ${String.fromCharCode(65 + q.correcta)}.`}
-              {relampago && !esCorrecta && <div style={{ marginTop: 6, fontWeight: 700 }}>La racha del modo relámpago termina aquí.</div>}
-              {q.explicacion && <div style={{ marginTop: 6, fontWeight: 400, whiteSpace: "pre-line" }}>{q.explicacion}</div>}
+            <div style={{ marginTop: 16 }}>
+              <p style={{ fontWeight: 600, fontSize: 13.5, color: esCorrecta ? E.bien : E.mal }}>
+                {esCorrecta ? "¡Correcto!" : `Incorrecto. La respuesta correcta es la ${String.fromCharCode(65 + q.correcta)}.`}
+              </p>
+              {relampago && !esCorrecta && <p style={{ marginTop: 6, fontWeight: 600, fontSize: 13, color: E.tinta }}>La racha del modo relámpago termina aquí.</p>}
+              {q.explicacion && (
+                <div style={{ marginTop: 12, background: E.hueso, borderRadius: 15, padding: 16, fontSize: 12.5, lineHeight: 1.6, color: E.humo, whiteSpace: "pre-line" }}>
+                  {q.explicacion}
+                </div>
+              )}
             </div>
           )}
-          <button type="button" onClick={next} disabled={!revealed} style={{ ...styles.btnPrimary, width: "100%", marginTop: 18, opacity: !revealed ? 0.4 : 1 }}>
-            {(idx + 1 === pool.length || (relampago && revealed && !esCorrecta)) ? "Terminar" : "Siguiente"}
+          <button
+            type="button"
+            onClick={next}
+            disabled={!revealed}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", marginTop: 18,
+              background: E.negro, color: "#fff", padding: "17px 18px", borderRadius: 12, border: "none",
+              fontWeight: 600, fontSize: 14, cursor: revealed ? "pointer" : "default", opacity: revealed ? 1 : 0.4,
+            }}
+          >
+            <span>{(idx + 1 === pool.length || (relampago && revealed && !esCorrecta)) ? "Terminar" : "Siguiente"}</span>
+            <span aria-hidden="true">→</span>
           </button>
-        </Card>
+        </div>
       </div>
     );
   }
@@ -2386,41 +2559,74 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
   const pctPrimeraVuelta = total > 0 ? Math.round((aciertosPrimeraVuelta / total) * 100) : 0;
   const abierta = preguntaAbierta != null ? resultados[preguntaAbierta] : null;
   const relampagoCompleto = relampago && primerIntento && primerIntento.completo;
+  const E = ESTILO_EXAMENES;
+  const reloj = (n) => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
+  const cursoLabel = cursosSel.length === 0
+    ? "todos los exámenes"
+    : cursosSel.length === 1 ? cursosSel[0] : `${cursosSel.length} exámenes`;
+  const fallosPrimeraVuelta = total - aciertosPrimeraVuelta;
+  const abiertaNumero = preguntaAbierta != null ? poolOriginal.findIndex((q) => q.id === preguntaAbierta) + 1 : 0;
+
   return (
-    <div>
-      <SectionTitle title={relampago ? (relampagoCompleto ? "¡Racha perfecta!" : "Racha terminada") : "Autoevaluación completada"} />
-      <Card style={{ textAlign: "center", padding: "28px 20px" }}>
-        {relampago
-          ? <Zap size={26} color="#C89B3C" style={{ marginBottom: 10 }} />
-          : <Flag size={26} color={CORRECTO} style={{ marginBottom: 10 }} />}
-        <div style={{ color: "#1E1C18", fontSize: 16 }}>
-          {relampago
-            ? (relampagoCompleto
-                ? `¡Has respondido bien las ${total} preguntas de todos los exámenes sin fallar ninguna!`
-                : `Acertaste ${aciertosPrimeraVuelta} de ${total} antes de fallar.`)
-            : `Has respondido correctamente las ${total} preguntas.`}
+    <div style={{ fontFamily: E.texto, color: E.tinta, margin: "-4px 0 0" }}>
+      <div style={{ padding: "18px 0 22px", borderBottom: `1px solid ${E.linea}` }}>
+        <span style={{ display: "block", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.17em", textTransform: "uppercase", color: E.niebla }}>
+          {relampago ? (relampagoCompleto ? "¡Racha perfecta!" : "Racha terminada") : "A la primera"}
+        </span>
+        <span style={{
+          display: "block", fontFamily: E.display, fontWeight: 800, lineHeight: 0.88, letterSpacing: "-0.045em",
+          fontSize: "clamp(62px,19vw,92px)", fontVariantNumeric: "tabular-nums", margin: "8px 0 6px", color: E.negro,
+        }}>
+          {relampago ? aciertosPrimeraVuelta : `${pctPrimeraVuelta}%`}
+        </span>
+        <span style={{ display: "block", fontSize: 14, lineHeight: 1.5, color: E.humo }}>
+          {relampago ? (
+            relampagoCompleto
+              ? `¡Has respondido bien las ${total} preguntas de todos los exámenes sin fallar ninguna!`
+              : `Acertaste ${aciertosPrimeraVuelta} de ${total} antes de fallar.`
+          ) : (
+            <>
+              <b style={{ color: E.tinta, fontWeight: 600 }}>{aciertosPrimeraVuelta} de {total}</b> a la primera, en {reloj(seconds)} de {cursoLabel}.
+            </>
+          )}
+        </span>
+        <div style={{ display: "flex", gap: 16, marginTop: 14, fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: E.bien, fontWeight: 600 }}>
+            <Check size={13} strokeWidth={2.6} />{aciertosPrimeraVuelta}
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: E.mal, fontWeight: 600 }}>
+            <X size={13} strokeWidth={2.6} />{fallosPrimeraVuelta}
+          </span>
+          {!relampago && (
+            <span style={{ color: E.niebla }}>{reloj(Math.round(seconds / Math.max(1, total)))} por pregunta</span>
+          )}
         </div>
-        <div style={{ color: "#9B9689", fontSize: 13, marginTop: 6 }}>
-          {relampago ? "" : `${aciertosPrimeraVuelta} de ${total} a la primera (${pctPrimeraVuelta}%) · `}{Math.floor(seconds / 60)} min {seconds % 60}s
-        </div>
-      </Card>
-      <div style={{ marginTop: 20 }}>
-        <FieldLabel>Toca una pregunta para repasarla</FieldLabel>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+      </div>
+
+      <div style={{ padding: "20px 0 22px" }}>
+        <h2 style={{ fontFamily: E.display, fontWeight: 800, fontSize: 15, textTransform: "uppercase", letterSpacing: "-0.01em", margin: 0 }}>Repasa</h2>
+        <p style={{ marginTop: 6, fontSize: 11.5, lineHeight: 1.5, color: E.niebla, maxWidth: "40ch" }}>
+          Toca una pregunta para verla. El color es el de tu primer intento.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(42px,1fr))", gap: 7, marginTop: 14 }}>
           {poolOriginal.map((q, i) => {
-            const correcta = resultados[q.id] ? resultados[q.id].correct : true;
-            const color = correcta ? CORRECTO : ACENTO;
-            const colorSuave = correcta ? CORRECTO_SUAVE : ACENTO_SUAVE;
+            const r = resultados[q.id];
+            const correcta = r ? r.correct : true;
+            const c = correcta ? E.bien : E.mal;
+            const abiertaAqui = preguntaAbierta === q.id;
             return (
               <button
-                type="button"
                 key={q.id}
-                onClick={() => setPreguntaAbierta(preguntaAbierta === q.id ? null : q.id)}
+                type="button"
+                aria-label={`Pregunta ${i + 1}, ${correcta ? "acertada" : "fallada"} a la primera`}
+                onClick={() => setPreguntaAbierta(abiertaAqui ? null : q.id)}
                 style={{
-                  ...styles.cuadroPregunta,
-                  borderColor: preguntaAbierta === q.id ? "#1E1C18" : color,
-                  background: preguntaAbierta === q.id ? "#1E1C18" : colorSuave,
-                  color: preguntaAbierta === q.id ? "#fff" : color,
+                  aspectRatio: "1", borderRadius: 10, padding: 0, cursor: "pointer",
+                  border: `1.5px solid ${abiertaAqui ? c : correcta ? "rgba(27,107,79,0.55)" : "rgba(158,43,32,0.55)"}`,
+                  background: abiertaAqui ? c : "#fff",
+                  color: abiertaAqui ? "#fff" : c,
+                  fontFamily: E.display, fontWeight: 800, fontSize: 13,
+                  display: "grid", placeItems: "center",
                 }}
               >
                 {i + 1}
@@ -2428,27 +2634,59 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
             );
           })}
         </div>
+
         {abierta && (
-          <Card style={{ marginTop: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-              <div style={{ fontSize: 11, color: TINTA_SUAVE }}>{etiquetaOrigen(abierta.pregunta)}</div>
-              {onToggleFavorito && (
-                <FavoritoBtn pregunta={abierta.pregunta} favoritos={favoritos} onToggle={onToggleFavorito} />
-              )}
-            </div>
-            <p style={{ fontSize: 15, color: "#1E1C18", lineHeight: 1.5, marginBottom: 14 }}>{abierta.pregunta.pregunta}</p>
-            {abierta.pregunta.opciones.map((op, i) => (
-              <div key={i} style={{ ...styles.opcion, cursor: "default", ...(i === abierta.pregunta.correcta ? styles.opcionCorrectaLegacy : {}) }}>
-                {i === abierta.pregunta.correcta && <Check size={13} color={CORRECTO} />}
-                {op}
+          <div style={{ marginTop: 16, border: `1px solid ${E.linea}`, borderRadius: 14, overflow: "hidden" }}>
+            <div style={{ padding: "14px 15px 0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <span style={{ display: "block", fontWeight: 500, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: E.niebla, marginBottom: 6 }}>
+                  {etiquetaOrigen(abierta.pregunta)} · Pregunta {abiertaNumero}
+                </span>
+                {onToggleFavorito && (
+                  <FavoritoBtn pregunta={abierta.pregunta} favoritos={favoritos} onToggle={onToggleFavorito} />
+                )}
               </div>
-            ))}
-            {abierta.pregunta.explicacion && <p style={{ fontSize: 13, color: "#6E6A61", marginTop: 10, lineHeight: 1.5, whiteSpace: "pre-line" }}>{abierta.pregunta.explicacion}</p>}
-          </Card>
+              <span style={{ display: "block", fontSize: 14.5, lineHeight: 1.4, color: E.tinta, whiteSpace: "pre-line" }}>
+                {abierta.pregunta.pregunta}
+              </span>
+            </div>
+            <div style={{ padding: "12px 15px 14px" }}>
+              {abierta.pregunta.opciones.map((op, j) => {
+                const esBien = j === abierta.pregunta.correcta;
+                const esMal = j === abierta.selected && !esBien;
+                const tono = esBien ? { border: `1px solid ${E.bien}`, background: E.bienSuave, color: E.bien }
+                  : esMal ? { border: `1px solid ${E.mal}`, background: E.malSuave, color: E.mal }
+                  : { border: `1px solid ${E.linea}`, background: E.bloque, color: E.tinta };
+                return (
+                  <div key={j} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "11px 12px", borderRadius: 11, fontSize: 13.5, lineHeight: 1.4, marginTop: j ? 7 : 0, ...tono }}>
+                    <span style={{ flex: "none", fontFamily: E.display, fontWeight: 800, fontSize: 11.5, textTransform: "uppercase", paddingTop: 2, color: "inherit" }}>
+                      {"abcd"[j]}
+                    </span>
+                    <span>{op}</span>
+                  </div>
+                );
+              })}
+              {abierta.pregunta.explicacion && (
+                <p style={{ fontSize: 13, color: E.humo, marginTop: 10, lineHeight: 1.5, whiteSpace: "pre-line" }}>{abierta.pregunta.explicacion}</p>
+              )}
+              <p style={{ marginTop: 10, fontSize: 12, color: E.humo }}>
+                {abierta.correct ? "La acertaste a la primera." : `Contestaste la ${"abcd"[abierta.selected].toUpperCase()}.`}
+              </p>
+            </div>
+          </div>
         )}
       </div>
-      <button type="button" onClick={() => setState("config")} style={{ ...styles.btnPrimary, width: "100%", marginTop: 20 }}>
-        Finalizar
+
+      <button
+        type="button"
+        onClick={() => setState("config")}
+        style={{
+          width: "100%", background: E.negro, color: "#fff", padding: "17px 18px", borderRadius: 12, border: "none",
+          fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer",
+        }}
+      >
+        <span>Volver a Exámenes</span>
+        <span aria-hidden="true">→</span>
       </button>
     </div>
   );
@@ -3599,16 +3837,21 @@ function DondeFallas({ questions, fallos, preguntasProgreso, onPracticar }) {
   );
 }
 
-function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorito, onGirarRuleta, preguntasProgreso, onPracticar }) {
-  const [verTodosFallos, setVerTodosFallos] = useState(false);
-  const [abiertaId, setAbiertaId] = useState(null);
+// Perfil: lo que se repasa. Favoritas primero y Falladas después, y en las dos
+// se contesta ANTES de ver la respuesta (todo va orientado al repaso). Se pinta
+// de 12 en 12 con "Ver más" para que una lista de cien no tarde en abrir.
+const TANDA_PERFIL = 12;
+
+function MiPerfil({ user, questions, fallos, favoritos, onToggleFavorito }) {
+  const [lista, setLista] = useState("favoritas");
+  const [visibles, setVisibles] = useState(TANDA_PERFIL);
+  useEffect(() => { setVisibles(TANDA_PERFIL); }, [lista]);
 
   const preguntasPorId = useMemo(() => {
     const m = {};
     questions.forEach((q) => { m[q.id] = q; });
     return m;
   }, [questions]);
-
   const fallosConPregunta = useMemo(
     () => fallos
       .map((f) => ({ ...f, pregunta: preguntasPorId[f.pregunta_id] }))
@@ -3618,48 +3861,61 @@ function MiPerfil({ user, miRacha, questions, fallos, favoritos, onToggleFavorit
   );
   const favoritasConPregunta = useMemo(
     () => favoritos
-      .map((f) => ({ ...f, pregunta: preguntasPorId[f.pregunta_id] }))
+      .map((f) => ({ pregunta_id: f.pregunta_id, pregunta: preguntasPorId[f.pregunta_id] }))
       .filter((f) => f.pregunta),
     [favoritos, preguntasPorId]
   );
 
-  const fallosVisibles = verTodosFallos ? fallosConPregunta : fallosConPregunta.slice(0, 10);
-  const abierta = abiertaId != null ? (preguntasPorId[abiertaId] || null) : null;
+  const items = lista === "favoritas" ? favoritasConPregunta : fallosConPregunta;
+  const vacio = lista === "favoritas"
+    ? "Toca la estrella en cualquier pregunta para guardarla aquí."
+    : "Todavía no has fallado ninguna pregunta.";
 
   return (
     <div>
-      <SectionTitle title="Mi perfil" subtitle={user.name} />
-
-      <div style={{ marginBottom: 32 }}>
-        <DondeFallas questions={questions} fallos={fallos} preguntasProgreso={preguntasProgreso} onPracticar={onPracticar} />
+      <SectionTitle title="Perfil" subtitle={user.name} />
+      <div style={{ ...styles.tabsOrigen, marginBottom: 14 }}>
+        <button type="button" onClick={() => setLista("favoritas")} style={{ ...styles.tabOrigenBtn, ...(lista === "favoritas" ? styles.tabOrigenActivo : {}) }}>
+          Favoritas ({favoritasConPregunta.length})
+        </button>
+        <button type="button" onClick={() => setLista("falladas")} style={{ ...styles.tabOrigenBtn, ...(lista === "falladas" ? styles.tabOrigenActivo : {}) }}>
+          Falladas ({fallosConPregunta.length})
+        </button>
       </div>
+      {items.length === 0 && <p style={{ fontSize: 13.5, color: TINTA_SUAVE }}>{vacio}</p>}
+      {items.slice(0, visibles).map((f, i) => (
+        <FalloRepetible key={f.pregunta_id} f={f} index={i + 1} favoritos={favoritos} onToggleFavorito={onToggleFavorito} />
+      ))}
+      {items.length > visibles && (
+        <button type="button" onClick={() => setVisibles((v) => v + TANDA_PERFIL)} style={{ ...styles.btnSecondary, width: "100%", justifyContent: "center", marginTop: 8 }}>
+          Ver más ({items.length - visibles} restantes)
+        </button>
+      )}
+    </div>
+  );
+}
 
-      <div style={{ marginTop: 8 }}>
-        <SectionTitle
-          title="Historial de fallos"
-          subtitle={fallosConPregunta.length === 0 ? "Todavía no has fallado ninguna pregunta." : "Las que más se te atascan, primero."}
-        />
-        {fallosVisibles.map((f, i) => (
-          <FalloRepetible key={f.pregunta_id} f={f} index={i + 1} favoritos={favoritos} onToggleFavorito={onToggleFavorito} />
-        ))}
-        {fallosConPregunta.length > 10 && (
-          <button type="button" onClick={() => setVerTodosFallos((v) => !v)} style={styles.linkBtn}>
-            {verTodosFallos ? "Ver menos" : `Ver las ${fallosConPregunta.length} preguntas falladas`}
-          </button>
-        )}
+// Estadísticas: lo que antes estaba en Perfil menos las listas de repaso.
+// Arriba el total y el acierto; debajo "Dónde fallas" por examen y por tema.
+function Estadisticas({ miRacha, questions, fallos, preguntasProgreso, onPracticar }) {
+  const respondidas = (miRacha && miRacha.total_respondidas) || 0;
+  const correctas = (miRacha && miRacha.total_correctas) || 0;
+  const pct = respondidas > 0 ? Math.round((correctas / respondidas) * 100) : null;
+  const banco = questions.filter((q) => !q.inventada).length;
+  const mil = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return (
+    <div>
+      <SectionTitle title="Estadísticas" />
+      <div style={{ borderRadius: 20, padding: "28px 22px 30px", background: "#17171B", color: "#fff", marginBottom: 28 }}>
+        <span style={{ display: "block", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.17em", textTransform: "uppercase", color: "rgba(255,255,255,.6)" }}>Llevas</span>
+        <span style={{ display: "block", fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: "clamp(56px,17vw,88px)", lineHeight: 0.9, letterSpacing: "-0.045em", margin: "8px 0 6px", fontVariantNumeric: "tabular-nums" }}>
+          {mil(respondidas)}
+        </span>
+        <span style={{ display: "block", fontSize: 14, lineHeight: 1.5, color: "rgba(255,255,255,.75)" }}>
+          preguntas respondidas de las {mil(banco)} del banco{pct != null ? `, con un ${pct}% de acierto` : ""}.
+        </span>
       </div>
-
-      <div style={{ marginTop: 32 }}>
-        <PreguntasPlegables
-          titulo="Favoritas"
-          subtitulo={favoritasConPregunta.length === 0 ? "Toca la estrella en cualquier pregunta para guardarla aquí." : null}
-          items={favoritasConPregunta}
-          abiertaId={abiertaId}
-          setAbiertaId={setAbiertaId}
-          favoritos={favoritos}
-          onToggleFavorito={onToggleFavorito}
-        />
-      </div>
+      <DondeFallas questions={questions} fallos={fallos} preguntasProgreso={preguntasProgreso} onPracticar={onPracticar} />
     </div>
   );
 }
@@ -3733,11 +3989,12 @@ const TAM_SESION_FLASHCARDS = 20;
 // —"Bien" en verde y "Fácil" en dorado—, que leído de un vistazo decía que
 // acertar sin drama era lo mejor posible y que lo que te sabes de sobra era un
 // aviso. El verde se reserva para "Fácil", que es el extremo bueno.
+// `rgb` es el mismo color en tripletas, para pintar el contorno con alfa.
 const CALIFICACIONES_FLASHCARD = [
-  { calidad: 0, label: "Otra vez", bg: ACENTO_SUAVE, color: ACENTO, borde: ACENTO },
-  { calidad: 3, label: "Difícil", bg: AVISO_SUAVE, color: AVISO, borde: AVISO },
-  { calidad: 4, label: "Bien", bg: CAUTELA_SUAVE, color: CAUTELA, borde: CAUTELA },
-  { calidad: 5, label: "Fácil", bg: CORRECTO_SUAVE, color: CORRECTO, borde: CORRECTO },
+  { calidad: 0, label: "Otra vez", bg: ACENTO_SUAVE, color: "#9E2B20", borde: "#9E2B20", rgb: "158,43,32" },
+  { calidad: 3, label: "Difícil", bg: AVISO_SUAVE, color: "#A3571C", borde: "#A3571C", rgb: "163,87,28" },
+  { calidad: 4, label: "Bien", bg: CAUTELA_SUAVE, color: "#7A6410", borde: "#7A6410", rgb: "122,100,16" },
+  { calidad: 5, label: "Fácil", bg: CORRECTO_SUAVE, color: "#1B6B4F", borde: "#1B6B4F", rgb: "27,107,79" },
 ];
 
 // Estadísticas de flashcards. La pregunta que contesta cada bloque:
@@ -4715,8 +4972,8 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
               ? ` · ${sesion.length - tarjetasDistintas(sesion)} para repetir`
               : "")}
         />
-        <div style={styles.progressTrack}>
-          <div style={{ ...styles.progressFill, width: `${(idx / sesion.length) * 100}%`, background: "#8A5A9E" }} />
+        <div style={{ height: 2, background: "#E4E3E0", margin: "10px 0 0" }}>
+          <div style={{ height: 2, background: "#0C0C0D", width: `${(idx / sesion.length) * 100}%`, transition: "width .45s cubic-bezier(.22,1,.36,1)" }} />
         </div>
         <style>{`
           .flip-container { perspective: 1600px; margin-top: 16px; }
@@ -4731,7 +4988,11 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
              por ahí. Sin key el nodo no se retira nunca: el contenido se
              cambia en sitio y esta clase quita la animación. */
           .flip-inner.sin-animar, .flip-inner.sin-animar .flip-face { transition: none; }
-          .flip-face { grid-area: 1 / 1; min-height: 280px; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; overflow-y: auto; }
+          .flip-face { grid-area: 1 / 1; min-height: 260px; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; overflow-y: auto; padding: 28px 22px; border: 1px solid #E4E3E0; border-radius: 16px; background: #fff; box-shadow: 0 14px 34px -28px rgba(0,0,0,.6); }
+          .flip-face.flip-back { background: #F7F6F3; }
+          .gr-btn { transition: background-color .18s, color .18s, border-color .18s; }
+          .gr-btn:active:not([disabled]) { background-color: rgb(var(--c)) !important; border-color: rgb(var(--c)) !important; color: #fff !important; }
+          .gr-btn.pulsada { transition: none; }
           /* Con la tarjeta sin revelar, la respuesta no es que esté
              girada: es que NO se pinta. backface-visibility es una decisión de
              composición y puede tardar un fotograma en aplicarse sobre un nodo
@@ -4767,36 +5028,46 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
                  contenido se cambia en sitio, así que no hay ninguna capa
                  vieja que pueda asomar. */}
           <div className={`flip-inner${revelada ? " flipped" : ""}${dorsoDe === idx ? "" : " sin-animar"}`}>
-            <Card className="flip-face">
-              <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 18 }}>{carta.mazo}</div>
-              <p style={{ fontSize: "clamp(22px, 4vw, 30px)", color: TINTA, lineHeight: 1.4, margin: 0, fontWeight: 600 }}>{carta.frontal}</p>
-            </Card>
-            <Card className="flip-face flip-back">
+            <div className="flip-face">
+              <div style={{ fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "#A2A2AB", marginBottom: 10 }}>{carta.mazo}</div>
+              <p style={{ fontFamily: "'Cabinet Grotesk','Arial Black',sans-serif", fontWeight: 700, fontSize: 25, lineHeight: 1.14, letterSpacing: "-0.025em", color: "#17171B", margin: 0 }}>{carta.frontal}</p>
+            </div>
+            <div className="flip-face flip-back">
               {dorsoDe === idx ? (
                 <>
-                  <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 18 }}>{carta.mazo}</div>
-                  <p style={{ fontSize: "clamp(22px, 4vw, 30px)", color: CORRECTO, lineHeight: 1.4, margin: 0, fontWeight: 700 }}>{carta.posterior}</p>
+                  <div style={{ fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "#A2A2AB", marginBottom: 10 }}>{carta.mazo}</div>
+                  <p style={{ fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 19, lineHeight: 1.38, letterSpacing: "-0.01em", color: "#17171B", margin: 0 }}>{carta.posterior}</p>
                 </>
               ) : null}
-            </Card>
+            </div>
           </div>
         </div>
         {!revelada ? (
           <p style={{ fontSize: 12.5, color: "#9B9689", textAlign: "center", marginTop: 14 }}>Toca la tarjeta para ver la respuesta</p>
         ) : (
-          <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-            {CALIFICACIONES_FLASHCARD.map((c, i) => (
-              <button
-                key={c.calidad}
-                type="button"
-                className={teclaPulsada === i ? "tecla-pulsada" : undefined}
-                disabled={enviando || teclaPulsada !== null}
-                onClick={() => calificar(c.calidad)}
-                style={{ ...styles.btnDificultad, background: c.bg, color: c.color, border: `1.5px solid ${c.borde}`, opacity: enviando ? 0.6 : 1 }}
-              >
-                {c.label}
-              </button>
-            ))}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 16 }}>
+            {CALIFICACIONES_FLASHCARD.map((c, i) => {
+              const pulsada = teclaPulsada === i;
+              return (
+                <button
+                  key={c.calidad}
+                  type="button"
+                  className={`gr-btn${pulsada ? " pulsada tecla-pulsada" : ""}`}
+                  disabled={enviando || teclaPulsada !== null}
+                  onClick={() => calificar(c.calidad)}
+                  style={{
+                    "--c": c.rgb,
+                    padding: "15px 4px", textAlign: "center", fontWeight: 600, fontSize: 13.5, letterSpacing: "-0.01em",
+                    borderRadius: 11, cursor: "pointer", color: pulsada ? "#fff" : "#17171B",
+                    background: pulsada ? `rgb(${c.rgb})` : "#fff",
+                    border: `2px solid ${pulsada ? `rgb(${c.rgb})` : `rgba(${c.rgb},0.58)`}`,
+                    opacity: enviando ? 0.6 : 1,
+                  }}
+                >
+                  {c.label}
+                </button>
+              );
+            })}
           </div>
         )}
         {revelada && !editandoCarta && (
@@ -4965,17 +5236,22 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
                   badge={pendientesTotal > 0 ? `${pendientesTotal} hoy` : null}
                   onClick={seleccionarTodas}
                 />
-                {agrupacion.carpetas.map((c) => (
-                  <TarjetaCarpeta
-                    key={c.nombre}
-                    nombre={c.nombre}
-                    mazos={c.mazos.length}
-                    pendientes={c.mazos.reduce((n, m) => n + ((statsPorMazo.get(m) || {}).pendientes || 0), 0)}
-                    onClick={() => setCarpetaAbierta(c.nombre)}
-                    resaltada={destinoHover === c.nombre}
-                  />
-                ))}
-                {agrupacion.sueltos.map(cuadroDeMazo)}
+                {/* La lista va sobre la foto del prototipo: las filas flotan y entre
+                    ellas se ve la imagen. Solo en la raíz; dentro de una carpeta
+                    la lista es la de siempre. */}
+                <div style={styles.listaFotoMazos}>
+                  {agrupacion.carpetas.map((c) => (
+                    <TarjetaCarpeta
+                      key={c.nombre}
+                      nombre={c.nombre}
+                      mazos={c.mazos.length}
+                      pendientes={c.mazos.reduce((n, m) => n + ((statsPorMazo.get(m) || {}).pendientes || 0), 0)}
+                      onClick={() => setCarpetaAbierta(c.nombre)}
+                      resaltada={destinoHover === c.nombre}
+                    />
+                  ))}
+                  {agrupacion.sueltos.map(cuadroDeMazo)}
+                </div>
               </>
             )}
           </>
@@ -5431,34 +5707,44 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
   // para leer. Con crema en vez de blanco el oro se quedaba en 4,06, así que
   // el texto de relleno es blanco y no crema; no es una preferencia. Lo
   // comprueba tests/colores-mazo.test.mjs color a color.
-  const relleno = !!tinte;
-  const sobreColor = relleno ? "#fff" : null;
+  // Diseño de la lista (prototipo "Flashcards"): una franja de color en el
+  // canto izquierdo y un lavado que se apaga hacia la derecha. El color agrupa
+  // y se reconoce de lejos, pero no se come la fila ni tapa el título, que va
+  // en tinta oscura. Sin color elegido la fila queda blanca y sin franja.
+  const rgb = tinte ? rgbDeHex(tinte) : null;
   return (
     <div style={{
       ...styles.filaCarpeta,
-      ...(relleno ? { background: tinte, borderColor: tinte } : {}),
+      position: "relative",
+      overflow: "hidden",
+      padding: "15px 14px 15px 21px",
+      background: rgb
+        ? `linear-gradient(90deg, rgba(${rgb},0.42), rgba(${rgb},0.30) 55%, rgba(${rgb},0.26))`
+        : "rgba(255,255,255,0.93)",
+      border: `1.5px solid ${RAYA}`,
       ...(atenuada ? styles.tarjetaMazoArrastrada : {}),
     }}>
+      {rgb && <span aria-hidden="true" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 9, background: `rgb(${rgb})` }} />}
       <button type="button" onClick={onClick} onPointerDown={onPointerDown} style={styles.filaCarpetaBoton}>
-        <span style={{ ...styles.filaCarpetaIcono, ...(relleno ? { color: sobreColor } : {}) }}>
+        <span style={styles.filaCarpetaIcono}>
           <IconoMazo size={18} />
         </span>
         <span style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ ...styles.filaCarpetaTitulo, ...(relleno ? { color: sobreColor } : {}) }}>{titulo}</div>
-          {subtitulo && <div style={{ ...styles.filaCarpetaSubtitulo, ...(relleno ? { color: sobreColor, opacity: 0.85 } : {}) }}>{subtitulo}</div>}
+          <div style={styles.filaCarpetaTitulo}>{titulo}</div>
+          {subtitulo && <div style={styles.filaCarpetaSubtitulo}>{subtitulo}</div>}
         </span>
         {badge != null && (
-          <span style={{ ...styles.filaCarpetaBadge, ...(relleno ? { color: sobreColor, background: "rgba(255,255,255,0.22)" } : {}) }}>{badge}</span>
+          <span style={styles.filaCarpetaBadge}>{badge}</span>
         )}
       </button>
       {/* Una sola "⋯" en vez de los cinco iconos sueltos que había: con los
           mazos que hay ahora, cinco símbolos repetidos en cada fila es
           exactamente el ruido del que se quejó el usuario. Dentro están todas
           las acciones, con su nombre escrito. */}
-      <button type="button" onClick={() => setModo("acciones")} aria-label={`Opciones de ${titulo}`} style={{ ...styles.filaCarpetaIconBtn, ...(relleno ? { color: sobreColor } : {}) }}>
+      <button type="button" onClick={() => setModo("acciones")} aria-label={`Opciones de ${titulo}`} style={styles.filaCarpetaIconBtn}>
         <MoreHorizontal size={16} />
       </button>
-      <ChevronRight size={16} color={relleno ? sobreColor : "#9B9689"} />
+      <ChevronRight size={16} color="#9B9689" />
     </div>
   );
 }
@@ -5994,7 +6280,7 @@ function FalloRepetible({ f, index, favoritos, onToggleFavorito }) {
               {etiquetaOrigen(q)} · Pregunta {index}
             </div>
             <div style={{ fontSize: 11, color: "#9B9689", marginTop: 2 }}>
-              fallada {f.veces} {f.veces === 1 ? "vez" : "veces"}
+              {f.veces != null ? `fallada ${f.veces} ${f.veces === 1 ? "vez" : "veces"}` : "Favorita"}
             </div>
           </div>
           {abierta ? <ChevronDown size={16} color="#9B9689" /> : <ChevronRight size={16} color="#9B9689" />}
@@ -6151,8 +6437,8 @@ function SectionTitle({ title, subtitle, action }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16 }}>
       <div>
-        <h2 style={{ fontFamily: "var(--font-display)", fontSize: 20, color: "#1E1C18", margin: 0 }}>{title}</h2>
-        {subtitle && <p style={{ fontSize: 13, color: "#9B9689", margin: "4px 0 0" }}>{subtitle}</p>}
+        <h2 style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 26, lineHeight: 0.95, letterSpacing: "-0.02em", textTransform: "uppercase", color: "#0C0C0D", margin: 0 }}>{title}</h2>
+        {subtitle && <p style={{ fontSize: 13, color: "#6A6A72", margin: "6px 0 0" }}>{subtitle}</p>}
       </div>
       {action}
     </div>
@@ -6229,7 +6515,7 @@ const CLAVES_COLOR_MAZO = Object.keys(COLORES_MAZO);
 
 const SOMBRA_SUAVE = "0 1px 2px rgba(30,28,24,0.07), 0 1px 6px rgba(30,28,24,0.05)";
 const styles = {
-  app: { fontFamily: "'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", background: "#EEECE4", minHeight: "100vh", color: TINTA, WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none", fontSize: 17 },
+  app: { fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", background: "#FFFFFF", minHeight: "100vh", color: TINTA, WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none", fontSize: 17 },
   center: { display: "flex", alignItems: "center", justifyContent: "center" },
   // Los cuatro lados por separado y no el atajo `padding`: mezclar el atajo
   // con un `paddingTop` suelto dispara el aviso de React sobre shorthand y
@@ -6237,16 +6523,17 @@ const styles = {
   // reloj en modo pantalla de inicio; en navegador vale 0 y manda el 18.
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", paddingTop: "max(18px, env(safe-area-inset-top))", paddingRight: 24, paddingBottom: 18, paddingLeft: 24, borderBottom: `1px solid ${RAYA}` },
   nav: { display: "flex", gap: 6, padding: "0 18px", borderBottom: `1px solid ${RAYA}`, overflowX: "auto" },
-  navBtn: { display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: "16px 14px", fontSize: 16, cursor: "pointer", whiteSpace: "nowrap" },
+  navBtn: { display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: "15px 12px 13px", fontSize: 11.5, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", whiteSpace: "nowrap" },
   navDot: { position: "absolute", top: 10, right: 6, width: 8, height: 8, borderRadius: "50%", background: ACENTO, animation: "dueloPulso 1.2s ease-in-out infinite" },
   tabsOrigen: { display: "flex", gap: 8, marginBottom: 14 },
-  tabOrigenBtn: { flex: 1, padding: "11px 14px", borderRadius: 12, border: `1.5px solid ${RAYA}`, background: "#fff", color: TINTA_SUAVE, fontSize: 14, fontWeight: 600, cursor: "pointer" },
-  tabOrigenActivo: { background: TINTA, borderColor: TINTA, color: "#fff" },
+  tabOrigenBtn: { flex: 1, padding: "11px 14px", borderRadius: 10, border: `1px solid ${RAYA}`, background: "#fff", color: TINTA_SUAVE, fontSize: 14, fontWeight: 600, cursor: "pointer" },
+  tabOrigenActivo: { background: "#0C0C0D", borderColor: "#0C0C0D", color: "#fff" },
   tabOrigenActivoIA: { background: "#8A5A9E", borderColor: "#8A5A9E", color: "#fff" },
   // `boxSizing` aquí no es cosmética: con `width: 100%` más padding y borde, y
   // sin un `border-box` global en el proyecto, cada fila sobresalía 31 px de su
   // caja y ensanchaba la página. Venía de antes de la rejilla; lo cazó la
   // comprobación de `scrollWidth` al volver a las filas.
+  listaFotoMazos: { background: "#2E2C27 url(/img/fondo-mazos.jpg) center/cover", borderRadius: 14, padding: 10, display: "flex", flexDirection: "column", gap: 2 },
   filaCarpeta: { boxSizing: "border-box", display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "#fff", border: `1.5px solid ${RAYA}`, borderRadius: 12, padding: "12px 14px", cursor: "pointer", marginBottom: 8 },
   filaCarpetaBoton: { display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, margin: 0, font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" },
   filaCarpetaIcono: { display: "flex", alignItems: "center", justifyContent: "center", width: 22, flexShrink: 0, color: TINTA_TENUE },
@@ -6299,13 +6586,13 @@ const styles = {
   dueloAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "12px 16px", borderRadius: 14, border: "none", background: ACENTO, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", animation: "dueloPulso 1.6s ease-in-out infinite" },
   rachaAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "11px 16px", borderRadius: 14, border: `1.5px solid ${ACENTO_SUAVE}`, background: ACENTO_SUAVE, color: "#7A2E21", fontSize: 13.5, fontWeight: 600, cursor: "pointer" },
   main: { padding: "24px 22px 50px", maxWidth: 820, margin: "0 auto" },
-  card: { background: "#F6F4EC", border: `1.5px solid ${RAYA}`, borderRadius: 16, padding: 26, boxShadow: SOMBRA_SUAVE },
+  card: { background: "#FFFFFF", border: `1px solid ${RAYA}`, borderRadius: 14, padding: 22, boxShadow: "none" },
   authCard: { textAlign: "left", borderRadius: 20, border: `1.5px solid ${RAYA}`, boxShadow: "0 18px 48px rgba(30,28,24,0.10)" },
-  input: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid #D9D5C4", fontSize: 17, fontFamily: "inherit", color: TINTA, boxSizing: "border-box" },
-  select: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid #D9D5C4", fontSize: 17, fontFamily: "inherit", color: TINTA, background: "#fff" },
-  btnPrimary: { background: TINTA, color: "#fff", border: "none", borderRadius: 12, padding: "15px 22px", fontSize: 17, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" },
+  input: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid #E4E3E0", fontSize: 16, fontFamily: "inherit", color: TINTA, boxSizing: "border-box" },
+  select: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid #E4E3E0", fontSize: 16, fontFamily: "inherit", color: TINTA, background: "#fff" },
+  btnPrimary: { background: "#0C0C0D", color: "#fff", border: "none", borderRadius: 12, padding: "15px 22px", fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" },
   botonCerrarPantalla: { background: "#fff", color: TINTA, border: `1.5px solid ${RAYA_FUERTE}`, borderRadius: 999, padding: "0 16px", height: 44, fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "inherit" },
-  btnSecondary: { background: "transparent", color: TINTA, border: `1.5px solid ${TINTA}`, borderRadius: 12, padding: "12px 18px", fontSize: 16, cursor: "pointer", display: "inline-flex", alignItems: "center" },
+  btnSecondary: { background: "#fff", color: TINTA, border: `1.5px solid ${RAYA}`, borderRadius: 12, padding: "12px 18px", fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center" },
   iconBtn: { background: "none", border: "none", cursor: "pointer", padding: 6 },
   chip: { border: "1.5px solid", borderRadius: 22, padding: "9px 18px", fontSize: 16, cursor: "pointer" },
   chipEtiqueta: { border: `1.5px solid ${RAYA}`, borderRadius: 20, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, background: "#fff", color: TINTA_SUAVE, cursor: "pointer" },

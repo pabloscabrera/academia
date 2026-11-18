@@ -82,7 +82,7 @@ try {
   await pagina.locator('input[type="number"]').first().fill("5");
   await pagina.locator('input[type="number"]').first().blur();
   await esperar(300);
-  await pagina.getByRole("button", { name: /Empezar autoevaluación/ }).click();
+  await pagina.getByRole("button", { name: "Empezar", exact: true }).click();
   await esperar(800);
 
   // --- A) Intro ANTES de contestar no hace nada (lo que se pidió) ---

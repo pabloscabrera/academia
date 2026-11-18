@@ -98,7 +98,10 @@ if (aviso) fallos.push(`queda la barra roja aunque el color se guardó: ${aviso}
 // Y el color tiene que seguir puesto (se guardó de verdad).
 const fondo = await pagina.evaluate(() => {
   const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim().startsWith("Porcentajes"));
-  return b ? getComputedStyle(b.parentElement).backgroundColor : null;
+  // El color va en la franja del canto (el hijo aria-hidden), no en el fondo de la fila.
+  if (!b) return null;
+  const franja = [...b.parentElement.children].find((h) => h.getAttribute("aria-hidden") === "true");
+  return franja ? getComputedStyle(franja).backgroundColor : null;
 });
 console.log("3) fondo de la fila ->", fondo, "| botones de color encontrados:", colores);
 if (!fondo || /rgba\(0, 0, 0, 0\)|255, 255, 255/.test(fondo)) {
