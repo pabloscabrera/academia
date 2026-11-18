@@ -5248,6 +5248,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
         if (d > TOLERANCIA_ARRASTRE) soltarArrastre();
         return;
       }
+      if (Math.hypot(e.clientX - a.inicio.x, e.clientY - a.inicio.y) > TOLERANCIA_ARRASTRE) a.movido = true;
       setArrastrando({ mazo: a.mazo, x: e.clientX, y: e.clientY });
       // Qué hay debajo del dedo. `closest` sube hasta la carpeta o la zona de
       // sacar; el cuadro que se arrastra no es destino de nada.
@@ -5259,9 +5260,23 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     };
     const levantar = async () => {
       const a = arrastreRef.current;
-      const mazo = a.mazo, destino = a.destino, activo = a.activo;
+      const mazo = a.mazo, destino = a.destino, activo = a.activo, movido = a.movido;
       soltarArrastre();
       if (!activo || !mazo) return;
+      // Un pulsado largo que no se ha movido no era un arrastre: era un toque
+      // lento (en el iPad, un clic del trackpad apretado un poco más de la
+      // cuenta). Antes se tragaba el click y el mazo "no entraba del tirón".
+      // Se abre aquí mismo, y el click que manda el navegador a continuación
+      // se anula: dentro de una carpeta, la franja de "sácalo de aquí" que
+      // aparece al arrastrar desplaza la lista, y ese click caería en otra
+      // fila — o, ya dentro del mazo, en un botón.
+      if (!movido) {
+        const anular = (ev) => { ev.stopPropagation(); ev.preventDefault(); };
+        window.addEventListener("click", anular, { capture: true, once: true });
+        setTimeout(() => window.removeEventListener("click", anular, { capture: true }), 400);
+        seleccionarMazo(mazo);
+        return;
+      }
       const { cambia, carpeta } = interpretarSoltar(destino, carpetaDeMazo(indiceEstilos, mazo));
       if (!cambia || !onEstiloMazo) return;
       const est = estiloDeMazo(indiceEstilos, mazo, CLAVES_ICONO_MAZO, CLAVES_COLOR_MAZO);
@@ -5296,6 +5311,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     a.mazo = mazo;
     a.inicio = { x: e.clientX, y: e.clientY };
     a.activo = false;
+    a.movido = false;
     a.destino = null;
     a.temporizador = setTimeout(() => {
       arrastreRef.current.activo = true;
@@ -5554,10 +5570,10 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
             (7:5, como una ficha), no como una banda a lo ancho pegada arriba.
             Debajo hay un hueco de alto fijo para la pista o los botones, para
             que la tarjeta no salte hacia arriba al revelarla. */}
-        <div style={{ maxWidth: 560, margin: "0 auto", minHeight: "calc(100dvh - 300px)", display: "flex", flexDirection: "column", justifyContent: "center", paddingTop: 20 }}>
+        <div style={{ maxWidth: 820, margin: "0 auto", minHeight: "calc(100dvh - 300px)", display: "flex", flexDirection: "column", justifyContent: "center", paddingTop: 20 }}>
         <style>{`
           .flip-container { perspective: 1600px; }
-          .flip-inner { display: grid; width: 100%; aspect-ratio: 7 / 5; transition: transform 0.5s; -webkit-transform-style: preserve-3d; transform-style: preserve-3d; }
+          .flip-inner { display: grid; width: 100%; transition: transform 0.5s; -webkit-transform-style: preserve-3d; transform-style: preserve-3d; }
           .flip-inner.flipped { transform: rotateY(180deg); }
           /* Tarjeta recién cambiada: ni un grado de giro y ni un milisegundo de
              transición. Antes esto se conseguía con una key que montaba un nodo
@@ -5568,12 +5584,12 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
              por ahí. Sin key el nodo no se retira nunca: el contenido se
              cambia en sitio y esta clase quita la animación. */
           .flip-inner.sin-animar, .flip-inner.sin-animar .flip-face { transition: none; }
-          /* La proporción es la de una tarjeta de cartulina (apaisada en
-             pantalla ancha, cuadrada en el móvil), pero es un MÍNIMO: sin
-             overflow propio en las caras, un texto largo estira la tarjeta en
-             vez de quedarse cortado con una barra de desplazamiento dentro. */
-          @media (max-width: 620px) { .flip-inner { aspect-ratio: 1 / 1; } }
-          .flip-face { position: relative; grid-area: 1 / 1; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; padding: 44px 24px 34px; border: 1px solid var(--linea); border-radius: 20px; background: var(--superficie); box-shadow: 0 24px 50px -34px rgba(0,0,0,.55); }
+          /* Las medidas de la web anterior, que eran las buenas: todo el
+             ancho del contenido y 280 px de alto como mínimo. Se probó una
+             proporción fija (7:5, cuadrada en el móvil) y quedaba "medio
+             cuadrada". Sin overflow propio en las caras, un texto largo
+             estira la tarjeta en vez de quedarse cortado dentro. */
+          .flip-face { position: relative; grid-area: 1 / 1; min-height: 280px; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; padding: 44px 26px 34px; border: 1px solid var(--linea); border-radius: 16px; background: var(--superficie); box-shadow: 0 24px 50px -34px rgba(0,0,0,.55); }
           .flip-face.flip-back { background: var(--bloque); }
           .gr-btn { transition: background-color .18s, color .18s, border-color .18s; }
           .gr-btn:active:not([disabled]) { background-color: rgb(var(--c)) !important; border-color: rgb(var(--c)) !important; color: #fff !important; }
