@@ -4012,11 +4012,12 @@ const TAM_SESION_FLASHCARDS = 20;
 // —"Bien" en verde y "Fácil" en dorado—, que leído de un vistazo decía que
 // acertar sin drama era lo mejor posible y que lo que te sabes de sobra era un
 // aviso. El verde se reserva para "Fácil", que es el extremo bueno.
+// `rgb` es el mismo color en tripletas, para pintar el contorno con alfa.
 const CALIFICACIONES_FLASHCARD = [
-  { calidad: 0, label: "Otra vez", bg: ACENTO_SUAVE, color: ACENTO, borde: ACENTO },
-  { calidad: 3, label: "Difícil", bg: AVISO_SUAVE, color: AVISO, borde: AVISO },
-  { calidad: 4, label: "Bien", bg: CAUTELA_SUAVE, color: CAUTELA, borde: CAUTELA },
-  { calidad: 5, label: "Fácil", bg: CORRECTO_SUAVE, color: CORRECTO, borde: CORRECTO },
+  { calidad: 0, label: "Otra vez", bg: ACENTO_SUAVE, color: "#9E2B20", borde: "#9E2B20", rgb: "158,43,32" },
+  { calidad: 3, label: "Difícil", bg: AVISO_SUAVE, color: "#A3571C", borde: "#A3571C", rgb: "163,87,28" },
+  { calidad: 4, label: "Bien", bg: CAUTELA_SUAVE, color: "#7A6410", borde: "#7A6410", rgb: "122,100,16" },
+  { calidad: 5, label: "Fácil", bg: CORRECTO_SUAVE, color: "#1B6B4F", borde: "#1B6B4F", rgb: "27,107,79" },
 ];
 
 // Estadísticas de flashcards. La pregunta que contesta cada bloque:
@@ -4994,8 +4995,8 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
               ? ` · ${sesion.length - tarjetasDistintas(sesion)} para repetir`
               : "")}
         />
-        <div style={styles.progressTrack}>
-          <div style={{ ...styles.progressFill, width: `${(idx / sesion.length) * 100}%`, background: "#8A5A9E" }} />
+        <div style={{ height: 2, background: "#E4E3E0", margin: "10px 0 0" }}>
+          <div style={{ height: 2, background: "#0C0C0D", width: `${(idx / sesion.length) * 100}%`, transition: "width .45s cubic-bezier(.22,1,.36,1)" }} />
         </div>
         <style>{`
           .flip-container { perspective: 1600px; margin-top: 16px; }
@@ -5010,7 +5011,11 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
              por ahí. Sin key el nodo no se retira nunca: el contenido se
              cambia en sitio y esta clase quita la animación. */
           .flip-inner.sin-animar, .flip-inner.sin-animar .flip-face { transition: none; }
-          .flip-face { grid-area: 1 / 1; min-height: 280px; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; overflow-y: auto; }
+          .flip-face { grid-area: 1 / 1; min-height: 260px; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; overflow-y: auto; padding: 28px 22px; border: 1px solid #E4E3E0; border-radius: 16px; background: #fff; box-shadow: 0 14px 34px -28px rgba(0,0,0,.6); }
+          .flip-face.flip-back { background: #F7F6F3; }
+          .gr-btn { transition: background-color .18s, color .18s, border-color .18s; }
+          .gr-btn:active:not([disabled]) { background-color: rgb(var(--c)) !important; border-color: rgb(var(--c)) !important; color: #fff !important; }
+          .gr-btn.pulsada { transition: none; }
           /* Con la tarjeta sin revelar, la respuesta no es que esté
              girada: es que NO se pinta. backface-visibility es una decisión de
              composición y puede tardar un fotograma en aplicarse sobre un nodo
@@ -5046,36 +5051,46 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
                  contenido se cambia en sitio, así que no hay ninguna capa
                  vieja que pueda asomar. */}
           <div className={`flip-inner${revelada ? " flipped" : ""}${dorsoDe === idx ? "" : " sin-animar"}`}>
-            <Card className="flip-face">
-              <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 18 }}>{carta.mazo}</div>
-              <p style={{ fontSize: "clamp(22px, 4vw, 30px)", color: TINTA, lineHeight: 1.4, margin: 0, fontWeight: 600 }}>{carta.frontal}</p>
-            </Card>
-            <Card className="flip-face flip-back">
+            <div className="flip-face">
+              <div style={{ fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "#A2A2AB", marginBottom: 10 }}>{carta.mazo}</div>
+              <p style={{ fontFamily: "'Cabinet Grotesk','Arial Black',sans-serif", fontWeight: 700, fontSize: 25, lineHeight: 1.14, letterSpacing: "-0.025em", color: "#17171B", margin: 0 }}>{carta.frontal}</p>
+            </div>
+            <div className="flip-face flip-back">
               {dorsoDe === idx ? (
                 <>
-                  <div style={{ fontSize: 11, color: "#8A5A9E", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 18 }}>{carta.mazo}</div>
-                  <p style={{ fontSize: "clamp(22px, 4vw, 30px)", color: CORRECTO, lineHeight: 1.4, margin: 0, fontWeight: 700 }}>{carta.posterior}</p>
+                  <div style={{ fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: "#A2A2AB", marginBottom: 10 }}>{carta.mazo}</div>
+                  <p style={{ fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 19, lineHeight: 1.38, letterSpacing: "-0.01em", color: "#17171B", margin: 0 }}>{carta.posterior}</p>
                 </>
               ) : null}
-            </Card>
+            </div>
           </div>
         </div>
         {!revelada ? (
           <p style={{ fontSize: 12.5, color: "#9B9689", textAlign: "center", marginTop: 14 }}>Toca la tarjeta para ver la respuesta</p>
         ) : (
-          <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-            {CALIFICACIONES_FLASHCARD.map((c, i) => (
-              <button
-                key={c.calidad}
-                type="button"
-                className={teclaPulsada === i ? "tecla-pulsada" : undefined}
-                disabled={enviando || teclaPulsada !== null}
-                onClick={() => calificar(c.calidad)}
-                style={{ ...styles.btnDificultad, background: c.bg, color: c.color, border: `1.5px solid ${c.borde}`, opacity: enviando ? 0.6 : 1 }}
-              >
-                {c.label}
-              </button>
-            ))}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 16 }}>
+            {CALIFICACIONES_FLASHCARD.map((c, i) => {
+              const pulsada = teclaPulsada === i;
+              return (
+                <button
+                  key={c.calidad}
+                  type="button"
+                  className={`gr-btn${pulsada ? " pulsada tecla-pulsada" : ""}`}
+                  disabled={enviando || teclaPulsada !== null}
+                  onClick={() => calificar(c.calidad)}
+                  style={{
+                    "--c": c.rgb,
+                    padding: "15px 4px", textAlign: "center", fontWeight: 600, fontSize: 13.5, letterSpacing: "-0.01em",
+                    borderRadius: 11, cursor: "pointer", color: pulsada ? "#fff" : "#17171B",
+                    background: pulsada ? `rgb(${c.rgb})` : "#fff",
+                    border: `2px solid ${pulsada ? `rgb(${c.rgb})` : `rgba(${c.rgb},0.58)`}`,
+                    opacity: enviando ? 0.6 : 1,
+                  }}
+                >
+                  {c.label}
+                </button>
+              );
+            })}
           </div>
         )}
         {revelada && !editandoCarta && (
