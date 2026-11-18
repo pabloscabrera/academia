@@ -1471,3 +1471,13 @@ export function estadoCuadricula(tarjeta, progresoPorId, medias) {
   return bucket === null ? "sin-registro" : bucket;
 }
 
+
+// "#A6362B" -> "166,54,43". Para pintar un color con alfa (un lavado) en CSS
+// sin tener que escribir a mano la versión rgb de cada color del catálogo.
+export function rgbDeHex(hex) {
+  const h = String(hex || "").replace("#", "");
+  const completo = h.length === 3 ? h.split("").map((c) => c + c).join("") : h;
+  const n = parseInt(completo, 16);
+  if (completo.length !== 6 || Number.isNaN(n)) return null;
+  return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+}

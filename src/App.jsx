@@ -22,7 +22,7 @@ import {
   mediaCalificacionPorTarjeta, estadoCuadricula,
   etiquetaOrigen, accionDeTecla,
   calificacionDeTecla, MS_PULSACION,
-  tomarPreguntas,
+  tomarPreguntas, rgbDeHex,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -5259,17 +5259,22 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
                   badge={pendientesTotal > 0 ? `${pendientesTotal} hoy` : null}
                   onClick={seleccionarTodas}
                 />
-                {agrupacion.carpetas.map((c) => (
-                  <TarjetaCarpeta
-                    key={c.nombre}
-                    nombre={c.nombre}
-                    mazos={c.mazos.length}
-                    pendientes={c.mazos.reduce((n, m) => n + ((statsPorMazo.get(m) || {}).pendientes || 0), 0)}
-                    onClick={() => setCarpetaAbierta(c.nombre)}
-                    resaltada={destinoHover === c.nombre}
-                  />
-                ))}
-                {agrupacion.sueltos.map(cuadroDeMazo)}
+                {/* La lista va sobre la foto del prototipo: las filas flotan y entre
+                    ellas se ve la imagen. Solo en la raíz; dentro de una carpeta
+                    la lista es la de siempre. */}
+                <div style={styles.listaFotoMazos}>
+                  {agrupacion.carpetas.map((c) => (
+                    <TarjetaCarpeta
+                      key={c.nombre}
+                      nombre={c.nombre}
+                      mazos={c.mazos.length}
+                      pendientes={c.mazos.reduce((n, m) => n + ((statsPorMazo.get(m) || {}).pendientes || 0), 0)}
+                      onClick={() => setCarpetaAbierta(c.nombre)}
+                      resaltada={destinoHover === c.nombre}
+                    />
+                  ))}
+                  {agrupacion.sueltos.map(cuadroDeMazo)}
+                </div>
               </>
             )}
           </>
@@ -5725,34 +5730,44 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
   // para leer. Con crema en vez de blanco el oro se quedaba en 4,06, así que
   // el texto de relleno es blanco y no crema; no es una preferencia. Lo
   // comprueba tests/colores-mazo.test.mjs color a color.
-  const relleno = !!tinte;
-  const sobreColor = relleno ? "#fff" : null;
+  // Diseño de la lista (prototipo "Flashcards"): una franja de color en el
+  // canto izquierdo y un lavado que se apaga hacia la derecha. El color agrupa
+  // y se reconoce de lejos, pero no se come la fila ni tapa el título, que va
+  // en tinta oscura. Sin color elegido la fila queda blanca y sin franja.
+  const rgb = tinte ? rgbDeHex(tinte) : null;
   return (
     <div style={{
       ...styles.filaCarpeta,
-      ...(relleno ? { background: tinte, borderColor: tinte } : {}),
+      position: "relative",
+      overflow: "hidden",
+      padding: "15px 14px 15px 21px",
+      background: rgb
+        ? `linear-gradient(90deg, rgba(${rgb},0.42), rgba(${rgb},0.30) 55%, rgba(${rgb},0.26))`
+        : "rgba(255,255,255,0.93)",
+      border: `1.5px solid ${RAYA}`,
       ...(atenuada ? styles.tarjetaMazoArrastrada : {}),
     }}>
+      {rgb && <span aria-hidden="true" style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 9, background: `rgb(${rgb})` }} />}
       <button type="button" onClick={onClick} onPointerDown={onPointerDown} style={styles.filaCarpetaBoton}>
-        <span style={{ ...styles.filaCarpetaIcono, ...(relleno ? { color: sobreColor } : {}) }}>
+        <span style={styles.filaCarpetaIcono}>
           <IconoMazo size={18} />
         </span>
         <span style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ ...styles.filaCarpetaTitulo, ...(relleno ? { color: sobreColor } : {}) }}>{titulo}</div>
-          {subtitulo && <div style={{ ...styles.filaCarpetaSubtitulo, ...(relleno ? { color: sobreColor, opacity: 0.85 } : {}) }}>{subtitulo}</div>}
+          <div style={styles.filaCarpetaTitulo}>{titulo}</div>
+          {subtitulo && <div style={styles.filaCarpetaSubtitulo}>{subtitulo}</div>}
         </span>
         {badge != null && (
-          <span style={{ ...styles.filaCarpetaBadge, ...(relleno ? { color: sobreColor, background: "rgba(255,255,255,0.22)" } : {}) }}>{badge}</span>
+          <span style={styles.filaCarpetaBadge}>{badge}</span>
         )}
       </button>
       {/* Una sola "⋯" en vez de los cinco iconos sueltos que había: con los
           mazos que hay ahora, cinco símbolos repetidos en cada fila es
           exactamente el ruido del que se quejó el usuario. Dentro están todas
           las acciones, con su nombre escrito. */}
-      <button type="button" onClick={() => setModo("acciones")} aria-label={`Opciones de ${titulo}`} style={{ ...styles.filaCarpetaIconBtn, ...(relleno ? { color: sobreColor } : {}) }}>
+      <button type="button" onClick={() => setModo("acciones")} aria-label={`Opciones de ${titulo}`} style={styles.filaCarpetaIconBtn}>
         <MoreHorizontal size={16} />
       </button>
-      <ChevronRight size={16} color={relleno ? sobreColor : "#9B9689"} />
+      <ChevronRight size={16} color="#9B9689" />
     </div>
   );
 }
@@ -6541,6 +6556,7 @@ const styles = {
   // sin un `border-box` global en el proyecto, cada fila sobresalía 31 px de su
   // caja y ensanchaba la página. Venía de antes de la rejilla; lo cazó la
   // comprobación de `scrollWidth` al volver a las filas.
+  listaFotoMazos: { background: "#2E2C27 url(/img/fondo-mazos.jpg) center/cover", borderRadius: 14, padding: 10, display: "flex", flexDirection: "column", gap: 2 },
   filaCarpeta: { boxSizing: "border-box", display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "#fff", border: `1.5px solid ${RAYA}`, borderRadius: 12, padding: "12px 14px", cursor: "pointer", marginBottom: 8 },
   filaCarpetaBoton: { display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, margin: 0, font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" },
   filaCarpetaIcono: { display: "flex", alignItems: "center", justifyContent: "center", width: 22, flexShrink: 0, color: TINTA_TENUE },
