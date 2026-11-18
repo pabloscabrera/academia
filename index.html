@@ -70,11 +70,6 @@
       html[data-tema="oscuro"] svg[stroke="#A2A2AB"], html[data-tema="oscuro"] svg[stroke="#C7C2B4"] { stroke: #74747C; }
       html[data-tema="oscuro"] img { filter: none; }
 
-      /* Pestañas: al pasar el ratón el recuadro se oscurece (la activa ya es
-         negra y no cambia). Solo con ratón: en táctil :hover se queda pegado. */
-      @media (hover: hover) {
-        .nav-app button:not(.activa):hover { background: var(--pestana-hover) !important; color: var(--tinta) !important; }
-      }
 
       /* Pantalla de carga: AUTOPIR sube letra a letra (AUTO gordo, PIR fino,
          como el logo) y debajo una raya fina que barre. Es la MISMA en el
@@ -100,8 +95,17 @@
          cortado por una raya. */
       .nav-app button + button::before { content: ""; position: absolute; left: -3.5px; top: 28%; bottom: 28%; width: 1px; background: var(--linea); transition: opacity .15s; }
       .nav-app button.activa::before, .nav-app button.activa + button::before { opacity: 0; }
-      @media (hover: hover) {
-        .nav-app button:hover::before, .nav-app button:hover + button::before { opacity: 0; }
+      .nav-app button.encima::before, .nav-app button.encima + button::before { opacity: 0; }
+      /* De la portada a la app: la portada se difumina y se aleja un poco
+         mientras la app, que ya estaba debajo, pasa de borrosa a nítida. */
+      .portada-sale { animation: portadaSale .65s cubic-bezier(.4,0,.2,1) forwards; }
+      .app-entra { animation: appEntra .8s cubic-bezier(.22,1,.36,1) both; }
+      @keyframes portadaSale { to { opacity: 0; filter: blur(14px); transform: scale(1.05); } }
+      @keyframes appEntra { from { opacity: 0; filter: blur(10px); transform: scale(.975); } to { opacity: 1; filter: blur(0); transform: none; } }
+      @media (prefers-reduced-motion: reduce) {
+        .portada-sale { animation: desvanecer .3s ease forwards; }
+        .app-entra { animation: none; }
+        @keyframes desvanecer { to { opacity: 0; } }
       }
       /* Que el gesto de dos dedos del trackpad (o el borde de la pantalla)
          no lo coja el navegador para ir atrás: es de la app, para pasar de

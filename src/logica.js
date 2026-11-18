@@ -1541,3 +1541,13 @@ export function decidirPaso({ dx, velocidad = 0, ancho, hayAnterior, haySiguient
 export function umbralTrackpad(ancho) {
   return Math.min(ancho * 0.18, 140);
 }
+
+// Trackpad: al levantar los dedos el sistema sigue mandando eventos de rueda
+// cada vez más pequeños (la inercia). Esto reconoce ese decaimiento: los
+// últimos tres eventos van a menos y el actual ya es menos de la mitad del
+// pico del gesto. Es la señal de "has soltado", que en la web no existe.
+export function pareceInercia(ultimos, pico) {
+  if (!(pico > 8) || ultimos.length < 3) return false;
+  const [a, b, c] = ultimos.slice(-3).map(Math.abs);
+  return a > b && b > c && c < pico * 0.5;
+}
