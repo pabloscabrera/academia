@@ -2465,12 +2465,13 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
     const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
     const ss = String(seconds % 60).padStart(2, "0");
     const esCorrecta = selected === q.correcta;
+    const E = ESTILO_EXAMENES;
     // La que tienes revelada delante todavía no está en `answers` (entra al
     // pulsar "Siguiente"), así que se le pasa aparte: si no, el marcador iría
     // siempre una pregunta por detrás de lo que acabas de ver en pantalla.
     const marcador = marcadorTirada(answers, ronda, primerIntento, revealed ? esCorrecta : null);
     return (
-      <div>
+      <div style={{ background: "#fff", borderRadius: 15, overflow: "hidden", border: `1px solid ${E.linea}` }}>
         <style>{`
           @keyframes acertarPulso {
             0% { box-shadow: 0 0 0 0 rgba(76,175,80,0.55); }
@@ -2479,7 +2480,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
           }
           .acierto-anim { animation: acertarPulso 0.6s ease-out; }
         `}</style>
-        <div style={styles.runHeader}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 18px", borderBottom: `1px solid ${E.linea}`, fontFamily: E.texto }}>
           <span style={{ fontSize: 13, color: relampago ? "#9C7A2C" : "#6E6A61", fontWeight: relampago ? 700 : 400, display: "flex", alignItems: "center", gap: 4 }}>
             {relampago && <Zap size={13} color="#C89B3C" />}
             {relampago ? "Modo relámpago · " : (ronda > 1 ? `Repaso de falladas (ronda ${ronda}) · ` : "")}Pregunta {idx + 1} de {pool.length}
@@ -2502,53 +2503,94 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
             {!relampago && (
               <span style={{ display: "flex", alignItems: "center", gap: 7 }} title={`${marcador.aciertos} acertadas · ${marcador.fallos} falladas${ronda > 1 ? " (de la primera vuelta)" : ""}`}>
                 <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                  <Check size={13} color={marcador.aciertos > 0 ? CORRECTO : RAYA} strokeWidth={3} />
-                  <span style={{ color: marcador.aciertos > 0 ? TINTA : TINTA_TENUE, fontWeight: 600 }}>{marcador.aciertos}</span>
+                  <Check size={13} color={marcador.aciertos > 0 ? E.bien : RAYA} strokeWidth={3} />
+                  <span style={{ color: marcador.aciertos > 0 ? E.tinta : E.niebla, fontWeight: 600 }}>{marcador.aciertos}</span>
                 </span>
                 <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                  <X size={13} color={marcador.fallos > 0 ? ACENTO : RAYA} strokeWidth={3} />
-                  <span style={{ color: marcador.fallos > 0 ? TINTA : TINTA_TENUE, fontWeight: 600 }}>{marcador.fallos}</span>
+                  <X size={13} color={marcador.fallos > 0 ? E.mal : RAYA} strokeWidth={3} />
+                  <span style={{ color: marcador.fallos > 0 ? E.tinta : E.niebla, fontWeight: 600 }}>{marcador.fallos}</span>
                 </span>
               </span>
             )}
             <span style={{ display: "flex", alignItems: "center", gap: 4 }}><Clock size={13} /> {mm}:{ss}</span>
           </span>
         </div>
-        <div style={styles.progressTrack}><div style={{ ...styles.progressFill, width: `${(idx / pool.length) * 100}%` }} /></div>
-        <Card style={{ marginTop: 16, ...styles.daypoCard }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <div style={{ fontSize: 11, color: TINTA_SUAVE, fontFamily: "Arial, Helvetica, sans-serif" }}>{etiquetaOrigen(q)}</div>
+        <div style={{ height: 2, background: E.linea }}><div style={{ height: 2, background: E.negro, width: `${(idx / pool.length) * 100}%`, transition: "width .3s" }} /></div>
+        <div style={{ padding: "18px 18px 18px", fontFamily: E.texto, color: E.tinta }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <span style={{ fontWeight: 500, fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: E.niebla }}>{etiquetaOrigen(q)}</span>
             {onToggleFavorito && <FavoritoBtn pregunta={q} favoritos={favoritos} onToggle={onToggleFavorito} />}
           </div>
-          <p style={styles.daypoPregunta}>{q.pregunta}</p>
-          {q.opciones.map((op, i) => {
-            const letra = String.fromCharCode(65 + i);
-            let estilo = { ...styles.daypoOpcion };
-            let claseExtra = "";
-            if (revealed) {
-              if (i === q.correcta) { estilo = { ...estilo, ...styles.daypoOpcionCorrecta }; claseExtra = "acierto-anim"; }
-              else if (i === selected) estilo = { ...estilo, ...styles.daypoOpcionIncorrecta };
-            }
-            return (
-              <button type="button" key={`${ronda}-${q.id}-${i}`} className={claseExtra} onClick={(e) => elegir(i, e)} disabled={revealed} style={estilo}>
-                <span style={styles.daypoLetra}>{letra}</span>
-                <span style={{ flex: 1 }}>{op}</span>
-                {revealed && i === q.correcta && <Check size={18} color={CORRECTO} />}
-                {revealed && i === selected && i !== q.correcta && <X size={18} color="#A6362B" />}
-              </button>
-            );
-          })}
+          <p style={{ marginTop: 10, fontSize: 17.5, lineHeight: 1.42, letterSpacing: "-0.005em", whiteSpace: "pre-line" }}>{q.pregunta}</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 18 }}>
+            {q.opciones.map((op, i) => {
+              const letra = String.fromCharCode(65 + i);
+              const esLaCorrecta = i === q.correcta;
+              const esLaElegida = revealed && i === selected && !esLaCorrecta;
+              let tono = { border: `1.5px solid ${E.linea}`, background: "#fff" };
+              let letraTono = { border: `1.5px solid ${E.linea}`, background: "transparent", color: E.humo };
+              if (revealed && esLaCorrecta) {
+                tono = { border: `1.5px solid ${E.bien}`, background: E.bienSuave };
+                letraTono = { border: `1.5px solid ${E.bien}`, background: E.bien, color: "#fff" };
+              } else if (esLaElegida) {
+                tono = { border: `1.5px solid ${E.mal}`, background: E.malSuave };
+                letraTono = { border: `1.5px solid ${E.mal}`, background: E.mal, color: "#fff" };
+              }
+              return (
+                <button
+                  type="button"
+                  key={`${ronda}-${q.id}-${i}`}
+                  className={revealed && esLaCorrecta ? "acierto-anim" : ""}
+                  onClick={(e) => elegir(i, e)}
+                  disabled={revealed}
+                  style={{
+                    display: "flex", gap: 12, alignItems: "flex-start", width: "100%", textAlign: "left",
+                    padding: "15px 15px 15px 13px", borderRadius: 15, color: E.tinta,
+                    cursor: revealed ? "default" : "pointer",
+                    opacity: revealed && !esLaCorrecta && !esLaElegida ? 0.45 : 1,
+                    ...tono,
+                  }}
+                >
+                  <span style={{
+                    flex: "none", width: 25, height: 25, borderRadius: "50%", display: "grid", placeItems: "center",
+                    fontFamily: E.display, fontWeight: 800, fontSize: 12, marginTop: 1, ...letraTono,
+                  }}>
+                    {revealed && esLaCorrecta ? <Check size={13} strokeWidth={2.8} />
+                      : esLaElegida ? <X size={13} strokeWidth={2.8} />
+                      : letra}
+                  </span>
+                  <span style={{ flex: 1, fontSize: 14.5, lineHeight: 1.45, paddingTop: 3 }}>{op}</span>
+                </button>
+              );
+            })}
+          </div>
           {revealed && (
-            <div style={{ ...styles.daypoFeedback, ...(esCorrecta ? styles.daypoFeedbackOk : styles.daypoFeedbackMal) }}>
-              {esCorrecta ? "¡Correcto!" : `Incorrecto. La respuesta correcta es la ${String.fromCharCode(65 + q.correcta)}.`}
-              {relampago && !esCorrecta && <div style={{ marginTop: 6, fontWeight: 700 }}>La racha del modo relámpago termina aquí.</div>}
-              {q.explicacion && <div style={{ marginTop: 6, fontWeight: 400, whiteSpace: "pre-line" }}>{q.explicacion}</div>}
+            <div style={{ marginTop: 16 }}>
+              <p style={{ fontWeight: 600, fontSize: 13.5, color: esCorrecta ? E.bien : E.mal }}>
+                {esCorrecta ? "¡Correcto!" : `Incorrecto. La respuesta correcta es la ${String.fromCharCode(65 + q.correcta)}.`}
+              </p>
+              {relampago && !esCorrecta && <p style={{ marginTop: 6, fontWeight: 600, fontSize: 13, color: E.tinta }}>La racha del modo relámpago termina aquí.</p>}
+              {q.explicacion && (
+                <div style={{ marginTop: 12, background: E.hueso, borderRadius: 15, padding: 16, fontSize: 12.5, lineHeight: 1.6, color: E.humo, whiteSpace: "pre-line" }}>
+                  {q.explicacion}
+                </div>
+              )}
             </div>
           )}
-          <button type="button" onClick={next} disabled={!revealed} style={{ ...styles.btnPrimary, width: "100%", marginTop: 18, opacity: !revealed ? 0.4 : 1 }}>
-            {(idx + 1 === pool.length || (relampago && revealed && !esCorrecta)) ? "Terminar" : "Siguiente"}
+          <button
+            type="button"
+            onClick={next}
+            disabled={!revealed}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", marginTop: 18,
+              background: E.negro, color: "#fff", padding: "17px 18px", borderRadius: 12, border: "none",
+              fontWeight: 600, fontSize: 14, cursor: revealed ? "pointer" : "default", opacity: revealed ? 1 : 0.4,
+            }}
+          >
+            <span>{(idx + 1 === pool.length || (relampago && revealed && !esCorrecta)) ? "Terminar" : "Siguiente"}</span>
+            <span aria-hidden="true">→</span>
           </button>
-        </Card>
+        </div>
       </div>
     );
   }
