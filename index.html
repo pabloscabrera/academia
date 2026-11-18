@@ -65,26 +65,37 @@
       html[data-tema="oscuro"] svg[stroke="#6A6A72"] { stroke: #A6A6AE; }
       html[data-tema="oscuro"] svg[stroke="#A2A2AB"] { stroke: #7C7C84; }
       html[data-tema="oscuro"] .carga { background: #141416; }
-      html[data-tema="oscuro"] .carga-marca { color: #F2F2F3; }
-      html[data-tema="oscuro"] .carga-via { background: #2E2E33; }
-      html[data-tema="oscuro"] .carga-via i { background: #F2F2F3; }
+      html[data-tema="oscuro"] .carga-trazo { -webkit-text-stroke-color: #F2F2F3; }
+      html[data-tema="oscuro"] .carga-tinta { color: #F2F2F3; }
+      html[data-tema="oscuro"] .carga-casillas span { --relleno: #F2F2F3; --sobre: #141416; --borde: #3A3A40; --tenue: #7C7C84; }
 
-      /* Pantalla de carga del rediseño: AUTOPIR sube letra a letra y una raya
-         barre debajo, como la del duelo. Es la MISMA en el HTML (antes de que
-         llegue el JavaScript) y en React (mientras cargan los datos), así que
-         no hay salto de una a otra. */
-      .carga { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: #fff; }
-      .carga-marca { display: flex; font-family: 'Cabinet Grotesk', 'Arial Black', sans-serif; font-weight: 800; font-size: 24px; letter-spacing: 0.22em; color: #0C0C0D; padding-left: 0.22em; }
-      .carga-marca span { display: inline-block; opacity: 0; transform: translateY(10px); animation: cargaLetra 0.55s cubic-bezier(.22,1,.36,1) forwards; }
-      .carga-via { position: relative; width: 132px; height: 2px; background: #E4E3E0; overflow: hidden; opacity: 0; animation: cargaAparece 0.4s ease 0.55s forwards; }
-      .carga-via i { position: absolute; top: 0; bottom: 0; width: 38%; background: #0C0C0D; animation: cargaBarre 1.15s cubic-bezier(.65,0,.35,1) infinite; }
-      .carga-dice { font-family: 'Switzer', 'Helvetica Neue', Arial, sans-serif; font-weight: 500; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: #A2A2AB; opacity: 0; animation: cargaAparece 0.4s ease 0.75s forwards; }
-      @keyframes cargaLetra { to { opacity: 1; transform: none; } }
+      /* Pantalla de carga del rediseño: AUTOPIR aparece en contorno y se
+         rellena de tinta de izquierda a derecha, como si se escribiera, y
+         debajo cuatro casillas A·B·C·D se marcan una tras otra, como en una
+         hoja de respuestas. Sin texto: no hace falta decir que carga.
+         Es la MISMA en el HTML (antes de que llegue el JavaScript) y en React
+         (mientras cargan los datos), así que no hay salto de una a otra. */
+      .carga { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; background: #fff; }
+      .carga-marca { position: relative; font-family: 'Cabinet Grotesk', 'Arial Black', sans-serif; font-weight: 800; font-size: 38px; line-height: 1; letter-spacing: 0.14em; }
+      .carga-marca span { display: block; padding-left: 0.14em; white-space: nowrap; }
+      .carga-trazo { color: transparent; -webkit-text-stroke: 1px #0C0C0D; opacity: 0; animation: cargaAparece 0.35s ease forwards; }
+      .carga-tinta { position: absolute; left: 0; top: 0; color: #0C0C0D; clip-path: inset(0 100% 0 0); -webkit-clip-path: inset(0 100% 0 0); animation: cargaTinta 1.4s cubic-bezier(.65,0,.35,1) 0.3s forwards; }
+      .carga-casillas { display: flex; gap: 8px; opacity: 0; animation: cargaAparece 0.4s ease 0.9s forwards; }
+      .carga-casillas span { --relleno: #0C0C0D; --sobre: #fff; --borde: #D4D3CF; --tenue: #A2A2AB; width: 24px; height: 24px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border: 1.5px solid var(--borde); border-radius: 5px; font-family: 'Switzer', 'Helvetica Neue', Arial, sans-serif; font-weight: 600; font-size: 10.5px; color: var(--tenue); animation: cargaMarca 2.4s ease-in-out infinite; }
+      .carga-casillas span:nth-child(2) { animation-delay: 0.6s; }
+      .carga-casillas span:nth-child(3) { animation-delay: 1.2s; }
+      .carga-casillas span:nth-child(4) { animation-delay: 1.8s; }
       @keyframes cargaAparece { to { opacity: 1; } }
-      @keyframes cargaBarre { 0% { left: -38%; } 100% { left: 100%; } }
+      @keyframes cargaTinta { to { clip-path: inset(0 0 0 0); -webkit-clip-path: inset(0 0 0 0); } }
+      @keyframes cargaMarca {
+        0% { background: transparent; border-color: var(--borde); color: var(--tenue); transform: scale(1); }
+        6% { background: var(--relleno); border-color: var(--relleno); color: var(--sobre); transform: scale(0.86); }
+        11%, 22% { background: var(--relleno); border-color: var(--relleno); color: var(--sobre); transform: scale(1); }
+        32%, 100% { background: transparent; border-color: var(--borde); color: var(--tenue); transform: scale(1); }
+      }
       @media (prefers-reduced-motion: reduce) {
-        .carga-marca span, .carga-via, .carga-dice { animation: none; opacity: 1; transform: none; }
-        .carga-via i { animation: none; left: 31%; }
+        .carga-trazo, .carga-casillas, .carga-casillas span { animation: none; opacity: 1; }
+        .carga-tinta { animation: none; clip-path: none; -webkit-clip-path: none; }
       }
 
       /* Tipografía del rediseño, autoalojada (Fontshare, licencia libre). */
@@ -119,12 +130,14 @@
            mismo fallo que ya tuvo la barra de aviso con su X.
            En Safari normal la variable vale 0 y `max()` deja los 12 px de
            siempre, así que fuera del icono no cambia nada. */
-        .cabecera { padding: max(12px, env(safe-area-inset-top)) 14px 12px !important; }
+        .cabecera { padding: max(12px, env(safe-area-inset-top)) 8px 2px 14px !important; flex-wrap: nowrap !important; position: relative !important; }
         /* Ya sabes cómo te llamas, y son los ~110 px que hacen falta para
            que quepan los botones, que son lo que sí hace algo. */
         .cabecera-nombre { display: none !important; }
         .cabecera-marca { gap: 6px !important; }
-        .cabecera-iconos { gap: 2px !important; }
+        .cabecera-iconos { gap: 0 !important; flex-shrink: 0; }
+        .cabecera-iconos button { padding: 6px 5px !important; }
+        .cabecera-marca { min-width: 0; flex-wrap: wrap; row-gap: 4px; }
         .nav-app { padding-left: 6px !important; padding-right: 6px !important; }
         .nav-app button { padding: 12px 1px !important; font-size: 10px !important; letter-spacing: .03em !important; gap: 6px !important; }
         /* Las cuatro pestañas con su icono no caben, y la que se queda fuera
@@ -132,23 +145,15 @@
            lo parece. Sin los iconos entran las cuatro y ya no hay nada
            escondido; el texto solo se lee igual de bien. */
         .nav-app button svg { display: none !important; }
-        .main-app { padding: 20px 14px 100px !important; }
+        .main-app { padding: 20px 14px 48px !important; }
 
-        /* Los desplegables (Logros, Ruleta, Frase) van anclados con
-           `right: 0` a SU botón. En una pantalla ancha el botón está a la
-           derecha y el panel cae hacia dentro; en un móvil los botones se
-           han bajado a una segunda fila pegados a la izquierda, así que un
-           panel de 320 px colgado de su borde derecho se sale medio metro
-           por fuera de la pantalla.
-
-           En vez de inventar un `top` a ojo, se le quita el anclaje al
-           botón (los envoltorios pasan a `static`) y el panel se cuelga de
-           la fila de iconos entera, de borde a borde. */
-        /* Ancho completo: además de dejar los iconos repartidos, es lo que
-           da al panel colgado de esta fila el ancho de la pantalla en vez
-           del de los siete botones. */
-        .cabecera-iconos { position: relative !important; width: 100% !important; justify-content: space-between !important; }
-        .cabecera-iconos > div { position: static !important; }
+        /* Los iconos van en la MISMA fila que la marca, pequeños y a la
+           derecha. El desplegable de la frase colgaba de SU botón con
+           `right: 0`; en un móvil un panel de 320 px se saldría por la
+           izquierda, así que se le quita el anclaje al botón (los
+           envoltorios pasan a `static`) y se cuelga de la cabecera entera
+           (`position: relative` arriba), de borde a borde. */
+        .cabecera-iconos, .cabecera-iconos > div { position: static !important; }
         .desplegable { left: 0 !important; right: 0 !important; width: auto !important; max-width: none !important; }
       }
     </style>
@@ -167,9 +172,8 @@
   <body>
     <div id="root">
       <div id="arranque" class="carga">
-        <div class="carga-marca" aria-label="AUTOPIR"><span style="animation-delay:0ms">A</span><span style="animation-delay:70ms">U</span><span style="animation-delay:140ms">T</span><span style="animation-delay:210ms">O</span><span style="animation-delay:280ms">P</span><span style="animation-delay:350ms">I</span><span style="animation-delay:420ms">R</span></div>
-        <div class="carga-via"><i></i></div>
-        <div class="carga-dice">Preparando tus preguntas</div>
+        <div class="carga-marca" aria-label="AUTOPIR"><span class="carga-trazo">AUTOPIR</span><span class="carga-tinta" aria-hidden="true">AUTOPIR</span></div>
+        <div class="carga-casillas" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span></div>
       </div>
     </div>
     <script>

@@ -97,10 +97,52 @@ try {
   await p2.getByRole("button", { name: /Falladas \(1\)/ }).click();
   const tf = await p2.locator("body").innerText();
   if (!/fallada 2 veces/i.test(tf)) fallos.push("Falladas no muestra el recuento");
-  // 4) La navegación va abajo, como en el prototipo.
-  const nav = await p2.evaluate(() => { const n = document.querySelector("nav.nav-app"); const r = n.getBoundingClientRect(); return { abajo: Math.round(window.innerHeight - r.bottom), pos: getComputedStyle(n).position }; });
+  // 4) Las pestañas van ARRIBA, bajo la cabecera, y se quedan ahí al
+  // desplazar; los iconos van en la misma fila que la marca, a la derecha.
+  await p2.evaluate(() => window.scrollTo(0, 3000));
+  await esperar(200);
+  const nav = await p2.evaluate(() => {
+    const n = document.querySelector("nav.nav-app").getBoundingClientRect();
+    const marca = document.querySelector(".cabecera-marca").getBoundingClientRect();
+    const iconos = document.querySelector(".cabecera-iconos").getBoundingClientRect();
+    const svg = document.querySelector(".cabecera-iconos svg").getBoundingClientRect();
+    return {
+      arriba: Math.round(n.top), alto: Math.round(n.height),
+      mismaFila: Math.abs((marca.top + marca.height / 2) - (iconos.top + iconos.height / 2)) < 14,
+      iconosDerecha: Math.round(window.innerWidth - iconos.right), icono: Math.round(svg.width),
+      ancho: document.documentElement.scrollWidth, vista: window.innerWidth,
+    };
+  });
   console.log("4) navegación ->", JSON.stringify(nav));
-  if (nav.pos !== "fixed" || nav.abajo > 2) fallos.push("la navegación no va pegada abajo");
+  if (nav.arriba > 120) fallos.push("las pestañas no se quedan arriba al desplazar");
+  if (!nav.mismaFila) fallos.push("los iconos no van en la fila de la marca");
+  if (nav.iconosDerecha > 20) fallos.push("los iconos no van a la derecha");
+  if (nav.icono > 16) fallos.push("los iconos de la cabecera no son pequeños");
+  if (nav.ancho > nav.vista) fallos.push("la página se ensancha");
+  // 5) La pantalla de carga, con el JavaScript bloqueado para que se quede:
+  // sin raya ni texto, marca rellenándose de tinta y casillas A-D marcándose.
+  const c3 = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  await c3.route("**/assets/*.js", (r) => r.abort());
+  const p3 = await c3.newPage();
+  await p3.goto(`http://localhost:${PUERTO}/`, { waitUntil: "load" });
+  await esperar(1900);
+  const carga = await p3.evaluate(() => {
+    const a = document.getElementById("arranque");
+    const casillas = [...a.querySelectorAll(".carga-casillas span")];
+    return {
+      texto: a.innerText.replace(/\s+/g, " ").trim(),
+      raya: !!a.querySelector(".carga-via"),
+      casillas: casillas.map((c) => c.textContent).join(""),
+      marcada: casillas.some((c) => getComputedStyle(c).backgroundColor !== "rgba(0, 0, 0, 0)"),
+      tinta: getComputedStyle(a.querySelector(".carga-tinta")).clipPath,
+    };
+  });
+  console.log("5) carga ->", JSON.stringify(carga));
+  if (/Preparando/i.test(carga.texto) || carga.raya) fallos.push("la carga sigue con la raya o el texto");
+  if (carga.casillas !== "ABCD") fallos.push("faltan las casillas A-D");
+  if (!carga.marcada) fallos.push("ninguna casilla se marca");
+  if (!/inset\(0(px|%)?( 0(px|%)?)*\)|none/.test(carga.tinta)) fallos.push("la marca no se rellena de tinta: " + carga.tinta);
+  await c3.close();
   if (e2.length) fallos.push("errores dentro: " + e2.join(" | "));
 } catch (err) {
   fallos.push(err.message);
