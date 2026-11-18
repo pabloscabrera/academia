@@ -35,67 +35,73 @@
     <meta name="twitter:description" content="2.102 preguntas reales de exámenes oficiales, autoevaluaciones, flashcards y duelos 1v1." />
     <meta name="twitter:image" content="https://academia-mocha.vercel.app/og.png" />
     <style>
-      /* MODO NOCHE. La app se pinta con estilos en línea, así que el tema
-         oscuro cambia los colores del rediseño allí donde aparecen escritos.
-         Lo activa React poniendo data-tema="oscuro" en <html> (Ajustes ->
-         Apariencia: Claro, Oscuro o Automático, que sigue al móvil). */
-      html[data-tema="oscuro"] { color-scheme: dark; background: #141416; }
-      html[data-tema="oscuro"] body { background: #141416; }
-      html[data-tema="oscuro"] [style*="background: rgb(255, 255, 255)"], html[data-tema="oscuro"] [style*="background-color: rgb(255, 255, 255)"] { background-color: #141416 !important; }
-      html[data-tema="oscuro"] [style*="background: rgb(247, 246, 243)"], html[data-tema="oscuro"] [style*="background-color: rgb(247, 246, 243)"] { background-color: #1C1C1F !important; }
-      html[data-tema="oscuro"] [style*="background: rgb(242, 241, 238)"], html[data-tema="oscuro"] [style*="background-color: rgb(242, 241, 238)"] { background-color: #222226 !important; }
-      html[data-tema="oscuro"] [style*="background: rgb(239, 237, 232)"], html[data-tema="oscuro"] [style*="background-color: rgb(239, 237, 232)"] { background-color: #2A2A2F !important; }
-      html[data-tema="oscuro"] [style*="background: rgb(228, 227, 224)"], html[data-tema="oscuro"] [style*="background-color: rgb(228, 227, 224)"] { background-color: #2E2E33 !important; }
-      html[data-tema="oscuro"] [style*="background-color: rgba(255, 255, 255, 0.93)"] { background-color: rgba(26, 26, 30, 0.92) !important; }
-      html[data-tema="oscuro"] [style*="background: rgba(255, 255, 255, 0.85)"], html[data-tema="oscuro"] [style*="background-color: rgba(255, 255, 255, 0.85)"] { background-color: rgba(26, 26, 30, 0.86) !important; }
-      html[data-tema="oscuro"] [style*="background: rgb(12, 12, 13)"], html[data-tema="oscuro"] [style*="background-color: rgb(12, 12, 13)"] { background-color: #F2F2F3 !important; color: #0C0C0D !important; }
-      html[data-tema="oscuro"] [style^="color: rgb(23, 23, 27)"], html[data-tema="oscuro"] [style*=" color: rgb(23, 23, 27)"] { color: #ECECEE !important; }
-      html[data-tema="oscuro"] [style^="color: rgb(12, 12, 13)"], html[data-tema="oscuro"] [style*=" color: rgb(12, 12, 13)"] { color: #F2F2F3 !important; }
-      html[data-tema="oscuro"] [style^="color: rgb(106, 106, 114)"], html[data-tema="oscuro"] [style*=" color: rgb(106, 106, 114)"] { color: #A6A6AE !important; }
-      html[data-tema="oscuro"] [style^="color: rgb(162, 162, 171)"], html[data-tema="oscuro"] [style*=" color: rgb(162, 162, 171)"] { color: #7C7C84 !important; }
-      html[data-tema="oscuro"] [style^="color: rgb(58, 58, 67)"], html[data-tema="oscuro"] [style*=" color: rgb(58, 58, 67)"] { color: #C9C9D0 !important; }
-      html[data-tema="oscuro"] [style*="solid rgb(228, 227, 224)"] { border-color: #2E2E33 !important; }
-      html[data-tema="oscuro"] [style*="solid rgb(12, 12, 13)"] { border-color: #F2F2F3 !important; }
-      html[data-tema="oscuro"] [style*="box-shadow: rgb(12, 12, 13)"] { box-shadow: inset 0 -1.5px 0 #F2F2F3 !important; }
-      html[data-tema="oscuro"] input, html[data-tema="oscuro"] select, html[data-tema="oscuro"] textarea { background-color: #1C1C1F !important; color: #ECECEE !important; }
-      html[data-tema="oscuro"] svg circle[stroke="#0C0C0D"] { stroke: #F2F2F3; }
-      html[data-tema="oscuro"] svg text[fill="#0C0C0D"] { fill: #F2F2F3; }
-      html[data-tema="oscuro"] svg circle[stroke="#E4E3E0"] { stroke: #2E2E33; }
-      html[data-tema="oscuro"] svg[stroke="#17171B"], html[data-tema="oscuro"] svg[stroke="#0C0C0D"] { stroke: #ECECEE; }
-      html[data-tema="oscuro"] svg[stroke="#6A6A72"] { stroke: #A6A6AE; }
-      html[data-tema="oscuro"] svg[stroke="#A2A2AB"] { stroke: #7C7C84; }
-      html[data-tema="oscuro"] .carga { background: #141416; }
-      html[data-tema="oscuro"] .carga-trazo { -webkit-text-stroke-color: #F2F2F3; }
-      html[data-tema="oscuro"] .carga-tinta { color: #F2F2F3; }
-      html[data-tema="oscuro"] .carga-casillas span { --relleno: #F2F2F3; --sobre: #141416; --borde: #3A3A40; --tenue: #7C7C84; }
-
-      /* Pantalla de carga del rediseño: AUTOPIR aparece en contorno y se
-         rellena de tinta de izquierda a derecha, como si se escribiera, y
-         debajo cuatro casillas A·B·C·D se marcan una tras otra, como en una
-         hoja de respuestas. Sin texto: no hace falta decir que carga.
-         Es la MISMA en el HTML (antes de que llegue el JavaScript) y en React
-         (mientras cargan los datos), así que no hay salto de una a otra. */
-      .carga { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; background: #fff; }
-      .carga-marca { position: relative; font-family: 'Cabinet Grotesk', 'Arial Black', sans-serif; font-weight: 800; font-size: 38px; line-height: 1; letter-spacing: 0.14em; }
-      .carga-marca span { display: block; padding-left: 0.14em; white-space: nowrap; }
-      .carga-trazo { color: transparent; -webkit-text-stroke: 1px #0C0C0D; opacity: 0; animation: cargaAparece 0.35s ease forwards; }
-      .carga-tinta { position: absolute; left: 0; top: 0; color: #0C0C0D; clip-path: inset(0 100% 0 0); -webkit-clip-path: inset(0 100% 0 0); animation: cargaTinta 1.4s cubic-bezier(.65,0,.35,1) 0.3s forwards; }
-      .carga-casillas { display: flex; gap: 8px; opacity: 0; animation: cargaAparece 0.4s ease 0.9s forwards; }
-      .carga-casillas span { --relleno: #0C0C0D; --sobre: #fff; --borde: #D4D3CF; --tenue: #A2A2AB; width: 24px; height: 24px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border: 1.5px solid var(--borde); border-radius: 5px; font-family: 'Switzer', 'Helvetica Neue', Arial, sans-serif; font-weight: 600; font-size: 10.5px; color: var(--tenue); animation: cargaMarca 2.4s ease-in-out infinite; }
-      .carga-casillas span:nth-child(2) { animation-delay: 0.6s; }
-      .carga-casillas span:nth-child(3) { animation-delay: 1.2s; }
-      .carga-casillas span:nth-child(4) { animation-delay: 1.8s; }
-      @keyframes cargaAparece { to { opacity: 1; } }
-      @keyframes cargaTinta { to { clip-path: inset(0 0 0 0); -webkit-clip-path: inset(0 0 0 0); } }
-      @keyframes cargaMarca {
-        0% { background: transparent; border-color: var(--borde); color: var(--tenue); transform: scale(1); }
-        6% { background: var(--relleno); border-color: var(--relleno); color: var(--sobre); transform: scale(0.86); }
-        11%, 22% { background: var(--relleno); border-color: var(--relleno); color: var(--sobre); transform: scale(1); }
-        32%, 100% { background: transparent; border-color: var(--borde); color: var(--tenue); transform: scale(1); }
+      /* COLORES. Todos los colores de la app son variables: los estilos en
+         línea de App.jsx dicen "var(--tinta)", no "#17171B", así que el modo
+         noche no tapa colores sueltos a base de parches — cambia la paleta
+         entera y cada pantalla la hereda. Lo activa React poniendo
+         data-tema="oscuro" en <html> (Ajustes -> Apariencia). */
+      :root {
+        --fondo: #FFFFFF; --superficie: #FFFFFF; --bloque: #F3F2EF;
+        --tinta: #17171B; --negro: #0C0C0D; --humo: #6A6A72; --niebla: #A2A2AB; --linea: #E4E3E0;
+        --sobre-negro: #FFFFFF;
+        --acento: #A6362B; --acento-suave: #F7E9E6; --correcto: #2E7D46; --correcto-suave: #E7F1E9;
+        --oro: #93711F; --aviso: #9C5A1F; --aviso-suave: #FBEEE0; --cautela: #8A6D1F; --cautela-suave: #FBF3DE;
+        --mal: #9E2B20; --mal-suave: #FBEFED; --bien: #1B6B4F; --bien-suave: #ECF5F1;
+        --velo: rgba(255,255,255,0.93); --velo-claro: rgba(255,255,255,0.85); --velo-vacio: rgba(255,255,255,0.5); --velo-sel: rgba(12,12,13,0.8);
+        --velo-foto: rgba(0,0,0,0); --pestana-hover: #EDECE9;
       }
+      html[data-tema="oscuro"] {
+        color-scheme: dark;
+        --fondo: #111113; --superficie: #1B1B1E; --bloque: #232327;
+        --tinta: #ECECEE; --negro: #F4F4F5; --humo: #A3A3AB; --niebla: #74747C; --linea: #303036;
+        --sobre-negro: #111113;
+        --acento: #CF5F52; --acento-suave: #3A211E; --correcto: #4FB27A; --correcto-suave: #18291F;
+        --oro: #D6B25E; --aviso: #DB975F; --aviso-suave: #33261A; --cautela: #D3BA5E; --cautela-suave: #302A17;
+        --mal: #D4675A; --mal-suave: #38201D; --bien: #43A97D; --bien-suave: #162B23;
+        --velo: rgba(27,27,30,0.9); --velo-claro: rgba(27,27,30,0.84); --velo-vacio: rgba(27,27,30,0.55); --velo-sel: rgba(244,244,245,0.94);
+        --velo-foto: rgba(8,8,10,0.55); --pestana-hover: #2A2A2F;
+        background: #111113;
+      }
+      html[data-tema="oscuro"] body { background: #111113; }
+      /* Los iconos de lucide reciben el color como ATRIBUTO (stroke="#…"),
+         y ahí una variable CSS no funciona; estos pocos se cambian a mano. */
+      html[data-tema="oscuro"] svg[stroke="#17171B"], html[data-tema="oscuro"] svg[stroke="#0C0C0D"] { stroke: #ECECEE; }
+      html[data-tema="oscuro"] svg[stroke="#6A6A72"] { stroke: #A3A3AB; }
+      html[data-tema="oscuro"] svg[stroke="#A2A2AB"], html[data-tema="oscuro"] svg[stroke="#C7C2B4"] { stroke: #74747C; }
+      html[data-tema="oscuro"] img { filter: none; }
+
+      /* Pestañas: al pasar el ratón el recuadro se oscurece (la activa ya es
+         negra y no cambia). Solo con ratón: en táctil :hover se queda pegado. */
+      @media (hover: hover) {
+        .nav-app button:not(.activa):hover { background: var(--pestana-hover) !important; color: var(--tinta) !important; border-color: var(--niebla) !important; }
+      }
+
+      /* Pantalla de carga: AUTOPIR sube letra a letra y debajo un asterisco
+         que va cambiando de forma (· ✢ ✳ ✶ ✻ ✽ y vuelta), como el que pone
+         Claude mientras piensa. Es la MISMA en el HTML (antes de que llegue
+         el JavaScript) y en React (mientras cargan los datos). */
+      .carga { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px; background: var(--fondo); }
+      .carga-marca { display: flex; font-family: 'Cabinet Grotesk', 'Arial Black', sans-serif; font-weight: 800; font-size: 26px; letter-spacing: 0.22em; color: var(--negro); padding-left: 0.22em; }
+      .carga-marca span { display: inline-block; opacity: 0; transform: translateY(10px); animation: cargaLetra 0.55s cubic-bezier(.22,1,.36,1) forwards; }
+      .carga-piensa { position: relative; width: 30px; height: 30px; opacity: 0; animation: cargaAparece 0.4s ease 0.6s forwards; }
+      .carga-piensa span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: -apple-system, 'Segoe UI Symbol', 'Apple Symbols', sans-serif; font-size: 24px; line-height: 1; color: var(--acento); opacity: 0; animation: cargaGlifo 1.2s step-end infinite; }
+      .carga-piensa span:nth-child(1) { animation-delay: 0s; }
+      .carga-piensa span:nth-child(2) { animation-delay: -1.08s; }
+      .carga-piensa span:nth-child(3) { animation-delay: -0.96s; }
+      .carga-piensa span:nth-child(4) { animation-delay: -0.84s; }
+      .carga-piensa span:nth-child(5) { animation-delay: -0.72s; }
+      .carga-piensa span:nth-child(6) { animation-delay: -0.6s; }
+      .carga-piensa span:nth-child(7) { animation-delay: -0.48s; }
+      .carga-piensa span:nth-child(8) { animation-delay: -0.36s; }
+      .carga-piensa span:nth-child(9) { animation-delay: -0.24s; }
+      .carga-piensa span:nth-child(10) { animation-delay: -0.12s; }
+      @keyframes cargaLetra { to { opacity: 1; transform: none; } }
+      @keyframes cargaAparece { to { opacity: 1; } }
+      @keyframes cargaGlifo { 0% { opacity: 1; } 10%, 100% { opacity: 0; } }
       @media (prefers-reduced-motion: reduce) {
-        .carga-trazo, .carga-casillas, .carga-casillas span { animation: none; opacity: 1; }
-        .carga-tinta { animation: none; clip-path: none; -webkit-clip-path: none; }
+        .carga-marca span, .carga-piensa { animation: none; opacity: 1; transform: none; }
+        .carga-piensa span { animation: none; }
+        .carga-piensa span:nth-child(5) { opacity: 1; }
       }
 
       /* Tipografía del rediseño, autoalojada (Fontshare, licencia libre). */
@@ -138,8 +144,8 @@
         .cabecera-iconos { gap: 0 !important; flex-shrink: 0; }
         .cabecera-iconos button { padding: 6px 5px !important; }
         .cabecera-marca { min-width: 0; flex-wrap: wrap; row-gap: 4px; }
-        .nav-app { padding-left: 6px !important; padding-right: 6px !important; }
-        .nav-app button { padding: 12px 1px !important; font-size: 10px !important; letter-spacing: .03em !important; gap: 6px !important; }
+        .nav-app { padding-left: 8px !important; padding-right: 8px !important; gap: 4px !important; }
+        .nav-app button { padding: 9px 1px !important; font-size: clamp(9.5px, 2.8vw, 11.5px) !important; letter-spacing: 0 !important; text-transform: none !important; gap: 6px !important; border-radius: 8px !important; min-width: 0; }
         /* Las cuatro pestañas con su icono no caben, y la que se queda fuera
            ("Mi perfil") no se ve que esté ahí: la barra se desplaza pero no
            lo parece. Sin los iconos entran las cuatro y ya no hay nada
@@ -172,8 +178,8 @@
   <body>
     <div id="root">
       <div id="arranque" class="carga">
-        <div class="carga-marca" aria-label="AUTOPIR"><span class="carga-trazo">AUTOPIR</span><span class="carga-tinta" aria-hidden="true">AUTOPIR</span></div>
-        <div class="carga-casillas" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span></div>
+        <div class="carga-marca" aria-label="AUTOPIR"><span style="animation-delay:0ms">A</span><span style="animation-delay:70ms">U</span><span style="animation-delay:140ms">T</span><span style="animation-delay:210ms">O</span><span style="animation-delay:280ms">P</span><span style="animation-delay:350ms">I</span><span style="animation-delay:420ms">R</span></div>
+        <div class="carga-piensa" aria-hidden="true"><span>·</span><span>✢</span><span>✳</span><span>✶</span><span>✻</span><span>✽</span><span>✻</span><span>✶</span><span>✳</span><span>✢</span></div>
       </div>
     </div>
     <script>

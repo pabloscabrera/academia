@@ -1492,3 +1492,25 @@ export function rankingExamenes(grupos, minimo = 10, cuantos = 5) {
   const desc = conBase.slice().sort((a, b) => b.pct - a.pct || (a.nombre < b.nombre ? -1 : 1));
   return { peores: asc.slice(0, cuantos), mejores: desc.slice(0, cuantos), conBase: conBase.length };
 }
+
+// Navegación entre pestañas con las flechas o deslizando. La pestaña de al
+// lado en `orden`; en los extremos se queda donde está (no da la vuelta: pasar
+// de Perfil a Exámenes por deslizar una vez más a la derecha despista).
+export function pestanaVecina(orden, actual, paso) {
+  const i = orden.indexOf(actual);
+  if (i === -1) return actual;
+  const j = Math.max(0, Math.min(orden.length - 1, i + paso));
+  return orden[j];
+}
+
+// Un deslizamiento cuenta como "cambia de pestaña" si es claramente
+// horizontal, largo y rápido; si no, es desplazar la página o un toque.
+// Devuelve +1 (siguiente: el dedo va hacia la izquierda), -1 (anterior) o 0.
+export const DESLIZAR_MIN_PX = 70;
+export const DESLIZAR_MAX_MS = 600;
+export function pasoDeDeslizar({ dx, dy, ms }) {
+  if (!(ms <= DESLIZAR_MAX_MS)) return 0;
+  if (Math.abs(dx) < DESLIZAR_MIN_PX) return 0;
+  if (Math.abs(dy) > Math.abs(dx) * 0.6) return 0;
+  return dx < 0 ? 1 : -1;
+}

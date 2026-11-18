@@ -38,6 +38,7 @@ try {
   let selloRoto = false;
 
   await contexto.addInitScript(() => {
+    sessionStorage.setItem("pir-portada-vista", "1");
     localStorage.setItem("sb-slwifwjwtipoqtkhbhbr-auth-token", JSON.stringify({
       access_token: "x", refresh_token: "y", expires_at: 9999999999,
       user: { id: "u1", email: "prueba@ruta-pir.local", user_metadata: { username: "prueba" } },

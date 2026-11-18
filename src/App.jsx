@@ -23,26 +23,27 @@ import {
   etiquetaOrigen, accionDeTecla,
   calificacionDeTecla, MS_PULSACION,
   tomarPreguntas, rgbDeHex, rankingExamenes, esBancoComoExamen,
+  pestanaVecina, pasoDeDeslizar,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
 const META_DIARIA_RACHA = 10;
 
 // ---- identidad visual: "cuaderno de examen" ----
-const TINTA = "#17171B";
-const TINTA_SUAVE = "#6A6A72";
-const TINTA_TENUE = "#A2A2AB";
-const RAYA = "#E4E3E0";
-const RAYA_FUERTE = "#17171B";
-const ACENTO = "#A6362B";
-const ACENTO_SUAVE = "#F7E9E6";
-const CORRECTO = "#2E7D46";
-const CORRECTO_SUAVE = "#E7F1E9";
-const ORO = "#93711F";
-const AVISO = "#9C5A1F";
-const AVISO_SUAVE = "#FBEEE0";
-const CAUTELA = "#8A6D1F";
-const CAUTELA_SUAVE = "#FBF3DE";
+const TINTA = "var(--tinta)";
+const TINTA_SUAVE = "var(--humo)";
+const TINTA_TENUE = "var(--niebla)";
+const RAYA = "var(--linea)";
+const RAYA_FUERTE = "var(--tinta)";
+const ACENTO = "var(--acento)";
+const ACENTO_SUAVE = "var(--acento-suave)";
+const CORRECTO = "var(--correcto)";
+const CORRECTO_SUAVE = "var(--correcto-suave)";
+const ORO = "var(--oro)";
+const AVISO = "var(--aviso)";
+const AVISO_SUAVE = "var(--aviso-suave)";
+const CAUTELA = "var(--cautela)";
+const CAUTELA_SUAVE = "var(--cautela-suave)";
 
 // ---- portada de acceso: "sala de examen", fondo plano + tarjeta oscura ----
 const PORTADA_TARJETA = "#1C170F";
@@ -276,11 +277,24 @@ function usuarioFromSession(session) {
   return { name: isAdmin ? "Pablo" : username, isAdmin };
 }
 
+const CLAVE_PORTADA_VISTA = "pir-portada-vista";
+const ORDEN_PESTANAS = ["simulacros", "flashcards", "duelo", "estadisticas", "perfil"];
+
 export default function AcademiaPIR() {
   const [ready, setReady] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [user, setUser] = useState(null);
   const [section, setSection] = useState("simulacros");
+  // La portada sale al ABRIR la app aunque ya tengas la sesión iniciada: con
+  // sesión no pide nada, solo "Entrar". Se apunta en sessionStorage, así que
+  // vuelve a salir al abrir la app de nuevo pero no al recargar la pestaña.
+  const [portadaVista, setPortadaVista] = useState(() => {
+    try { return sessionStorage.getItem(CLAVE_PORTADA_VISTA) === "1"; } catch { return false; }
+  });
+  const pasarPortada = () => {
+    try { sessionStorage.setItem(CLAVE_PORTADA_VISTA, "1"); } catch { /* sin almacenamiento */ }
+    setPortadaVista(true);
+  };
   const [questions, setQuestions] = useState([]);
   const [rachas, setRachas] = useState([]);
   const [fallos, setFallos] = useState([]);
@@ -559,6 +573,52 @@ export default function AcademiaPIR() {
     window.addEventListener("online", alVolverLaRed);
     return () => window.removeEventListener("online", alVolverLaRed);
   }, []);
+
+  // Cambiar de pestaña deslizando el dedo a izquierda o derecha, o con las
+  // flechas del teclado. No actúa encima de nada marcado con
+  // data-sin-deslizar (una tirada, un repaso de tarjetas, un duelo, las
+  // pantallas completas y los paneles): ahí un roce del dedo cambiaría de
+  // pestaña y se llevaría por delante lo que estás haciendo.
+  useEffect(() => {
+    if (!user || !portadaVista) return undefined;
+    const bloqueado = () => !!document.querySelector("[data-sin-deslizar]");
+    const editable = (el) => !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
+    const mover = (paso) => setSection((actual) => pestanaVecina(ORDEN_PESTANAS, actual, paso));
+    const alTeclear = (e) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      if (editable(document.activeElement) || bloqueado()) return;
+      e.preventDefault();
+      mover(e.key === "ArrowRight" ? 1 : -1);
+    };
+    let inicio = null;
+    const alTocar = (e) => {
+      const t = e.touches[0];
+      inicio = e.touches.length === 1 ? { x: t.clientX, y: t.clientY, cuando: Date.now(), objetivo: e.target } : null;
+    };
+    const alSoltar = (e) => {
+      if (!inicio) return;
+      const t = e.changedTouches[0];
+      const gesto = { dx: t.clientX - inicio.x, dy: t.clientY - inicio.y, ms: Date.now() - inicio.cuando };
+      const objetivo = inicio.objetivo;
+      inicio = null;
+      const paso = pasoDeDeslizar(gesto);
+      if (!paso || bloqueado() || editable(objetivo)) return;
+      // Lo que ya se desplaza de lado (una fila de chips) se queda su gesto.
+      for (let el = objetivo; el && el !== document.body; el = el.parentElement) {
+        if (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(el).overflowX)) return;
+      }
+      mover(paso);
+    };
+    window.addEventListener("keydown", alTeclear);
+    window.addEventListener("touchstart", alTocar, { passive: true });
+    window.addEventListener("touchend", alSoltar, { passive: true });
+    return () => {
+      window.removeEventListener("keydown", alTeclear);
+      window.removeEventListener("touchstart", alTocar);
+      window.removeEventListener("touchend", alSoltar);
+    };
+  }, [user, portadaVista]);
 
   const validarUsuario = (username) => {
     const limpio = (username || "").trim();
@@ -1170,13 +1230,16 @@ export default function AcademiaPIR() {
   };
 
   let contenido;
-  if (!ready) {
+  if (user && !portadaVista && !loadError) {
+    // Mientras se ve la portada, los datos siguen cargando por detrás.
+    contenido = <AuthScreen sesion={user} onContinuar={pasarPortada} onCambiarCuenta={handleLogout} />;
+  } else if (!ready) {
     contenido = <PantallaCarga />;
   } else if (loadError) {
     contenido = (
       <div style={{ padding: 24 }}>
-        <h2 style={{ fontFamily: "var(--font-display)", color: "#A6362B" }}>No se pudo conectar</h2>
-        <p style={{ color: "#6A6A72", fontSize: 14, lineHeight: 1.5 }}>{loadError}</p>
+        <h2 style={{ fontFamily: "var(--font-display)", color: "var(--acento)" }}>No se pudo conectar</h2>
+        <p style={{ color: "var(--humo)", fontSize: 14, lineHeight: 1.5 }}>{loadError}</p>
         <button
           type="button"
           onClick={() => window.location.reload()}
@@ -1187,7 +1250,15 @@ export default function AcademiaPIR() {
       </div>
     );
   } else if (!user) {
-    contenido = <AuthScreen onLogin={handleLogin} onSignup={handleSignup} />;
+    // Quien entra desde el formulario no tiene que pasar otra vez por la
+    // portada: se marca antes de llamar, porque la sesión llega por
+    // onAuthStateChange y podría adelantarse a la respuesta.
+    contenido = (
+      <AuthScreen
+        onLogin={(u, c) => { pasarPortada(); return handleLogin(u, c); }}
+        onSignup={(u, c, cod) => { pasarPortada(); return handleSignup(u, c, cod); }}
+      />
+    );
   } else {
     contenido = (
       <div>
@@ -1299,7 +1370,7 @@ export default function AcademiaPIR() {
 
   const fuenteActual = FUENTES.find((f) => f.id === ajustes.fuente) || FUENTES[0];
   return (
-    <div style={{ ...styles.app, background: ajustes.fondo, zoom: ajustes.escala, "--font-display": fuenteActual.familia }}>
+    <div style={{ ...styles.app, background: "var(--fondo)", zoom: ajustes.escala, "--font-display": fuenteActual.familia }}>
       {contenido}
       {aviso && <BarraAviso texto={aviso.texto} esperando={aviso.esperando} />}
       {mostrarAjustes && <AjustesPanel ajustes={ajustes} setAjustes={setAjustes} user={user} onLogout={() => { setMostrarAjustes(false); handleLogout(); }} onClose={() => setMostrarAjustes(false)} />}
@@ -1377,7 +1448,7 @@ function codigoDelEnlace() {
   }
 }
 
-function AuthScreen({ onLogin, onSignup }) {
+function AuthScreen({ onLogin, onSignup, sesion, onContinuar, onCambiarCuenta }) {
   const [codigo, setCodigo] = useState(codigoDelEnlace);
   const [modo, setModo] = useState(() => (codigoDelEnlace() ? "signup" : "login"));
   const [username, setUsername] = useState("");
@@ -1427,9 +1498,22 @@ function AuthScreen({ onLogin, onSignup }) {
       <div style={{ position: "relative", zIndex: 1, minHeight: "100dvh", maxWidth: 480, margin: "0 auto", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "max(18px, env(safe-area-inset-top)) 22px max(26px, env(safe-area-inset-bottom))" }}>
         <span style={{ fontFamily: D, fontWeight: 800, fontSize: 12, letterSpacing: "0.17em", textTransform: "uppercase" }}>Autopir</span>
         <h1 style={{ fontFamily: D, fontWeight: 800, fontSize: "clamp(40px,12vw,58px)", lineHeight: 0.86, letterSpacing: "-0.03em", textTransform: "uppercase", margin: "40px 0 0" }}>
-          {modo === "login" ? <>Bienvenido<br />de nuevo</> : <>Crea tu<br />cuenta</>}
+          {sesion || modo === "login" ? <>Bienvenido<br />de nuevo</> : <>Crea tu<br />cuenta</>}
         </h1>
         <div style={{ flex: 1, minHeight: 40 }} />
+        {sesion ? (
+          <div>
+            <p style={{ fontSize: 15, lineHeight: 1.5, margin: "0 0 16px", color: "rgba(255,255,255,0.88)" }}>
+              Tienes la sesión iniciada como <strong style={{ color: "#fff" }}>{sesion.name}</strong>.
+            </p>
+            <button type="button" onClick={onContinuar} style={btnPortada}>
+              <span>Entrar</span><span aria-hidden="true">→</span>
+            </button>
+            <button type="button" onClick={onCambiarCuenta} style={{ ...tabPortada(false), display: "block", margin: "14px auto 0", padding: "6px 4px" }}>
+              Entrar con otra cuenta
+            </button>
+          </div>
+        ) : (<>
         <div style={{ display: "flex", gap: 20, marginBottom: 16 }}>
           <button type="button" onClick={() => cambiarModo("login")} style={tabPortada(modo === "login")}>Iniciar sesión</button>
           <button type="button" onClick={() => cambiarModo("signup")} style={tabPortada(modo === "signup")}>Crear cuenta</button>
@@ -1463,6 +1547,7 @@ function AuthScreen({ onLogin, onSignup }) {
             </button>
           </div>
         )}
+        </>)}
       </div>
     </div>
   );
@@ -1519,7 +1604,7 @@ function FondoPortada() {
     position: "absolute", borderRadius: "50%", filter: "blur(60px)", ...props,
   });
   return (
-    <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden", background: "#FBF9F4" }}>
+    <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden", background: "var(--bloque)" }}>
       <div style={mancha({ width: 560, height: 520, left: "-14%", top: "-16%", background: "radial-gradient(circle, rgba(233,200,120,.55), transparent 70%)", transform: "rotate(-8deg)" })} />
       <div style={mancha({ width: 600, height: 360, right: "-12%", top: "2%", background: "radial-gradient(circle, rgba(166,54,43,.16), transparent 72%)", transform: "rotate(16deg)" })} />
       <div style={mancha({ width: 640, height: 400, left: "-10%", bottom: "-14%", background: "radial-gradient(circle, rgba(46,125,70,.14), transparent 70%)", transform: "rotate(-12deg)" })} />
@@ -1532,20 +1617,20 @@ function AjustesPanel({ ajustes, setAjustes, onClose, user, onLogout }) {
   // Como los ajustes de cualquier app de iOS: secciones con su título y filas
   // agrupadas en bloques redondeados. Apariencia (tema y tamaño de texto),
   // Estudio (fecha del examen), Cuenta y Acerca de.
-  const T = { d: "'Cabinet Grotesk', 'Arial Black', sans-serif", tinta: "#17171B", humo: "#6A6A72", linea: "#E4E3E0", mal: "#9E2B20" };
+  const T = { d: "'Cabinet Grotesk', 'Arial Black', sans-serif", tinta: "var(--tinta)", humo: "var(--humo)", linea: "var(--linea)", mal: "var(--mal)" };
   const tituloSeccion = { fontSize: 11, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: T.humo, margin: "20px 6px 8px" };
-  const grupo = { background: "#F7F6F3", borderRadius: 14, overflow: "hidden" };
+  const grupo = { background: "var(--bloque)", borderRadius: 14, overflow: "hidden" };
   const fila = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "13px 16px", minHeight: 50, boxSizing: "border-box", fontSize: 15, color: T.tinta };
   const separador = <div style={{ height: 1, background: T.linea, marginLeft: 16 }} />;
   const segmento = (opciones, valor, poner) => (
-    <div style={{ display: "flex", gap: 2, padding: 3, borderRadius: 10, background: "#EFEDE8" }}>
+    <div style={{ display: "flex", gap: 2, padding: 3, borderRadius: 10, background: "var(--bloque)" }}>
       {opciones.map((o) => {
         const on = valor === o.id;
         return (
           <button key={o.id} type="button" aria-pressed={on} onClick={() => poner(o.id)} style={{
             flex: 1, padding: "8px 4px", borderRadius: 8, border: "none", cursor: "pointer", fontFamily: "inherit",
             fontWeight: 600, fontSize: o.tam || 13, color: T.tinta,
-            background: on ? "#FFFFFF" : "transparent",
+            background: on ? "var(--superficie)" : "transparent",
             boxShadow: on ? "0 1px 3px rgba(0,0,0,0.14)" : "none",
           }}>{o.texto}</button>
         );
@@ -1554,15 +1639,15 @@ function AjustesPanel({ ajustes, setAjustes, onClose, user, onLogout }) {
   );
   const tema = ajustes.tema || "sistema";
   return (
-    <div style={{ ...styles.modalOverlay, alignItems: "flex-end", padding: 0 }} onClick={onClose}>
+    <div data-sin-deslizar="" style={{ ...styles.modalOverlay, alignItems: "flex-end", padding: 0 }} onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} style={{
-        background: "#FFFFFF", width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box",
+        background: "var(--superficie)", width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto", boxSizing: "border-box",
         borderRadius: "20px 20px 0 0", padding: "18px 16px max(22px, env(safe-area-inset-bottom))",
         fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif",
       }}>
         <div style={{ width: 38, height: 5, borderRadius: 3, background: T.linea, margin: "0 auto 14px" }} />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 6px" }}>
-          <span style={{ fontFamily: T.d, fontWeight: 800, fontSize: 24, letterSpacing: "-0.02em", textTransform: "uppercase", color: "#0C0C0D" }}>Ajustes</span>
+          <span style={{ fontFamily: T.d, fontWeight: 800, fontSize: 24, letterSpacing: "-0.02em", textTransform: "uppercase", color: "var(--negro)" }}>Ajustes</span>
           <button type="button" onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, fontSize: 15, color: T.tinta, padding: 6 }}>Hecho</button>
         </div>
 
@@ -1620,7 +1705,7 @@ function InsigniaDesbloqueadaModal({ insignia, onClose }) {
     rotacion: Math.random() * 360,
   })), []);
   return (
-    <div style={styles.modalOverlay} onClick={onClose}>
+    <div data-sin-deslizar="" style={styles.modalOverlay} onClick={onClose}>
       <style>{`
         @keyframes confetiCae {
           0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
@@ -1647,9 +1732,9 @@ function InsigniaDesbloqueadaModal({ insignia, onClose }) {
         <div style={{ animation: "insigniaPop 0.5s ease-out" }}>
           <Icono size={48} color={insignia.color} strokeWidth={1.5} style={{ margin: "8px 0 14px" }} />
         </div>
-        <div style={{ fontSize: 12, color: "#A2A2AB", textTransform: "uppercase", letterSpacing: 1 }}>Nueva insignia</div>
-        <div style={{ fontSize: 20, fontFamily: "var(--font-display)", color: "#17171B", marginTop: 4 }}>{insignia.titulo}</div>
-        <div style={{ fontSize: 13, color: "#6A6A72", marginTop: 4 }}>Has llegado a {insignia.umbral} preguntas acertadas</div>
+        <div style={{ fontSize: 12, color: "var(--niebla)", textTransform: "uppercase", letterSpacing: 1 }}>Nueva insignia</div>
+        <div style={{ fontSize: 20, fontFamily: "var(--font-display)", color: "var(--tinta)", marginTop: 4 }}>{insignia.titulo}</div>
+        <div style={{ fontSize: 13, color: "var(--humo)", marginTop: 4 }}>Has llegado a {insignia.umbral} preguntas acertadas</div>
         <button type="button" onClick={onClose} style={{ ...styles.btnPrimary, marginTop: 20, justifyContent: "center" }}>
           Genial
         </button>
@@ -1706,7 +1791,7 @@ function Header({
   return (
     <header style={styles.header} className="cabecera">
       <div className="cabecera-marca" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 13, color: "#0C0C0D", letterSpacing: "0.14em" }}>AUTOPIR</span>
+        <span style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 13, color: "var(--negro)", letterSpacing: "0.14em" }}>AUTOPIR</span>
         {enLinea > 0 && (
           <span
             title={`${enLinea} ${enLinea === 1 ? "persona conectada" : "personas conectadas"} ahora mismo`}
@@ -1778,7 +1863,7 @@ function Header({
         </button>
       </div>
       {mostrarRanking && (
-        <div style={styles.pantallaCompleta}>
+        <div style={styles.pantallaCompleta} data-sin-deslizar="">
           <div style={styles.pantallaCompletaCierre}>
             {/* Con texto y no un aspa suelta: un icono de 20 px en la esquina
                 no se ve, que fue la queja ("no tengo opción de salir"). Con
@@ -1793,7 +1878,7 @@ function Header({
         </div>
       )}
       {mostrarBanco && (
-        <div style={styles.pantallaCompleta}>
+        <div style={styles.pantallaCompleta} data-sin-deslizar="">
           <div style={styles.pantallaCompletaCierre}>
             {/* Con texto y no un aspa suelta: un icono de 20 px en la esquina
                 no se ve, que fue la queja ("no tengo opción de salir"). Con
@@ -1821,6 +1906,8 @@ function Header({
 }
 
 function Nav({ section, setSection, alerta }) {
+  // Mismo orden que ORDEN_PESTANAS, que es el que siguen las flechas y el
+  // deslizar.
   const items = [
     { id: "simulacros", label: "Exámenes" },
     { id: "flashcards", label: "Flashcards" },
@@ -1837,7 +1924,9 @@ function Nav({ section, setSection, alerta }) {
             type="button"
             key={it.id}
             onClick={() => setSection(it.id)}
-            style={{ ...styles.navBtn, color: active ? "#17171B" : "#A2A2AB", borderBottom: active ? "1.5px solid #0C0C0D" : "1.5px solid transparent", position: "relative" }}
+            className={active ? "activa" : undefined}
+            aria-current={active ? "page" : undefined}
+            style={{ ...styles.navBtn, ...(active ? styles.navBtnActivo : {}), position: "relative" }}
           >
             <span>{it.label}</span>
             {it.id === "duelo" && alerta && (
@@ -1857,16 +1946,16 @@ function Nav({ section, setSection, alerta }) {
 const ESTILO_EXAMENES = {
   display: "'Cabinet Grotesk','Arial Black',sans-serif",
   texto: "'Switzer','Helvetica Neue',Arial,sans-serif",
-  negro: "#0C0C0D",
-  tinta: "#17171B",
-  humo: "#6A6A72",
-  niebla: "#A2A2AB",
-  linea: "#E4E3E0",
-  mal: "#9E2B20",
-  malSuave: "#FBEFED",
-  bien: "#1B6B4F",
-  bienSuave: "#ECF5F1",
-  bloque: "#F7F6F3",
+  negro: "var(--negro)",
+  tinta: "var(--tinta)",
+  humo: "var(--humo)",
+  niebla: "var(--niebla)",
+  linea: "var(--linea)",
+  mal: "var(--mal)",
+  malSuave: "var(--mal-suave)",
+  bien: "var(--bien)",
+  bienSuave: "var(--bien-suave)",
+  bloque: "var(--bloque)",
 };
 
 function SelectorExamenes({
@@ -1889,8 +1978,8 @@ function SelectorExamenes({
     ? "Todos los exámenes"
     : cursosSel.length === 1 ? "1 examen" : `${cursosSel.length} exámenes`;
   const botonPaso = {
-    flex: "none", width: 44, height: 44, borderRadius: "50%", border: `1px solid ${E.linea}`,
-    background: "#fff", color: E.tinta, fontSize: 22, lineHeight: 1, cursor: "pointer",
+    flex: "none", width: 40, height: 40, borderRadius: "50%", border: `1px solid ${E.linea}`,
+    background: "var(--superficie)", color: E.tinta, fontSize: 22, lineHeight: 1, cursor: "pointer",
   };
 
   return (
@@ -1926,7 +2015,7 @@ function SelectorExamenes({
 
       <div style={{
         display: "flex", flexDirection: "column", gap: 6, padding: 10, borderRadius: 14,
-        backgroundColor: "#6B6257", backgroundImage: "url(/img/examenes-fondo.jpg)",
+        backgroundColor: "#6B6257", backgroundImage: "linear-gradient(var(--velo-foto), var(--velo-foto)), url(/img/examenes-fondo.jpg)",
         backgroundSize: "cover", backgroundPosition: "center",
       }}>
         {cursos.map((c) => {
@@ -1944,8 +2033,8 @@ function SelectorExamenes({
                 display: "flex", alignItems: "baseline", gap: 12, width: "100%",
                 padding: "15px 14px", borderRadius: 12, border: "none", textAlign: "left",
                 cursor: vacio ? "default" : "pointer",
-                background: sel ? "rgba(12,12,13,0.8)" : vacio ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.85)",
-                color: sel ? "#fff" : vacio ? E.humo : E.tinta,
+                background: sel ? "var(--velo-sel)" : vacio ? "var(--velo-vacio)" : "var(--velo-claro)",
+                color: sel ? "var(--sobre-negro)" : vacio ? E.humo : E.tinta,
                 backdropFilter: "blur(9px)", WebkitBackdropFilter: "blur(9px)",
               }}
             >
@@ -1968,7 +2057,7 @@ function SelectorExamenes({
           style={{
             display: "flex", alignItems: "center", gap: 12, width: "100%", marginTop: 4,
             padding: "16px 14px", borderRadius: 12, border: "none", textAlign: "left",
-            background: "rgba(255,255,255,0.85)", color: E.tinta,
+            background: "var(--velo-claro)", color: E.tinta,
             backdropFilter: "blur(9px)", WebkitBackdropFilter: "blur(9px)",
             cursor: relampagoDisponible ? "pointer" : "default",
           }}
@@ -1993,7 +2082,7 @@ function SelectorExamenes({
             <select
               value={tema}
               onChange={(e) => onTema(e.target.value)}
-              style={{ fontFamily: E.texto, fontSize: 13, color: E.tinta, padding: "6px 8px", borderRadius: 8, border: `1px solid ${E.linea}`, background: "#fff" }}
+              style={{ fontFamily: E.texto, fontSize: 13, color: E.tinta, padding: "6px 8px", borderRadius: 8, border: `1px solid ${E.linea}`, background: "var(--superficie)" }}
             >
               {temas.map((t) => (<option key={t} value={t}>{t}</option>))}
             </select>
@@ -2004,7 +2093,24 @@ function SelectorExamenes({
           </label>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        {disponibles === 0 && (
+          <p style={{ fontSize: 13, color: E.mal, margin: 0, lineHeight: 1.5 }}>
+            No queda ninguna pregunta con esos filtros. Prueba con otro examen o tema, o vuelve a "Todas".
+          </p>
+        )}
+      </div>
+
+      {/* Cuántas y Empezar van en una barra pegada abajo: con quince exámenes
+          en la lista había que bajar hasta el final para poder empezar. */}
+      <div style={{
+        position: "sticky", bottom: 0, zIndex: 5, margin: "16px -14px 0", padding: "10px 14px max(12px, env(safe-area-inset-bottom))",
+        background: "var(--fondo)", borderTop: `1px solid ${E.linea}`, boxShadow: "0 -10px 24px -18px rgba(0,0,0,.35)",
+      }}>
+        <div style={{ fontSize: 11.5, color: E.humo, marginBottom: 8, display: "flex", justifyContent: "space-between", gap: 8 }}>
+          <span>{etiquetaSeleccion}</span>
+          <span><strong style={{ color: E.tinta, fontWeight: 600 }}>{disponibles}</strong> disponibles</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <button type="button" aria-label="Quitar preguntas" onClick={() => paso(-1)} disabled={disponibles === 0 || cantidadActual <= 1} style={botonPaso}>−</button>
           <input
             type="number"
@@ -2018,40 +2124,28 @@ function SelectorExamenes({
             }}
             onBlur={() => onNumPreguntas((v) => Math.max(1, Math.min(v || 1, disponibles)))}
             style={{
-              width: "3ch", fontFamily: E.display, fontWeight: 800, fontSize: 40, lineHeight: 1,
+              width: "2.6ch", fontFamily: E.display, fontWeight: 800, fontSize: 30, lineHeight: 1,
               letterSpacing: "-0.035em", color: E.tinta, background: "none", border: "none",
               borderRadius: 0, padding: "0 2px 3px", textAlign: "center",
               boxShadow: `inset 0 -2px 0 ${E.linea}`, fontVariantNumeric: "tabular-nums",
             }}
           />
           <button type="button" aria-label="Añadir preguntas" onClick={() => paso(1)} disabled={disponibles === 0 || cantidadActual >= disponibles} style={botonPaso}>+</button>
-          <div style={{ marginLeft: "auto", textAlign: "right", minWidth: 0, paddingLeft: 8 }}>
-            <div style={{ fontFamily: E.display, fontWeight: 800, fontSize: 12.5, textTransform: "uppercase", letterSpacing: "-0.01em" }}>
-              {disponibles} disponibles
-            </div>
-            <div style={{ fontSize: 11.5, color: E.humo, marginTop: 3 }}>{etiquetaSeleccion}</div>
-          </div>
+          <button
+            type="button"
+            onClick={onEmpezar}
+            disabled={disponibles === 0}
+            style={{
+              flex: 1, minWidth: 0, marginLeft: 6, background: E.negro, color: "var(--sobre-negro)", padding: "15px 16px", borderRadius: 12,
+              border: "none", fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center",
+              justifyContent: "space-between", cursor: disponibles === 0 ? "default" : "pointer",
+              opacity: disponibles === 0 ? 0.5 : 1,
+            }}
+          >
+            <span>Empezar</span>
+            <span aria-hidden="true">→</span>
+          </button>
         </div>
-
-        {disponibles === 0 && (
-          <p style={{ fontSize: 13, color: E.mal, margin: 0, lineHeight: 1.5 }}>
-            No queda ninguna pregunta con esos filtros. Prueba con otro examen o tema, o vuelve a "Todas".
-          </p>
-        )}
-        <button
-          type="button"
-          onClick={onEmpezar}
-          disabled={disponibles === 0}
-          style={{
-            width: "100%", background: E.negro, color: "#fff", padding: "17px 18px", borderRadius: 12,
-            border: "none", fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center",
-            justifyContent: "space-between", cursor: disponibles === 0 ? "default" : "pointer",
-            opacity: disponibles === 0 ? 0.5 : 1,
-          }}
-        >
-          <span>Empezar</span>
-          <span aria-hidden="true">→</span>
-        </button>
       </div>
     </div>
   );
@@ -2340,7 +2434,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
     return (
       <div>
         <SectionTitle title="Autoevaluaciones" subtitle="Todavía no hay preguntas en el banco." />
-        <Card style={{ textAlign: "center", color: "#A2A2AB", padding: "28px 16px" }}>
+        <Card style={{ textAlign: "center", color: "var(--niebla)", padding: "28px 16px" }}>
           Añade preguntas desde "Banco de preguntas" para poder hacer una autoevaluación.
         </Card>
       </div>
@@ -2410,7 +2504,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
     // siempre una pregunta por detrás de lo que acabas de ver en pantalla.
     const marcador = marcadorTirada(answers, ronda, primerIntento, revealed ? esCorrecta : null);
     return (
-      <div style={{ background: "#fff", borderRadius: 15, overflow: "hidden", border: `1px solid ${E.linea}` }}>
+      <div data-sin-deslizar="" style={{ background: "var(--superficie)", borderRadius: 15, overflow: "hidden", border: `1px solid ${E.linea}` }}>
         <style>{`
           @keyframes acertarPulso {
             0% { box-shadow: 0 0 0 0 rgba(76,175,80,0.55); }
@@ -2420,20 +2514,20 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
           .acierto-anim { animation: acertarPulso 0.6s ease-out; }
         `}</style>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 18px", borderBottom: `1px solid ${E.linea}`, fontFamily: E.texto }}>
-          <span style={{ fontSize: 13, color: relampago ? "#9C7A2C" : "#6A6A72", fontWeight: relampago ? 700 : 400, display: "flex", alignItems: "center", gap: 4 }}>
+          <span style={{ fontSize: 13, color: relampago ? "#9C7A2C" : "var(--humo)", fontWeight: relampago ? 700 : 400, display: "flex", alignItems: "center", gap: 4 }}>
             {relampago && <Zap size={13} color="#C89B3C" />}
             {relampago ? "Modo relámpago · " : (ronda > 1 ? `Repaso de falladas (ronda ${ronda}) · ` : "")}Pregunta {idx + 1} de {pool.length}
           </span>
-          <span style={{ fontSize: 13, color: "#6A6A72", fontWeight: relampago ? 700 : 400, display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 13, color: "var(--humo)", fontWeight: relampago ? 700 : 400, display: "flex", alignItems: "center", gap: 8 }}>
             {relampago && (
               <span style={{ display: "flex", alignItems: "center", gap: 3 }} title={rachaViva > recordPrevio ? "¡Nuevo récord!" : `Récord: ${recordPrevio}`}>
                 <Flame
                   size={13}
-                  color={rachaViva > recordPrevio ? "#E8672B" : "#E4E3E0"}
+                  color={rachaViva > recordPrevio ? "#E8672B" : "#A2A2AB"}
                   fill={rachaViva > recordPrevio ? "#E8672B" : "none"}
                   style={rachaViva > recordPrevio ? { filter: "drop-shadow(0 0 3px rgba(232,103,43,.7))" } : undefined}
                 />
-                <span style={{ color: rachaViva > recordPrevio ? "#E8672B" : "#A2A2AB", fontWeight: 700 }}>{rachaViva}</span>
+                <span style={{ color: rachaViva > recordPrevio ? "#E8672B" : "var(--niebla)", fontWeight: 700 }}>{rachaViva}</span>
               </span>
             )}
             {/* El marcador NO se pone en relámpago: allí la llama ya enseña
@@ -2442,11 +2536,11 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
             {!relampago && (
               <span style={{ display: "flex", alignItems: "center", gap: 7 }} title={`${marcador.aciertos} acertadas · ${marcador.fallos} falladas${ronda > 1 ? " (de la primera vuelta)" : ""}`}>
                 <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                  <Check size={13} color={marcador.aciertos > 0 ? E.bien : RAYA} strokeWidth={3} />
+                  <Check size={13} color="currentColor" strokeWidth={3} style={{ color: marcador.aciertos > 0 ? E.bien : RAYA }} />
                   <span style={{ color: marcador.aciertos > 0 ? E.tinta : E.niebla, fontWeight: 600 }}>{marcador.aciertos}</span>
                 </span>
                 <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                  <X size={13} color={marcador.fallos > 0 ? E.mal : RAYA} strokeWidth={3} />
+                  <X size={13} color="currentColor" strokeWidth={3} style={{ color: marcador.fallos > 0 ? E.mal : RAYA }} />
                   <span style={{ color: marcador.fallos > 0 ? E.tinta : E.niebla, fontWeight: 600 }}>{marcador.fallos}</span>
                 </span>
               </span>
@@ -2466,7 +2560,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
               const letra = String.fromCharCode(65 + i);
               const esLaCorrecta = i === q.correcta;
               const esLaElegida = revealed && i === selected && !esLaCorrecta;
-              let tono = { border: `1.5px solid ${E.linea}`, background: "#fff" };
+              let tono = { border: `1.5px solid ${E.linea}`, background: "var(--superficie)" };
               let letraTono = { border: `1.5px solid ${E.linea}`, background: "transparent", color: E.humo };
               if (revealed && esLaCorrecta) {
                 tono = { border: `1.5px solid ${E.bien}`, background: E.bienSuave };
@@ -2522,7 +2616,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
             disabled={!revealed}
             style={{
               display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", marginTop: 18,
-              background: E.negro, color: "#fff", padding: "17px 18px", borderRadius: 12, border: "none",
+              background: E.negro, color: "var(--sobre-negro)", padding: "17px 18px", borderRadius: 12, border: "none",
               fontWeight: 600, fontSize: 14, cursor: revealed ? "pointer" : "default", opacity: revealed ? 1 : 0.4,
             }}
           >
@@ -2603,7 +2697,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
                 style={{
                   aspectRatio: "1", borderRadius: 10, padding: 0, cursor: "pointer",
                   border: `1.5px solid ${abiertaAqui ? c : correcta ? "rgba(27,107,79,0.55)" : "rgba(158,43,32,0.55)"}`,
-                  background: abiertaAqui ? c : "#fff",
+                  background: abiertaAqui ? c : "var(--superficie)",
                   color: abiertaAqui ? "#fff" : c,
                   fontFamily: E.display, fontWeight: 800, fontSize: 13,
                   display: "grid", placeItems: "center",
@@ -2661,7 +2755,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
         type="button"
         onClick={() => setState("config")}
         style={{
-          width: "100%", background: E.negro, color: "#fff", padding: "17px 18px", borderRadius: 12, border: "none",
+          width: "100%", background: E.negro, color: "var(--sobre-negro)", padding: "17px 18px", borderRadius: 12, border: "none",
           fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer",
         }}
       >
@@ -2765,7 +2859,7 @@ function BancoPreguntas({ questions, user, onAdd, onUpdate, onDelete, favoritos,
         </div>
       )}
       {termino && filtered.length === 0 && (
-        <p style={{ fontSize: 13.5, color: "#A2A2AB", padding: "8px 0" }}>Ninguna pregunta contiene "{busqueda.trim()}".</p>
+        <p style={{ fontSize: 13.5, color: "var(--niebla)", padding: "8px 0" }}>Ninguna pregunta contiene "{busqueda.trim()}".</p>
       )}
       {/* Se probó envolver la lista en un `<div key={origen|termino}>` para que
           React la reconstruyera entera al cambiar la búsqueda, como red contra
@@ -2795,22 +2889,22 @@ function PreguntaGeneradaCard({ p, guardada, onGuardar }) {
   return (
     <Card style={{ marginBottom: 10, borderLeft: "3px solid #8A5A9E" }}>
       <div style={{ fontSize: 11, color: "#8A5A9E", marginBottom: 4 }}>{etiquetaOrigen(p)}</div>
-      <div style={{ fontSize: 14, color: "#17171B", marginBottom: 8 }}>{p.pregunta}</div>
+      <div style={{ fontSize: 14, color: "var(--tinta)", marginBottom: 8 }}>{p.pregunta}</div>
       {p.opciones.map((op, oi) => {
         let estilo = { ...styles.opcion };
         if (revealed) {
           if (oi === p.correcta) estilo = { ...estilo, ...styles.opcionCorrectaLegacy };
-          else if (oi === selected) estilo = { ...estilo, borderColor: "#A6362B", background: "#FBEDEA" };
+          else if (oi === selected) estilo = { ...estilo, borderColor: "var(--acento)", background: "var(--acento-suave)" };
         }
         return (
           <button type="button" key={oi} onClick={() => !revealed && setSelected(oi)} disabled={revealed} style={{ ...estilo, cursor: revealed ? "default" : "pointer", display: "flex", alignItems: "center", gap: 8 }}>
-            {revealed && oi === p.correcta && <Check size={13} color={CORRECTO} />}
+            {revealed && oi === p.correcta && <Check size={13} color="currentColor" style={{ color: CORRECTO }} />}
             {revealed && oi === selected && oi !== p.correcta && <X size={13} color="#A6362B" />}
             {op}
           </button>
         );
       })}
-      {revealed && p.explicacion && <p style={{ fontSize: 13, color: "#6A6A72", marginTop: 8, whiteSpace: "pre-line" }}>{p.explicacion}</p>}
+      {revealed && p.explicacion && <p style={{ fontSize: 13, color: "var(--humo)", marginTop: 8, whiteSpace: "pre-line" }}>{p.explicacion}</p>}
       {onGuardar && (
         <button
           type="button"
@@ -2832,7 +2926,7 @@ function PreguntaGeneradaCard({ p, guardada, onGuardar }) {
 function ProgresoPreguntaBadge({ progreso }) {
   const veces = progreso ? progreso.veces : 0;
   const acertada = !!(progreso && progreso.acertada);
-  const color = veces === 0 ? "#B7BEC8" : acertada ? CORRECTO : TINTA_SUAVE;
+  const color = veces === 0 ? "var(--niebla)" : acertada ? CORRECTO : TINTA_SUAVE;
   const titulo = veces === 0
     ? "Todavía no la has respondido"
     : `La has respondido ${veces} ${veces === 1 ? "vez" : "veces"}${acertada ? " · acertada" : ""}`;
@@ -2853,7 +2947,7 @@ function FavoritoBtn({ pregunta, favoritos, onToggle, size = 16 }) {
       style={{ ...styles.iconBtn, padding: 4, flexShrink: 0 }}
       title={esFavorita ? "Quitar de favoritas" : "Guardar como favorita"}
     >
-      <Star size={size} color={esFavorita ? "#C89B3C" : "#B7BEC8"} fill={esFavorita ? "#C89B3C" : "none"} />
+      <Star size={size} color="currentColor" fill={esFavorita ? "#C89B3C" : "none"} style={{ color: esFavorita ? "#C89B3C" : "var(--niebla)" }} />
     </button>
   );
 }
@@ -2879,7 +2973,7 @@ function PreguntaCard({ q, isAdmin, onUpdate, onDelete, favoritos, onToggleFavor
   }
 
   return (
-    <Card style={{ marginBottom: 10, ...(q.inventada ? { borderLeft: "3px solid #8A5A9E" } : {}) }}>
+    <Card style={{ marginBottom: 10, background: "var(--bloque)", boxShadow: "none", ...(q.inventada ? { borderLeft: "3px solid #8A5A9E" } : {}) }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
         <button type="button" onClick={toggleOpen} style={{ ...styles.expandBtn, flex: 1 }}>
           <div style={{ textAlign: "left", flex: 1 }}>
@@ -2887,7 +2981,7 @@ function PreguntaCard({ q, isAdmin, onUpdate, onDelete, favoritos, onToggleFavor
               {q.inventada && <Sparkles size={11} />}
               {etiquetaOrigen(q)}
             </div>
-            <div style={{ fontSize: 14, color: "#17171B", lineHeight: 1.4 }}>{q.pregunta}</div>
+            <div style={{ fontSize: 14, color: "var(--tinta)", lineHeight: 1.4 }}>{q.pregunta}</div>
           </div>
           {open ? <ChevronDown size={16} color="#A2A2AB" /> : <ChevronRight size={16} color="#A2A2AB" />}
         </button>
@@ -2898,7 +2992,7 @@ function PreguntaCard({ q, isAdmin, onUpdate, onDelete, favoritos, onToggleFavor
         <div style={{ marginTop: 12 }}>
           {q.opciones.map((op, i) => (
             <div key={i} style={{ ...styles.opcion, cursor: "default", ...(mostrarCorrecta && i === q.correcta ? styles.opcionCorrectaLegacy : {}) }}>
-              {mostrarCorrecta && i === q.correcta && <Check size={13} color={CORRECTO} />}
+              {mostrarCorrecta && i === q.correcta && <Check size={13} color="currentColor" style={{ color: CORRECTO }} />}
               {op}
             </div>
           ))}
@@ -2907,7 +3001,7 @@ function PreguntaCard({ q, isAdmin, onUpdate, onDelete, favoritos, onToggleFavor
               Ver respuesta correcta
             </button>
           ) : (
-            q.explicacion && <p style={{ fontSize: 13, color: "#6A6A72", marginTop: 10, lineHeight: 1.5, whiteSpace: "pre-line" }}>{q.explicacion}</p>
+            q.explicacion && <p style={{ fontSize: 13, color: "var(--humo)", marginTop: 10, lineHeight: 1.5, whiteSpace: "pre-line" }}>{q.explicacion}</p>
           )}
           {isAdmin && (
             <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
@@ -2915,13 +3009,13 @@ function PreguntaCard({ q, isAdmin, onUpdate, onDelete, favoritos, onToggleFavor
                 <Pencil size={13} style={{ marginRight: 4 }} /> Editar
               </button>
               {!deleting ? (
-                <button type="button" onClick={() => setDeleting(true)} style={{ ...styles.btnSecondary, color: "#A6362B", borderColor: "#A6362B" }}>
+                <button type="button" onClick={() => setDeleting(true)} style={{ ...styles.btnSecondary, color: "var(--acento)", borderColor: "var(--acento)" }}>
                   <Trash2 size={13} style={{ marginRight: 4 }} /> Borrar
                 </button>
               ) : (
                 <>
-                  <span style={{ fontSize: 12, color: "#A6362B", alignSelf: "center" }}>¿Seguro?</span>
-                  <button type="button" onClick={() => onDelete(q.id)} style={{ ...styles.btnSecondary, color: "#fff", background: "#A6362B", borderColor: "#A6362B" }}>Sí, borrar</button>
+                  <span style={{ fontSize: 12, color: "var(--acento)", alignSelf: "center" }}>¿Seguro?</span>
+                  <button type="button" onClick={() => onDelete(q.id)} style={{ ...styles.btnSecondary, color: "#fff", background: "var(--acento)", borderColor: "var(--acento)" }}>Sí, borrar</button>
                   <button type="button" onClick={() => setDeleting(false)} style={styles.btnSecondary}>Cancelar</button>
                 </>
               )}
@@ -3284,7 +3378,7 @@ function Duelo({ user, questions, onDueloEnd, onProgresoDiario, onRespuestaPregu
       return (
         <div>
           <SectionTitle title="Duelo 1v1" subtitle="Hace falta al menos 4 preguntas en el banco." />
-          <Card style={{ textAlign: "center", color: "#A2A2AB", padding: "28px 16px" }}>
+          <Card style={{ textAlign: "center", color: "var(--niebla)", padding: "28px 16px" }}>
             Añade más preguntas desde "Banco de preguntas" para poder jugar duelos.
           </Card>
         </div>
@@ -3363,7 +3457,7 @@ function Duelo({ user, questions, onDueloEnd, onProgresoDiario, onRespuestaPregu
   );
 
   return (
-    <div style={{ fontFamily: DUELO.t, color: DUELO.tinta, background: "#fff", border: `1px solid ${DUELO.linea}`, borderRadius: 15, overflow: "hidden" }}>
+    <div data-sin-deslizar="" style={{ fontFamily: DUELO.t, color: DUELO.tinta, background: "var(--superficie)", border: `1px solid ${DUELO.linea}`, borderRadius: 15, overflow: "hidden" }}>
       {mostrarChoque && <EncuentroDuelo yo={user.name} el={oponenteNombre || "Rival"} />}
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderBottom: `1px solid ${DUELO.linea}`, fontSize: 12.5 }}>
         <span style={{ display: "flex", alignItems: "center", gap: 8 }}><b style={{ fontWeight: 600 }}>{user.name}</b>{puntos(miVidas)}</span>
@@ -3385,7 +3479,7 @@ function Duelo({ user, questions, onDueloEnd, onProgresoDiario, onRespuestaPregu
               const elegida = !revelando && miRespuesta === i;
               const tono = esBien ? { border: `1.5px solid ${DUELO.bien}`, background: DUELO.bienSuave, color: DUELO.bien }
                 : esMal ? { border: `1.5px solid ${DUELO.mal}`, background: DUELO.malSuave, color: DUELO.mal }
-                : elegida ? { border: `1.5px solid ${DUELO.negro}`, background: "#EFEDE8", color: DUELO.tinta }
+                : elegida ? { border: `1.5px solid ${DUELO.negro}`, background: "var(--bloque)", color: DUELO.tinta }
                 : { border: `1.5px solid ${DUELO.linea}`, background: DUELO.bloque, color: DUELO.tinta };
               const letra = { border: `1.5px solid ${esBien ? DUELO.bien : esMal ? DUELO.mal : DUELO.linea}`, background: esBien ? DUELO.bien : esMal ? DUELO.mal : "transparent", color: esBien || esMal ? "#fff" : DUELO.humo };
               return (
@@ -3420,19 +3514,19 @@ function Duelo({ user, questions, onDueloEnd, onProgresoDiario, onRespuestaPregu
 const DUELO = {
   d: "'Cabinet Grotesk', 'Arial Black', sans-serif",
   t: "'Switzer', 'Helvetica Neue', Arial, sans-serif",
-  negro: "#0C0C0D", tinta: "#17171B", humo: "#6A6A72", niebla: "#A2A2AB", linea: "#E4E3E0", bloque: "#F7F6F3",
-  bien: "#1B6B4F", bienSuave: "#ECF5F1", mal: "#9E2B20", malSuave: "#FBEFED",
-  k: { display: "block", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.17em", textTransform: "uppercase", color: "#A2A2AB" },
-  h1: { fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: "clamp(46px,14vw,66px)", lineHeight: 0.88, letterSpacing: "-0.04em", textTransform: "uppercase", margin: "8px 0 14px", color: "#0C0C0D" },
-  dice: { fontSize: 14, lineHeight: 1.5, color: "#6A6A72", maxWidth: "34ch", margin: "12px 0 0" },
-  go: { width: "100%", background: "#0C0C0D", color: "#fff", border: "none", borderRadius: 12, padding: "17px 18px", fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" },
+  negro: "var(--negro)", tinta: "var(--tinta)", humo: "var(--humo)", niebla: "var(--niebla)", linea: "var(--linea)", bloque: "var(--bloque)",
+  bien: "var(--bien)", bienSuave: "var(--bien-suave)", mal: "var(--mal)", malSuave: "var(--mal-suave)",
+  k: { display: "block", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.17em", textTransform: "uppercase", color: "var(--niebla)" },
+  h1: { fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: "clamp(46px,14vw,66px)", lineHeight: 0.88, letterSpacing: "-0.04em", textTransform: "uppercase", margin: "8px 0 14px", color: "var(--negro)" },
+  dice: { fontSize: 14, lineHeight: 1.5, color: "var(--humo)", maxWidth: "34ch", margin: "12px 0 0" },
+  go: { width: "100%", background: "var(--negro)", color: "var(--sobre-negro)", border: "none", borderRadius: 12, padding: "17px 18px", fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" },
 };
 
 // El encuentro: los dos nombres entran desde los lados y una raya los une,
 // con "contra" encima. Sustituye a las espadas; dura lo mismo (1,1 s).
 function EncuentroDuelo({ yo, el }) {
   return (
-    <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 55, background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", animation: "encuentroFuera 1.1s ease forwards", pointerEvents: "none" }}>
+    <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 55, background: "var(--fondo)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", animation: "encuentroFuera 1.1s ease forwards", pointerEvents: "none" }}>
       <style>{`
         @keyframes encuentroIzq { from { opacity: 0; transform: translateX(-26px); } to { opacity: 1; transform: none; } }
         @keyframes encuentroDer { from { opacity: 0; transform: translateX(26px); } to { opacity: 1; transform: none; } }
@@ -3443,7 +3537,7 @@ function EncuentroDuelo({ yo, el }) {
       <span style={{ fontFamily: DUELO.d, fontWeight: 800, fontSize: "clamp(28px,8vw,38px)", textTransform: "uppercase", letterSpacing: "-0.03em", opacity: 0, animation: "encuentroIzq .5s cubic-bezier(.22,1,.36,1) forwards" }}>{yo}</span>
       <div style={{ position: "relative", width: "100%", maxWidth: 240, height: 40, margin: "16px 0", display: "grid", placeItems: "center" }}>
         <i style={{ position: "absolute", left: "50%", right: "50%", top: "50%", height: 1.5, background: DUELO.negro, animation: "encuentroRaya .5s cubic-bezier(.22,1,.36,1) .3s forwards" }} />
-        <span style={{ position: "relative", zIndex: 1, background: "#fff", padding: "0 12px", fontWeight: 600, fontSize: 12, letterSpacing: "0.2em", textTransform: "uppercase", color: DUELO.niebla, opacity: 0, animation: "encuentroAparece .4s ease .55s forwards" }}>contra</span>
+        <span style={{ position: "relative", zIndex: 1, background: "var(--fondo)", padding: "0 12px", fontWeight: 600, fontSize: 12, letterSpacing: "0.2em", textTransform: "uppercase", color: DUELO.niebla, opacity: 0, animation: "encuentroAparece .4s ease .55s forwards" }}>contra</span>
       </div>
       <span style={{ fontFamily: DUELO.d, fontWeight: 800, fontSize: "clamp(28px,8vw,38px)", textTransform: "uppercase", letterSpacing: "-0.03em", opacity: 0, animation: "encuentroDer .5s cubic-bezier(.22,1,.36,1) .08s forwards" }}>{el}</span>
     </div>
@@ -3486,9 +3580,9 @@ function ChoqueEspadas() {
         .choque-espada-der { animation: espadaEntraDer 0.7s cubic-bezier(.3,.2,.2,1.2) both; }
         .choque-destello { animation: choqueDestello 0.7s ease-out both; }
       `}</style>
-      <Sword size={42} color={ACENTO} className="choque-espada-izq" style={{ transformOrigin: "80% 80%" }} />
+      <Sword size={42} color="currentColor" style={{ color: ACENTO }} className="choque-espada-izq" style={{ transformOrigin: "80% 80%" }} />
       <span className="choque-destello" style={styles.choqueDestello} />
-      <Sword size={42} color={ACENTO} className="choque-espada-der" style={{ transformOrigin: "20% 80%" }} />
+      <Sword size={42} color="currentColor" style={{ color: ACENTO }} className="choque-espada-der" style={{ transformOrigin: "20% 80%" }} />
     </div>
   );
 }
@@ -3498,9 +3592,9 @@ function ChoqueEspadas() {
 // si pierdes, ese mismo icono tiembla y se parte en dos mitades (recortadas
 // con clip-path sobre el mismo SVG) que caen y se desvanecen.
 function EspadaResultado({ resultado }) {
-  const color = resultado === "empate" ? "#A2A2AB" : resultado === "gane" ? CORRECTO : "#A6362B";
+  const color = resultado === "empate" ? "var(--niebla)" : resultado === "gane" ? CORRECTO : "var(--acento)";
   if (resultado !== "perdi") {
-    return <Swords size={26} color={color} style={{ marginBottom: 10 }} />;
+    return <Swords size={26} color="currentColor" style={{ color: color, marginBottom: 10 }} />;
   }
   return (
     <div style={{ position: "relative", width: 26, height: 26, margin: "0 auto 10px" }}>
@@ -3523,8 +3617,8 @@ function EspadaResultado({ resultado }) {
         .espada-rota-izq { clip-path: inset(0 50% 0 0); animation: espadaTiembla 0.35s ease-in-out 2, rompeIzq 0.5s ease-in 0.7s both; }
         .espada-rota-der { clip-path: inset(0 0 0 50%); animation: espadaTiembla 0.35s ease-in-out 2, rompeDer 0.5s ease-in 0.7s both; }
       `}</style>
-      <Swords size={26} color={color} className="espada-rota-izq" style={{ position: "absolute", top: 0, left: 0 }} />
-      <Swords size={26} color={color} className="espada-rota-der" style={{ position: "absolute", top: 0, left: 0 }} />
+      <Swords size={26} color="currentColor" className="espada-rota-izq" style={{ color: color, position: "absolute", top: 0, left: 0 }} />
+      <Swords size={26} color="currentColor" className="espada-rota-der" style={{ color: color, position: "absolute", top: 0, left: 0 }} />
     </div>
   );
 }
@@ -3584,7 +3678,7 @@ function Corazones({ vidas, align }) {
   return (
     <div style={{ display: "flex", gap: 3, justifyContent: align === "right" ? "flex-end" : "flex-start" }}>
       {[0, 1, 2].map((i) => (
-        <Heart key={i} size={15} color={i < vidas ? "#A6362B" : "#E4E3E0"} fill={i < vidas ? "#A6362B" : "none"} />
+        <Heart key={i} size={15} color="currentColor" fill={i < vidas ? "currentColor" : "none"} style={{ color: i < vidas ? "var(--acento)" : "var(--linea)" }} />
       ))}
     </div>
   );
@@ -3599,8 +3693,8 @@ function BarraNivel({ actual, siguiente, totalCorrectas, compact }) {
   return (
     <Card style={{ padding: compact ? "14px 16px" : "18px 20px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: compact ? 10 : 14, flexWrap: "wrap", gap: 6 }}>
-        <div style={{ fontSize: compact ? 13 : 15, fontWeight: 600, color: "#17171B" }}>{actual ? actual.titulo : "Todavía sin insignia"}</div>
-        <div style={{ fontSize: compact ? 11 : 12, color: "#A2A2AB" }}>
+        <div style={{ fontSize: compact ? 13 : 15, fontWeight: 600, color: "var(--tinta)" }}>{actual ? actual.titulo : "Todavía sin insignia"}</div>
+        <div style={{ fontSize: compact ? 11 : 12, color: "var(--niebla)" }}>
           {totalCorrectas} acertadas{siguiente ? ` · ${siguiente.umbral - totalCorrectas} para ${siguiente.nombre}` : " · nivel máximo"}
         </div>
       </div>
@@ -3609,10 +3703,10 @@ function BarraNivel({ actual, siguiente, totalCorrectas, compact }) {
           const desbloqueada = totalCorrectas >= ins.umbral;
           const Icono = ins.icon;
           return (
-            <div key={ins.id} style={{ ...styles.insigniaCard, ...(compact ? { flex: "1 1 62px", minWidth: 56, padding: "8px 4px" } : {}), borderColor: desbloqueada ? ins.color : "#E4E3E0" }}>
+            <div key={ins.id} style={{ ...styles.insigniaCard, ...(compact ? { flex: "1 1 62px", minWidth: 56, padding: "8px 4px" } : {}), borderColor: desbloqueada ? ins.color : "var(--linea)" }}>
               <Icono size={compact ? 18 : 22} color={desbloqueada ? ins.color : "#C7C2B4"} strokeWidth={1.6} />
-              <div style={{ fontSize: compact ? 10 : 11.5, fontWeight: 600, color: desbloqueada ? "#17171B" : "#B7BEC8", marginTop: 5 }}>{ins.nombre}</div>
-              <div style={{ fontSize: compact ? 9 : 10, color: "#B7BEC8", marginTop: 1 }}>{ins.umbral}</div>
+              <div style={{ fontSize: compact ? 10 : 11.5, fontWeight: 600, color: desbloqueada ? "var(--tinta)" : "var(--niebla)", marginTop: 5 }}>{ins.nombre}</div>
+              <div style={{ fontSize: compact ? 9 : 10, color: "var(--niebla)", marginTop: 1 }}>{ins.umbral}</div>
             </div>
           );
         })}
@@ -3689,20 +3783,20 @@ function RuletaDiaria({ user, questions, onGirarRuleta }) {
               background: `conic-gradient(${gradiente})`,
               transform: `rotate(${angulo}deg)`,
               transition: girando ? "transform 3s cubic-bezier(0.17,0.67,0.12,0.99)" : "none",
-              boxShadow: "0 0 0 3px #fff, 0 0 0 4px #E4E3E0",
+              boxShadow: "0 0 0 3px var(--superficie), 0 0 0 4px var(--linea)",
             }}
           />
-          <div style={{ position: "absolute", top: -7, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: "10px solid #17171B" }} />
+          <div style={{ position: "absolute", top: -7, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: "10px solid var(--tinta)" }} />
         </div>
         <div style={{ flex: 1, minWidth: 170 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: "#17171B", marginBottom: 4 }}>Ruleta del día</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--tinta)", marginBottom: 4 }}>Ruleta del día</div>
           {yaGirasteHoy ? (
-            <div style={{ fontSize: 12.5, color: "#A2A2AB" }}>
+            <div style={{ fontSize: 12.5, color: "var(--niebla)" }}>
               Esta es la pregunta que te tocó hoy. Vuelve mañana para otra.
             </div>
           ) : (
             <>
-              <div style={{ fontSize: 12.5, color: "#A2A2AB", marginBottom: 8 }}>Gira y te toca una pregunta sorpresa de un curso al azar.</div>
+              <div style={{ fontSize: 12.5, color: "var(--niebla)", marginBottom: 8 }}>Gira y te toca una pregunta sorpresa de un curso al azar.</div>
               <button type="button" onClick={girar} disabled={girando} style={{ ...styles.btnSecondary, opacity: girando ? 0.6 : 1 }}>
                 {girando ? "Girando..." : "Girar"}
               </button>
@@ -3748,7 +3842,7 @@ function FilaAcierto({ g, onPracticar }) {
         </span>
       </div>
       <div
-        style={{ height: 8, borderRadius: 4, background: "#F2F1EE", overflow: "hidden" }}
+        style={{ height: 8, borderRadius: 4, background: "var(--bloque)", overflow: "hidden" }}
         title={`${g.aciertos} aciertos de ${g.intentos} respuestas`}
       >
         <div style={{ width: `${Math.max(g.pct, 2)}%`, height: "100%", borderRadius: 4, background: flojo ? ACENTO : TINTA_SUAVE }} />
@@ -3936,7 +4030,7 @@ function Estadisticas({ miRacha, questions, fallos, preguntasProgreso, onPractic
   }, [reales, preguntasProgreso, fallos]);
   const mil = (n) => n.toLocaleString("es-ES");
   const D = DUELO.d;
-  const panel = { margin: "0 0 10px", borderRadius: 20, background: "#fff", padding: "30px 22px 32px", boxShadow: "0 16px 36px -26px rgba(0,0,0,.85)", animation: "estSube .6s cubic-bezier(.22,1,.36,1) both" };
+  const panel = { margin: "0 0 10px", borderRadius: 20, background: "var(--superficie)", padding: "30px 22px 32px", boxShadow: "0 16px 36px -26px rgba(0,0,0,.85)", animation: "estSube .6s cubic-bezier(.22,1,.36,1) both" };
   const radio = 54, circ = 2 * Math.PI * radio;
   const lista = (filas, color, vacio) => filas.length === 0
     ? <p style={{ ...DUELO.dice, margin: "14px 0 0" }}>{vacio}</p>
@@ -3948,7 +4042,7 @@ function Estadisticas({ miRacha, questions, fallos, preguntasProgreso, onPractic
       </button>
     ));
   return (
-    <div style={{ fontFamily: DUELO.t, color: DUELO.tinta, borderRadius: 22, padding: "8px 8px 2px", background: "#2A2822 url(/img/fondo-estadisticas.jpg) center/cover" }}>
+    <div style={{ fontFamily: DUELO.t, color: DUELO.tinta, borderRadius: 22, padding: "8px 8px 2px", background: "linear-gradient(var(--velo-foto), var(--velo-foto)), url(/img/fondo-estadisticas.jpg) center/cover #2A2822" }}>
       <style>{`@keyframes estSube { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }`}</style>
       <div style={{ ...panel, minHeight: 340, display: "flex", flexDirection: "column", justifyContent: "flex-end", background: "linear-gradient(180deg, rgba(14,13,11,.34), rgba(14,13,11,.62))", boxShadow: "none", color: "#fff" }}>
         <span style={{ ...DUELO.k, color: "rgba(255,255,255,.7)" }}>Tu PIR, en números</span>
@@ -3959,9 +4053,9 @@ function Estadisticas({ miRacha, questions, fallos, preguntasProgreso, onPractic
       <div style={{ ...panel, animationDelay: ".08s", textAlign: "center" }}>
         <span style={DUELO.k}>Acierto</span>
         <svg viewBox="0 0 140 140" width="168" height="168" style={{ display: "block", margin: "14px auto 6px" }} aria-label={`${pct}% de acierto`}>
-          <circle cx="70" cy="70" r={radio} fill="none" stroke={DUELO.linea} strokeWidth="10" />
-          <circle cx="70" cy="70" r={radio} fill="none" stroke={DUELO.negro} strokeWidth="10" strokeLinecap="round" strokeDasharray={`${(circ * pct) / 100} ${circ}`} transform="rotate(-90 70 70)" />
-          <text x="70" y="80" textAnchor="middle" style={{ fontFamily: D, fontWeight: 800, fontSize: 32, letterSpacing: "-0.03em" }} fill={DUELO.negro}>{pct}%</text>
+          <circle cx="70" cy="70" r={radio} fill="none" style={{ stroke: DUELO.linea }} strokeWidth="10" />
+          <circle cx="70" cy="70" r={radio} fill="none" style={{ stroke: DUELO.negro }} strokeWidth="10" strokeLinecap="round" strokeDasharray={`${(circ * pct) / 100} ${circ}`} transform="rotate(-90 70 70)" />
+          <text x="70" y="80" textAnchor="middle" style={{ fill: DUELO.negro, fontFamily: D, fontWeight: 800, fontSize: 32, letterSpacing: "-0.03em" }} >{pct}%</text>
         </svg>
         <p style={{ ...DUELO.dice, margin: "6px auto 0" }}>{respondidas > 0 ? `${mil(correctas)} bien de ${mil(respondidas)}.` : "Todavía no has respondido ninguna."}</p>
       </div>
@@ -4006,7 +4100,7 @@ function Logros({ user, miRacha, compact }) {
   return (
     <div>
       {compact ? (
-        <div style={{ fontSize: 14, fontWeight: 700, color: "#17171B", marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--tinta)", marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
           <Award size={15} color="#C89B3C" /> Logros
         </div>
       ) : (
@@ -4061,10 +4155,10 @@ const TAM_SESION_FLASHCARDS = 20;
 // aviso. El verde se reserva para "Fácil", que es el extremo bueno.
 // `rgb` es el mismo color en tripletas, para pintar el contorno con alfa.
 const CALIFICACIONES_FLASHCARD = [
-  { calidad: 0, label: "Otra vez", bg: ACENTO_SUAVE, color: "#9E2B20", borde: "#9E2B20", rgb: "158,43,32" },
-  { calidad: 3, label: "Difícil", bg: AVISO_SUAVE, color: "#A3571C", borde: "#A3571C", rgb: "163,87,28" },
-  { calidad: 4, label: "Bien", bg: CAUTELA_SUAVE, color: "#7A6410", borde: "#7A6410", rgb: "122,100,16" },
-  { calidad: 5, label: "Fácil", bg: CORRECTO_SUAVE, color: "#1B6B4F", borde: "#1B6B4F", rgb: "27,107,79" },
+  { calidad: 0, label: "Otra vez", bg: ACENTO_SUAVE, color: "var(--mal)", borde: "var(--mal)", rgb: "158,43,32" },
+  { calidad: 3, label: "Difícil", bg: AVISO_SUAVE, color: "var(--aviso)", borde: "var(--aviso)", rgb: "163,87,28" },
+  { calidad: 4, label: "Bien", bg: CAUTELA_SUAVE, color: "var(--cautela)", borde: "var(--cautela)", rgb: "122,100,16" },
+  { calidad: 5, label: "Fácil", bg: CORRECTO_SUAVE, color: "var(--bien)", borde: "var(--bien)", rgb: "27,107,79" },
 ];
 
 // Estadísticas de flashcards. La pregunta que contesta cada bloque:
@@ -4168,7 +4262,7 @@ function CuadriculaTarjetas({ tarjetas, progresoPorId, repasos }) {
               border: `1px solid ${RAYA}`,
               borderRadius: 10,
               overflow: "hidden",
-              background: "#FFFDF7",
+              background: "var(--superficie)",
               display: "flex",
               flexDirection: "column",
             }}
@@ -4260,9 +4354,9 @@ function EstadisticasFlashcards({ tarjetas, progresoPorId, hoy, repasos, fechaOb
   // Rampa de un solo tono, de claro a oscuro: son cuatro estados ordenados
   // (de recién vista a consolidada), no cuatro categorías sueltas.
   const ESTADOS = [
-    { clave: "nueva", texto: "Sin empezar", color: "#E4E3E0" },
+    { clave: "nueva", texto: "Sin empezar", color: "var(--linea)" },
     { clave: "reaprendiendo", texto: "Reaprendiendo", color: "#A8A294" },
-    { clave: "joven", texto: "Recientes", color: "#6A6A72" },
+    { clave: "joven", texto: "Recientes", color: "var(--humo)" },
     { clave: "madura", texto: "Consolidadas", color: TINTA },
   ];
 
@@ -4483,16 +4577,16 @@ function Retencion({ repasos, hoy }) {
       {conDatos.length >= 2 && (
         <>
           <svg viewBox={`0 0 ${ANCHO} ${ALTO}`} width="100%" height={ALTO} style={{ display: "block", overflow: "visible" }}>
-            <line x1={MARGEN} y1={y(RETENCION_OBJETIVO)} x2={ANCHO - MARGEN} y2={y(RETENCION_OBJETIVO)} stroke={RAYA} strokeWidth="1" />
-            <text x={ANCHO - MARGEN} y={y(RETENCION_OBJETIVO) - 5} textAnchor="end" fontSize="9.5" fill={TINTA_TENUE}>
+            <line x1={MARGEN} y1={y(RETENCION_OBJETIVO)} x2={ANCHO - MARGEN} y2={y(RETENCION_OBJETIVO)} style={{ stroke: RAYA }} strokeWidth="1" />
+            <text x={ANCHO - MARGEN} y={y(RETENCION_OBJETIVO) - 5} textAnchor="end" fontSize="9.5" style={{ fill: TINTA_TENUE }}>
               objetivo {RETENCION_OBJETIVO}%
             </text>
             {tramosLinea.map((t, i) => (
               <polyline key={i} points={t.map((pt) => `${pt.x},${pt.y}`).join(" ")}
-                        fill="none" stroke={TINTA} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        fill="none" style={{ stroke: TINTA }} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             ))}
             {tramosLinea.flat().map((pt, i) => (
-              <circle key={i} cx={pt.x} cy={pt.y} r="3.5" fill={TINTA} stroke="#FFFFFF" strokeWidth="2" />
+              <circle key={i} cx={pt.x} cy={pt.y} r="3.5" style={{ fill: TINTA, stroke: "var(--superficie)" }} strokeWidth="2" />
             ))}
           </svg>
           <div style={{ display: "flex", marginTop: 6 }}>
@@ -4522,7 +4616,7 @@ function Retencion({ repasos, hoy }) {
               {t.pct === null ? "sin datos" : t.pct + "%"}
             </span>
           </div>
-          <div style={{ height: 7, borderRadius: 4, background: "#F2F1EE", overflow: "hidden" }}>
+          <div style={{ height: 7, borderRadius: 4, background: "var(--bloque)", overflow: "hidden" }}>
             {t.pct !== null && (
               <div style={{ width: `${Math.max(t.pct, 2)}%`, height: "100%", borderRadius: 4,
                             background: t.pct < RETENCION_OBJETIVO - 10 ? ACENTO : TINTA_SUAVE }} />
@@ -4568,7 +4662,7 @@ function GrupoEstadistica({ titulo, filas }) {
                 {g.pctMaduras === null ? "sin empezar" : pct + "%"}
               </span>
             </div>
-            <div style={{ height: 8, borderRadius: 4, background: "#F2F1EE", overflow: "hidden" }}>
+            <div style={{ height: 8, borderRadius: 4, background: "var(--bloque)", overflow: "hidden" }}>
               <div style={{ width: `${Math.max(pct, pct > 0 ? 2 : 0)}%`, height: "100%", borderRadius: 4, background: flojo ? ACENTO : TINTA_SUAVE }} />
             </div>
             <div style={{ fontSize: 11.5, color: TINTA_TENUE, marginTop: 4, fontVariantNumeric: "tabular-nums" }}>
@@ -5032,7 +5126,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
   if (sesion) {
     const carta = sesion[idx];
     return (
-      <div>
+      <div data-sin-deslizar="">
         {/* La cola crece cuando algo vuelve, así que el total sube a mitad de
             sesión: se dice de dónde sale ese número en vez de dejarlo raro. */}
         <SectionTitle
@@ -5042,8 +5136,8 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
               ? ` · ${sesion.length - tarjetasDistintas(sesion)} para repetir`
               : "")}
         />
-        <div style={{ height: 2, background: "#E4E3E0", margin: "10px 0 0" }}>
-          <div style={{ height: 2, background: "#0C0C0D", width: `${(idx / sesion.length) * 100}%`, transition: "width .45s cubic-bezier(.22,1,.36,1)" }} />
+        <div style={{ height: 2, background: "var(--linea)", margin: "10px 0 0" }}>
+          <div style={{ height: 2, background: "var(--negro)", width: `${(idx / sesion.length) * 100}%`, transition: "width .45s cubic-bezier(.22,1,.36,1)" }} />
         </div>
         <style>{`
           .flip-container { perspective: 1600px; margin-top: 16px; }
@@ -5058,8 +5152,8 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
              por ahí. Sin key el nodo no se retira nunca: el contenido se
              cambia en sitio y esta clase quita la animación. */
           .flip-inner.sin-animar, .flip-inner.sin-animar .flip-face { transition: none; }
-          .flip-face { position: relative; grid-area: 1 / 1; min-height: 260px; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; overflow-y: auto; padding: 28px 22px; border: 1px solid #E4E3E0; border-radius: 16px; background: #fff; box-shadow: 0 14px 34px -28px rgba(0,0,0,.6); }
-          .flip-face.flip-back { background: #F7F6F3; }
+          .flip-face { position: relative; grid-area: 1 / 1; min-height: 260px; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; overflow-y: auto; padding: 28px 22px; border: 1px solid var(--linea); border-radius: 16px; background: var(--superficie); box-shadow: 0 14px 34px -28px rgba(0,0,0,.6); }
+          .flip-face.flip-back { background: var(--bloque); }
           .gr-btn { transition: background-color .18s, color .18s, border-color .18s; }
           .gr-btn:active:not([disabled]) { background-color: rgb(var(--c)) !important; border-color: rgb(var(--c)) !important; color: #fff !important; }
           .gr-btn.pulsada { transition: none; }
@@ -5099,21 +5193,21 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
                  vieja que pueda asomar. */}
           <div className={`flip-inner${revelada ? " flipped" : ""}${dorsoDe === idx ? "" : " sin-animar"}`}>
             <div className="flip-face">
-              <div style={{ position: "absolute", top: 16, left: 18, right: 18, fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "#A2A2AB", lineHeight: 1.4 }}>{carta.mazo}</div>
-              <p style={{ fontFamily: "'Cabinet Grotesk','Arial Black',sans-serif", fontWeight: 700, fontSize: 25, lineHeight: 1.14, letterSpacing: "-0.025em", color: "#17171B", margin: 0 }}>{carta.frontal}</p>
+              <div style={{ position: "absolute", top: 16, left: 18, right: 18, fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--niebla)", lineHeight: 1.4 }}>{carta.mazo}</div>
+              <p style={{ fontFamily: "'Cabinet Grotesk','Arial Black',sans-serif", fontWeight: 700, fontSize: 25, lineHeight: 1.14, letterSpacing: "-0.025em", color: "var(--tinta)", margin: 0 }}>{carta.frontal}</p>
             </div>
             <div className="flip-face flip-back">
               {dorsoDe === idx ? (
                 <>
-                  <div style={{ position: "absolute", top: 16, left: 18, right: 18, fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "#A2A2AB", lineHeight: 1.4 }}>{carta.mazo}</div>
-                  <p style={{ fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 19, lineHeight: 1.38, letterSpacing: "-0.01em", color: "#17171B", margin: 0 }}>{carta.posterior}</p>
+                  <div style={{ position: "absolute", top: 16, left: 18, right: 18, fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--niebla)", lineHeight: 1.4 }}>{carta.mazo}</div>
+                  <p style={{ fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 19, lineHeight: 1.38, letterSpacing: "-0.01em", color: "var(--tinta)", margin: 0 }}>{carta.posterior}</p>
                 </>
               ) : null}
             </div>
           </div>
         </div>
         {!revelada ? (
-          <p style={{ fontSize: 12.5, color: "#A2A2AB", textAlign: "center", marginTop: 14 }}>Toca la tarjeta para ver la respuesta</p>
+          <p style={{ fontSize: 12.5, color: "var(--niebla)", textAlign: "center", marginTop: 14 }}>Toca la tarjeta para ver la respuesta</p>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 16 }}>
             {CALIFICACIONES_FLASHCARD.map((c, i) => {
@@ -5128,8 +5222,8 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
                   style={{
                     "--c": c.rgb,
                     padding: "15px 4px", textAlign: "center", fontWeight: 600, fontSize: 13.5, letterSpacing: "-0.01em",
-                    borderRadius: 11, cursor: "pointer", color: pulsada ? "#fff" : "#17171B",
-                    background: pulsada ? `rgb(${c.rgb})` : "#fff",
+                    borderRadius: 11, cursor: "pointer", color: pulsada ? "#fff" : "var(--tinta)",
+                    background: pulsada ? `rgb(${c.rgb})` : "var(--superficie)",
                     border: `2px solid ${pulsada ? `rgb(${c.rgb})` : `rgba(${c.rgb},0.58)`}`,
                     opacity: enviando ? 0.6 : 1,
                   }}
@@ -5259,7 +5353,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
               <ChevronLeft size={15} /> Carpetas
             </button>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-              <FolderOpen size={18} color={TINTA_SUAVE} />
+              <FolderOpen size={18} color="currentColor" style={{ color: TINTA_SUAVE }} />
               <span style={{ fontSize: 16, fontWeight: 700, color: TINTA, fontFamily: "var(--font-display)" }}>{carpetaAbierta}</span>
             </div>
             {arrastrando && (
@@ -5392,20 +5486,20 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
        <>
       {resumen && (
         <Card style={{ marginBottom: 16, textAlign: "center", border: `1.5px solid ${CORRECTO}` }}>
-          <p style={{ fontSize: 15, color: "#17171B", margin: 0 }}>
+          <p style={{ fontSize: 15, color: "var(--tinta)", margin: 0 }}>
             ¡Sesión terminada! Has repasado {resumen.total} tarjeta{resumen.total === 1 ? "" : "s"}.
           </p>
         </Card>
       )}
       <Card style={{ textAlign: "center", padding: "28px 20px" }}>
         {cola.length === 0 ? (
-          <p style={{ fontSize: 15, color: "#17171B", margin: 0 }}>
+          <p style={{ fontSize: 15, color: "var(--tinta)", margin: 0 }}>
             No hay ninguna tarjeta{etiquetasActivas.length > 0 ? ` de ${etiquetasActivas.join(" · ")}` : mazoActivo ? ` de "${mazoActivo}"` : ""} todavía.
           </p>
         ) : (
           <>
             {pendientes.length > 0 ? (
-              <p style={{ fontSize: 15, color: "#17171B", marginTop: 0, marginBottom: 16 }}>
+              <p style={{ fontSize: 15, color: "var(--tinta)", marginTop: 0, marginBottom: 16 }}>
                 Te tocan {pendientes.length} tarjeta{pendientes.length === 1 ? "" : "s"}.
                 {cola.length > pendientes.length && (
                   <span style={{ display: "block", fontSize: 12.5, color: TINTA_TENUE, marginTop: 6, lineHeight: 1.5 }}>
@@ -5417,7 +5511,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
               /* Antes aquí ponía "vuelve mañana" y se acababa la pantalla: quien
                  no estudia a diario se encontraba la puerta cerrada justo el día
                  que se sentaba a estudiar. */
-              <p style={{ fontSize: 15, color: "#17171B", marginTop: 0, marginBottom: 16 }}>
+              <p style={{ fontSize: 15, color: "var(--tinta)", marginTop: 0, marginBottom: 16 }}>
                 Hoy no vence ninguna{etiquetasActivas.length > 0 ? ` de ${etiquetasActivas.join(" · ")}` : mazoActivo ? ` de "${mazoActivo}"` : ""}, pero puedes seguir.
                 <span style={{ display: "block", fontSize: 12.5, color: TINTA_TENUE, marginTop: 6, lineHeight: 1.5 }}>
                   Salen en el orden en que les toca volver, la más cercana primero.
@@ -5542,7 +5636,7 @@ function SelectorEstiloMazo({ icono, color, onGuardar, onCerrar }) {
                 border: activo ? `2px solid ${tinte}` : `1.5px solid ${RAYA}`,
               }}
             >
-              <I size={19} color={activo ? tinte : TINTA_SUAVE} />
+              <I size={19} color="currentColor" style={{ color: activo ? tinte : TINTA_SUAVE }} />
             </button>
           );
         })}
@@ -5798,7 +5892,7 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
           <div style={styles.filaCarpetaTitulo}>{titulo}</div>
         </span>
         {badge != null && <span style={styles.filaCarpetaBadge}>{badge}</span>}
-        <span style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 17, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", minWidth: 40, textAlign: "right", color: "#17171B" }}>
+        <span style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 17, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", minWidth: 40, textAlign: "right", color: "var(--tinta)" }}>
           {numero != null ? numero : subtitulo}
         </span>
         {/* El resto del subtítulo (" tarjetas") va oculto a la vista pero no al
@@ -5811,7 +5905,7 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
       </button>
       {/* Las acciones (renombrar, color, carpeta, copiar, borrar) siguen en
           un solo "⋯" discreto: en el prototipo la fila no lleva nada más. */}
-      <button type="button" onClick={() => setModo("acciones")} aria-label={`Opciones de ${titulo}`} style={{ ...styles.filaCarpetaIconBtn, color: "#6A6A72" }}>
+      <button type="button" onClick={() => setModo("acciones")} aria-label={`Opciones de ${titulo}`} style={{ ...styles.filaCarpetaIconBtn, color: "var(--humo)" }}>
         <MoreHorizontal size={16} />
       </button>
     </div>
@@ -5834,7 +5928,7 @@ const MIN_MAZOS_BUSCADOR = 6;
 function BuscarMazos({ valor, onCambiar }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-      <Search size={15} color={TINTA_TENUE} />
+      <Search size={15} color="currentColor" style={{ color: TINTA_TENUE }} />
       <label htmlFor="buscar-mazos" style={{ fontSize: 13, color: TINTA_SUAVE }}>Buscar</label>
       <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
         <input
@@ -5866,7 +5960,7 @@ function OrdenarMazos({ valor, onCambiar }) {
   const actual = CRITERIOS_ORDEN_MAZO.find((c) => c.clave === valor);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-      <ArrowDownUp size={15} color={TINTA_TENUE} />
+      <ArrowDownUp size={15} color="currentColor" style={{ color: TINTA_TENUE }} />
       <label htmlFor="orden-mazos" style={{ fontSize: 13, color: TINTA_SUAVE }}>Ordenar</label>
       <select
         id="orden-mazos"
@@ -6138,7 +6232,7 @@ function ImportarFlashcards({ onAddBulk, mazoFijo, etiquetasExistentes }) {
         </>
       )}
       <FieldLabel>Pega tus tarjetas, una por línea</FieldLabel>
-      <p style={{ fontSize: 12, color: "#A2A2AB", margin: "0 0 8px" }}>
+      <p style={{ fontSize: 12, color: "var(--niebla)", margin: "0 0 8px" }}>
         Cada línea es una tarjeta: frontal y posterior separados por tabulador, " | " o ";" — el formato en que se exportan la mayoría de mazos de Anki o una hoja de cálculo.
       </p>
       <textarea
@@ -6241,7 +6335,7 @@ function FlashcardEditableCard({ f, onUpdate, onDelete, onCopiar, mazos, etiquet
       <button type="button" onClick={() => setOpen((o) => !o)} style={{ ...styles.expandBtn, width: "100%" }}>
         <div style={{ textAlign: "left", flex: 1 }}>
           <div style={{ fontSize: 11, color: "#8A5A9E", marginBottom: 4 }}>{f.mazo}</div>
-          <div style={{ fontSize: 14, color: "#17171B", lineHeight: 1.4 }}>{f.frontal}</div>
+          <div style={{ fontSize: 14, color: "var(--tinta)", lineHeight: 1.4 }}>{f.frontal}</div>
           {(f.etiquetas || []).length > 0 && (
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
               {f.etiquetas.map((e) => <span key={e} style={styles.etiquetaTarjeta}>{e}</span>)}
@@ -6283,11 +6377,11 @@ function FlashcardEditableCard({ f, onUpdate, onDelete, onCopiar, mazos, etiquet
 
 function EstadisticaItem({ icono: Icono, color, valor, etiqueta, detalle, borde }) {
   return (
-    <div style={{ flex: 1, textAlign: "center", padding: "0 10px", borderLeft: borde ? "1px solid #E4E3E0" : "none" }}>
-      <Icono size={18} color={color} strokeWidth={1.7} style={{ marginBottom: 6 }} />
+    <div style={{ flex: 1, textAlign: "center", padding: "0 10px", borderLeft: borde ? "1px solid var(--linea)" : "none" }}>
+      <Icono size={18} color="currentColor" strokeWidth={1.7} style={{ color: color, marginBottom: 6 }} />
       <div style={styles.perfilStatNum}>{valor}</div>
       <div style={styles.perfilStatLabel}>{etiqueta}</div>
-      {detalle && <div style={{ fontSize: 10.5, color: "#B7BEC8", marginTop: 3 }}>{detalle}</div>}
+      {detalle && <div style={{ fontSize: 10.5, color: "var(--niebla)", marginTop: 3 }}>{detalle}</div>}
     </div>
   );
 }
@@ -6297,14 +6391,14 @@ function PreguntasPlegables({ titulo, subtitulo, items, etiquetaItem, abiertaId,
     <div>
       <SectionTitle title={titulo} subtitle={subtitulo} />
       {items.map((f) => (
-        <Card key={f.pregunta_id} style={{ marginBottom: 10 }}>
+        <Card key={f.pregunta_id} style={{ marginBottom: 10, background: "var(--bloque)", boxShadow: "none" }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
             <button type="button" onClick={() => setAbiertaId(abiertaId === f.pregunta_id ? null : f.pregunta_id)} style={{ ...styles.expandBtn, flex: 1 }}>
               <div style={{ textAlign: "left", flex: 1 }}>
-                <div style={{ fontSize: 11, color: "#A2A2AB", marginBottom: 4 }}>
+                <div style={{ fontSize: 11, color: "var(--niebla)", marginBottom: 4 }}>
                   {etiquetaOrigen(f.pregunta)}{etiquetaItem ? ` · ${etiquetaItem(f)}` : ""}
                 </div>
-                <div style={{ fontSize: 14, color: "#17171B", lineHeight: 1.4 }}>{f.pregunta.pregunta}</div>
+                <div style={{ fontSize: 14, color: "var(--tinta)", lineHeight: 1.4 }}>{f.pregunta.pregunta}</div>
               </div>
               {abiertaId === f.pregunta_id ? <ChevronDown size={16} color="#A2A2AB" /> : <ChevronRight size={16} color="#A2A2AB" />}
             </button>
@@ -6314,11 +6408,11 @@ function PreguntasPlegables({ titulo, subtitulo, items, etiquetaItem, abiertaId,
             <div style={{ marginTop: 12 }}>
               {f.pregunta.opciones.map((op, oi) => (
                 <div key={oi} style={{ ...styles.opcion, cursor: "default", ...(oi === f.pregunta.correcta ? styles.opcionCorrectaLegacy : {}) }}>
-                  {oi === f.pregunta.correcta && <Check size={13} color={CORRECTO} />}
+                  {oi === f.pregunta.correcta && <Check size={13} color="currentColor" style={{ color: CORRECTO }} />}
                   {op}
                 </div>
               ))}
-              {f.pregunta.explicacion && <p style={{ fontSize: 13, color: "#6A6A72", marginTop: 10, lineHeight: 1.5, whiteSpace: "pre-line" }}>{f.pregunta.explicacion}</p>}
+              {f.pregunta.explicacion && <p style={{ fontSize: 13, color: "var(--humo)", marginTop: 10, lineHeight: 1.5, whiteSpace: "pre-line" }}>{f.pregunta.explicacion}</p>}
             </div>
           )}
         </Card>
@@ -6336,7 +6430,7 @@ function FalloRepetible({ f, index, favoritos, onToggleFavorito }) {
   const q = f.pregunta;
   const P = DUELO;
   return (
-    <div style={{ border: `1px solid ${P.linea}`, borderRadius: 14, background: "#fff", overflow: "hidden", marginBottom: 10, fontFamily: P.t, color: P.tinta }}>
+    <div style={{ border: `1px solid ${P.linea}`, borderRadius: 14, background: "var(--bloque)", overflow: "hidden", marginBottom: 10, fontFamily: P.t, color: P.tinta }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "14px 12px 14px 15px" }}>
         <button type="button" onClick={() => { setAbierta((v) => !v); setElegida(null); }} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "flex-start", gap: 12, background: "none", border: "none", padding: 0, textAlign: "left", cursor: "pointer", fontFamily: "inherit", color: "inherit" }}>
           <span style={{ flex: 1, minWidth: 0 }}>
@@ -6344,7 +6438,7 @@ function FalloRepetible({ f, index, favoritos, onToggleFavorito }) {
             <span style={{ display: "block", fontSize: 14, lineHeight: 1.4, letterSpacing: "-0.005em", whiteSpace: "pre-line" }}>{q.pregunta}</span>
             {f.veces != null && <span style={{ display: "block", marginTop: 7, fontSize: 11.5, color: P.mal }}>Fallada {f.veces} {f.veces === 1 ? "vez" : "veces"}</span>}
           </span>
-          <ChevronRight size={15} color={P.humo} style={{ flex: "none", marginTop: 3, transform: abierta ? "rotate(90deg)" : "none", transition: "transform .2s" }} />
+          <ChevronRight size={15} color="currentColor" style={{ color: P.humo, flex: "none", marginTop: 3, transform: abierta ? "rotate(90deg)" : "none", transition: "transform .2s" }} />
         </button>
         <FavoritoBtn pregunta={q} favoritos={favoritos} onToggle={onToggleFavorito} />
       </div>
@@ -6377,8 +6471,8 @@ function FalloRepetible({ f, index, favoritos, onToggleFavorito }) {
 function EnRachaBadge() {
   // Quien está en racha AHORA mismo: un punto negro que late y la palabra.
   return (
-    <span title="Racha en marcha" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "#6A6A72" }}>
-      <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: "#0C0C0D", flex: "none" }} />en racha
+    <span title="Racha en marcha" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 10, fontWeight: 600, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--humo)" }}>
+      <span style={{ display: "inline-block", width: 7, height: 7, borderRadius: "50%", background: "var(--negro)", flex: "none" }} />en racha
     </span>
   );
 }
@@ -6389,15 +6483,15 @@ function FilaRanking({ pos, nombre, valor, tu, enVivo, primera }) {
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 14, padding: tu ? "14px 12px" : "14px 4px",
-      borderTop: primera || tu ? "none" : "1px solid #E4E3E0", borderRadius: tu ? 10 : 0,
-      background: tu ? "#F2F1EE" : "transparent", fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif",
+      borderTop: primera || tu ? "none" : "1px solid var(--linea)", borderRadius: tu ? 10 : 0,
+      background: tu ? "var(--bloque)" : "transparent", fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif",
     }}>
-      <span style={{ width: 22, fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 15, color: pos === 1 ? "#0C0C0D" : "#A2A2AB", fontVariantNumeric: "tabular-nums" }}>{pos}</span>
-      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: "#17171B" }}>
-        {nombre}{tu && <span style={{ fontWeight: 500, color: "#6A6A72" }}> · tú</span>}
+      <span style={{ width: 22, fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 15, color: pos === 1 ? "var(--negro)" : "var(--niebla)", fontVariantNumeric: "tabular-nums" }}>{pos}</span>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 600, color: "var(--tinta)" }}>
+        {nombre}{tu && <span style={{ fontWeight: 500, color: "var(--humo)" }}> · tú</span>}
       </span>
       {enVivo && <EnRachaBadge />}
-      <span style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 22, letterSpacing: "-0.03em", color: "#0C0C0D", fontVariantNumeric: "tabular-nums", minWidth: 36, textAlign: "right" }}>{valor}</span>
+      <span style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 22, letterSpacing: "-0.03em", color: "var(--negro)", fontVariantNumeric: "tabular-nums", minWidth: 36, textAlign: "right" }}>{valor}</span>
     </div>
   );
 }
@@ -6419,11 +6513,11 @@ function Ranking({ rachas, user }) {
   const pestana = (id, texto) => (
     <button type="button" onClick={() => setModo(id)} aria-pressed={modo === id} style={{
       background: "none", border: "none", padding: "4px 2px 10px", cursor: "pointer", fontFamily: "inherit",
-      fontWeight: 600, fontSize: 14, color: modo === id ? "#17171B" : "#A2A2AB",
-      boxShadow: modo === id ? "inset 0 -1.5px 0 #0C0C0D" : "none",
+      fontWeight: 600, fontSize: 14, color: modo === id ? "var(--tinta)" : "var(--niebla)",
+      boxShadow: modo === id ? "inset 0 -1.5px 0 var(--negro)" : "none",
     }}>{texto}</button>
   );
-  const etiqueta = { display: "block", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.17em", textTransform: "uppercase", color: "#A2A2AB" };
+  const etiqueta = { display: "block", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.17em", textTransform: "uppercase", color: "var(--niebla)" };
 
   return (
     <div style={{ fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif" }}>
@@ -6432,21 +6526,21 @@ function Ranking({ rachas, user }) {
         {pestana("quiz", "Modo relámpago")}
         {pestana("duelo", "Duelo")}
       </div>
-      <p style={{ fontSize: 12.5, color: "#6A6A72", margin: "0 0 10px" }}>
+      <p style={{ fontSize: 12.5, color: "var(--humo)", margin: "0 0 10px" }}>
         {modo === "quiz" ? "Mejor racha de aciertos seguidos en modo relámpago." : "Mejor racha de duelos ganados seguidos."}
       </p>
       {filas.length === 0
-        ? <p style={{ fontSize: 13, color: "#A2A2AB", padding: "6px 2px" }}>Todavía no hay récords en este modo.</p>
+        ? <p style={{ fontSize: 13, color: "var(--niebla)", padding: "6px 2px" }}>Todavía no hay récords en este modo.</p>
         : filas.map((r, i) => (
           <FilaRanking key={r.name} pos={i + 1} nombre={r.name} valor={r[campoRecord]} tu={r.name === user.name} enVivo={(r[campoVivo] || 0) > 0} primera={i === 0} />
         ))}
 
       <div style={{ marginTop: 36 }}>
         <span style={etiqueta}>Se reinicia cada lunes</span>
-        <h2 style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 26, lineHeight: 0.95, letterSpacing: "-0.02em", textTransform: "uppercase", color: "#0C0C0D", margin: "8px 0 6px" }}>Liga semanal</h2>
-        <p style={{ fontSize: 12.5, color: "#6A6A72", margin: "0 0 10px" }}>Aciertos desde el lunes.</p>
+        <h2 style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 26, lineHeight: 0.95, letterSpacing: "-0.02em", textTransform: "uppercase", color: "var(--negro)", margin: "8px 0 6px" }}>Liga semanal</h2>
+        <p style={{ fontSize: 12.5, color: "var(--humo)", margin: "0 0 10px" }}>Aciertos desde el lunes.</p>
         {ligaSemanal.length === 0
-          ? <p style={{ fontSize: 13, color: "#A2A2AB", padding: "6px 2px" }}>Todavía nadie ha respondido esta semana.</p>
+          ? <p style={{ fontSize: 13, color: "var(--niebla)", padding: "6px 2px" }}>Todavía nadie ha respondido esta semana.</p>
           : ligaSemanal.map((r, i) => (
             <FilaRanking key={r.name} pos={i + 1} nombre={r.name} valor={r.correctas_semana} tu={r.name === user.name} primera={i === 0} />
           ))}
@@ -6461,22 +6555,23 @@ function PantallaCarga() {
   return (
     <div className="carga" role="status" aria-label="Cargando">
       <div className="carga-marca" aria-hidden="true">
-        <span className="carga-trazo">AUTOPIR</span>
-        <span className="carga-tinta">AUTOPIR</span>
+        {"AUTOPIR".split("").map((c, i) => (<span key={i} style={{ animationDelay: `${i * 70}ms` }}>{c}</span>))}
       </div>
-      <div className="carga-casillas" aria-hidden="true">
-        {["A", "B", "C", "D"].map((l) => <span key={l}>{l}</span>)}
+      <div className="carga-piensa" aria-hidden="true">
+        {GLIFOS_PIENSA.map((g, i) => <span key={i}>{g}</span>)}
       </div>
     </div>
   );
 }
+// Las formas del asterisco de la carga, ida y vuelta (ver .carga-piensa).
+const GLIFOS_PIENSA = ["·", "✢", "✳", "✶", "✻", "✽", "✻", "✶", "✳", "✢"];
 
 function SectionTitle({ title, subtitle, action }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 16 }}>
       <div>
-        <h2 style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 26, lineHeight: 0.95, letterSpacing: "-0.02em", textTransform: "uppercase", color: "#0C0C0D", margin: 0 }}>{title}</h2>
-        {subtitle && <p style={{ fontSize: 13, color: "#6A6A72", margin: "6px 0 0" }}>{subtitle}</p>}
+        <h2 style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 26, lineHeight: 0.95, letterSpacing: "-0.02em", textTransform: "uppercase", color: "var(--negro)", margin: 0 }}>{title}</h2>
+        {subtitle && <p style={{ fontSize: 13, color: "var(--humo)", margin: "6px 0 0" }}>{subtitle}</p>}
       </div>
       {action}
     </div>
@@ -6488,7 +6583,7 @@ function Card({ children, style, className }) {
 }
 
 function FieldLabel({ children, style }) {
-  return <div style={{ fontSize: 12, color: "#6A6A72", marginBottom: 6, ...style }}>{children}</div>;
+  return <div style={{ fontSize: 12, color: "var(--humo)", marginBottom: 6, ...style }}>{children}</div>;
 }
 
 // Catálogo de colores e iconos que puede llevar un mazo. Lo que se guarda en
@@ -6518,11 +6613,11 @@ function FieldLabel({ children, style }) {
 // usuario ya tenía colocados. Los ocho de la segunda tanda van detrás, por
 // familias (rojos, tierra, verdes, azules, morado, gris).
 const COLORES_MAZO = {
-  tinta: TINTA,
-  acento: ACENTO,
-  aviso: AVISO,
-  oro: ORO,
-  correcto: CORRECTO,
+  tinta: "#17171B",
+  acento: "#A6362B",
+  aviso: "#9C5A1F",
+  oro: "#93711F",
+  correcto: "#2E7D46",
   turquesa: "#1F6E6B",
   azul: "#2A5A8C",
   morado: "#6B3A7A",
@@ -6553,7 +6648,7 @@ const CLAVES_COLOR_MAZO = Object.keys(COLORES_MAZO);
 
 const SOMBRA_SUAVE = "0 1px 2px rgba(30,28,24,0.07), 0 1px 6px rgba(30,28,24,0.05)";
 const styles = {
-  app: { fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", background: "#FFFFFF", minHeight: "100vh", color: TINTA, WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none", fontSize: 17 },
+  app: { fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", background: "var(--fondo)", minHeight: "100vh", color: TINTA, WebkitUserSelect: "none", userSelect: "none", WebkitTouchCallout: "none", fontSize: 17 },
   center: { display: "flex", alignItems: "center", justifyContent: "center" },
   // Los cuatro lados por separado y no el atajo `padding`: mezclar el atajo
   // con un `paddingTop` suelto dispara el aviso de React sobre shorthand y
@@ -6563,26 +6658,30 @@ const styles = {
   // Cabecera y pestañas van juntas y se quedan arriba al desplazar, como
   // antes del rediseño. La cabecera ya reserva la franja del reloj de iOS,
   // así que al quedarse pegadas las pestañas no se meten debajo de la hora.
-  cabeceraFija: { position: "sticky", top: 0, zIndex: 40, background: "#fff" },
-  nav: { display: "flex", justifyContent: "center", gap: 2, background: "#fff", borderBottom: `1px solid ${RAYA}`, paddingTop: 0, paddingRight: 12, paddingBottom: 0, paddingLeft: 12 },
-  navBtn: { flex: "1 1 0", maxWidth: 140, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "none", border: "none", padding: "12px 2px 12px", fontSize: 11.5, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", whiteSpace: "nowrap" },
+  cabeceraFija: { position: "sticky", top: 0, zIndex: 40, background: "var(--fondo)" },
+  nav: { display: "flex", justifyContent: "center", gap: 6, background: "var(--fondo)", borderBottom: `1px solid ${RAYA}`, paddingTop: 6, paddingRight: 12, paddingBottom: 10, paddingLeft: 12 },
+  // Cada pestaña es un recuadro; la activa va en negro. El oscurecido al
+  // pasar el ratón está en index.html (.nav-app button:hover), porque un
+  // estilo en línea no sabe de :hover.
+  navBtn: { flex: "1 1 0", maxWidth: 150, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "var(--superficie)", color: "var(--humo)", border: `1px solid ${RAYA}`, borderRadius: 10, padding: "10px 4px", fontSize: 11.5, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", whiteSpace: "nowrap", transition: "background-color .15s, color .15s, border-color .15s" },
+  navBtnActivo: { background: "var(--negro)", color: "var(--sobre-negro)", borderColor: "var(--negro)" },
   navDot: { position: "absolute", top: 10, right: 6, width: 8, height: 8, borderRadius: "50%", background: ACENTO, animation: "dueloPulso 1.2s ease-in-out infinite" },
   tabsOrigen: { display: "flex", gap: 8, marginBottom: 14 },
-  tabOrigenBtn: { flex: 1, padding: "11px 14px", borderRadius: 10, border: `1px solid ${RAYA}`, background: "#fff", color: TINTA_SUAVE, fontSize: 14, fontWeight: 600, cursor: "pointer" },
-  tabOrigenActivo: { background: "#0C0C0D", borderColor: "#0C0C0D", color: "#fff" },
+  tabOrigenBtn: { flex: 1, padding: "11px 14px", borderRadius: 10, border: `1px solid ${RAYA}`, background: "var(--superficie)", color: TINTA_SUAVE, fontSize: 14, fontWeight: 600, cursor: "pointer" },
+  tabOrigenActivo: { background: "var(--negro)", borderColor: "var(--negro)", color: "var(--sobre-negro)" },
   tabOrigenActivoIA: { background: "#8A5A9E", borderColor: "#8A5A9E", color: "#fff" },
   // `boxSizing` aquí no es cosmética: con `width: 100%` más padding y borde, y
   // sin un `border-box` global en el proyecto, cada fila sobresalía 31 px de su
   // caja y ensanchaba la página. Venía de antes de la rejilla; lo cazó la
   // comprobación de `scrollWidth` al volver a las filas.
-  listaFotoMazos: { background: "#2E2C27 url(/img/fondo-mazos.jpg) center/cover", borderRadius: 14, padding: 10, display: "flex", flexDirection: "column", gap: 2 },
-  filaCarpeta: { boxSizing: "border-box", position: "relative", overflow: "hidden", display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", backgroundColor: "rgba(255,255,255,0.93)", border: "none", borderRadius: 12, padding: "15px 12px 15px 16px", cursor: "pointer", marginBottom: 6, WebkitBackdropFilter: "blur(9px)", backdropFilter: "blur(9px)" },
+  listaFotoMazos: { background: "linear-gradient(var(--velo-foto), var(--velo-foto)), url(/img/fondo-mazos.jpg) center/cover #2E2C27", borderRadius: 14, padding: 10, display: "flex", flexDirection: "column", gap: 2 },
+  filaCarpeta: { boxSizing: "border-box", position: "relative", overflow: "hidden", display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", backgroundColor: "var(--velo)", border: "none", borderRadius: 12, padding: "15px 12px 15px 16px", cursor: "pointer", marginBottom: 6, WebkitBackdropFilter: "blur(9px)", backdropFilter: "blur(9px)" },
   filaCarpetaBoton: { display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0, background: "none", border: "none", padding: 0, margin: 0, font: "inherit", color: "inherit", cursor: "pointer", textAlign: "left" },
-  filaCarpetaIcono: { display: "flex", alignItems: "center", justifyContent: "center", width: 20, flexShrink: 0, color: "#6A6A72" },
-  filaCarpetaTitulo: { fontSize: 15, fontWeight: 600, letterSpacing: "-0.01em", color: "#17171B" },
-  filaCarpetaSubtitulo: { fontSize: 12, color: "#6A6A72", marginTop: 2 },
+  filaCarpetaIcono: { display: "flex", alignItems: "center", justifyContent: "center", width: 20, flexShrink: 0, color: "var(--humo)" },
+  filaCarpetaTitulo: { fontSize: 15, fontWeight: 600, letterSpacing: "-0.01em", color: "var(--tinta)" },
+  filaCarpetaSubtitulo: { fontSize: 12, color: "var(--humo)", marginTop: 2 },
   filaCarpetaBadge: { fontSize: 11.5, fontWeight: 600, color: "#3A3A43", padding: "0 2px", whiteSpace: "nowrap" },
-  filaCarpetaIconBtn: { display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 8, border: "none", background: "none", color: "#A2A2AB", cursor: "pointer", flexShrink: 0 },
+  filaCarpetaIconBtn: { display: "flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 8, border: "none", background: "none", color: "var(--niebla)", cursor: "pointer", flexShrink: 0 },
   // Un mazo es una FILA, no un cuadro en una rejilla. La rejilla de cinco se
   // probó y se retiró a petición del usuario: "no me gusta cómo se ve la
   // interfaz, parece demasiado IA... sobre todo por los símbolos y la forma
@@ -6592,68 +6691,68 @@ const styles = {
   // lo que distingue a un mazo es su NOMBRE, que se lee entero; el icono y el
   // color quedan como marca discreta para quien se los haya puesto a mano.
   // El cuadro que sigue al dedo al arrastrar, y el hueco que deja detrás.
-  tarjetaMazoFantasma: { position: "fixed", zIndex: 70, pointerEvents: "none", maxWidth: 220, padding: "8px 12px", background: "#fff", border: `1.5px solid ${RAYA_FUERTE}`, borderRadius: 12, boxShadow: "0 10px 24px rgba(30,28,24,0.22)", fontSize: 13.5, fontWeight: 700, color: TINTA, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", transform: "translate(-50%, -50%)", opacity: 0.95 },
+  tarjetaMazoFantasma: { position: "fixed", zIndex: 70, pointerEvents: "none", maxWidth: 220, padding: "8px 12px", background: "var(--superficie)", border: `1.5px solid ${RAYA_FUERTE}`, borderRadius: 12, boxShadow: "0 10px 24px rgba(30,28,24,0.22)", fontSize: 13.5, fontWeight: 700, color: TINTA, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", transform: "translate(-50%, -50%)", opacity: 0.95 },
   tarjetaMazoArrastrada: { opacity: 0.35 },
   // La carpeta (o la zona de sacar) sobre la que estás soltando.
-  destinoActivo: { backgroundColor: "rgba(12,12,13,0.10)", boxShadow: "inset 0 0 0 1.5px #0C0C0D" },
+  destinoActivo: { backgroundColor: "rgba(12,12,13,0.10)", boxShadow: "inset 0 0 0 1.5px var(--negro)" },
   zonaSacar: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "14px 10px", border: `2px dashed ${RAYA_FUERTE}`, borderRadius: 14, color: TINTA_SUAVE, fontSize: 13, fontWeight: 700, marginBottom: 10 },
-  rachaDiasChip: { display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: TINTA_TENUE, background: "#F2F1EE", borderRadius: 20, padding: "5px 10px" },
+  rachaDiasChip: { display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: TINTA_TENUE, background: "var(--bloque)", borderRadius: 20, padding: "5px 10px" },
   rachaDiasChipActiva: { color: ACENTO, background: ACENTO_SUAVE },
   modalOverlay: { position: "fixed", inset: 0, background: "rgba(30,28,24,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 },
   dropdownCatcher: { position: "fixed", inset: 0, zIndex: 39 },
-  logrosDropdown: { position: "absolute", top: "calc(100% + 10px)", right: 0, width: 320, maxWidth: "88vw", background: "#fff", border: "1px solid #E4E3E0", borderRadius: 14, boxShadow: "0 16px 36px -26px rgba(0,0,0,.6)", padding: 16, zIndex: 40 },
-  pantallaCompleta: { position: "fixed", inset: 0, background: "#FFFFFF", zIndex: 50, overflowY: "auto" },
+  logrosDropdown: { position: "absolute", top: "calc(100% + 10px)", right: 0, width: 320, maxWidth: "88vw", background: "var(--superficie)", border: "1px solid var(--linea)", borderRadius: 14, boxShadow: "0 16px 36px -26px rgba(0,0,0,.6)", padding: 16, zIndex: 40 },
+  pantallaCompleta: { position: "fixed", inset: 0, background: "var(--fondo)", zIndex: 50, overflowY: "auto" },
   // `pantallaCompleta` va a `inset: 0`, o sea pegada al borde de la pantalla:
   // desde el icono de la pantalla de inicio el botón de cerrar caía DEBAJO del
   // reloj y la batería, y desde fuera eso es "he entrado en el Ranking y no
   // puedo salir". Mismo arreglo que en la barra de aviso.
   pantallaCompletaCierre: { display: "flex", justifyContent: "flex-end", paddingTop: "max(14px, env(safe-area-inset-top))", paddingRight: 18, paddingBottom: 0, paddingLeft: 18 },
-  modalCard: { background: "#fff", borderRadius: 18, padding: 24, maxWidth: 340, width: "100%", boxShadow: "0 12px 40px rgba(30,28,24,0.20)" },
-  escalaBtn: { flex: 1, padding: "10px 0", borderRadius: 10, border: `1.5px solid ${RAYA}`, background: "#fff", color: TINTA, fontWeight: 700, cursor: "pointer" },
-  escalaBtnActivo: { borderColor: TINTA, background: TINTA, color: "#fff" },
+  modalCard: { background: "var(--superficie)", borderRadius: 18, padding: 24, maxWidth: 340, width: "100%", boxShadow: "0 12px 40px rgba(30,28,24,0.20)" },
+  escalaBtn: { flex: 1, padding: "10px 0", borderRadius: 10, border: `1.5px solid ${RAYA}`, background: "var(--superficie)", color: TINTA, fontWeight: 700, cursor: "pointer" },
+  escalaBtnActivo: { borderColor: TINTA, background: TINTA, color: "var(--sobre-negro)" },
   colorSwatch: { width: 30, height: 30, borderRadius: "50%", border: "2px solid", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 },
   perfilStatNum: { fontSize: 24, fontFamily: "var(--font-display)", fontWeight: 600, color: TINTA },
   perfilStatLabel: { fontSize: 11, fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", textTransform: "uppercase", letterSpacing: 0.5, color: TINTA_TENUE, marginTop: 3, lineHeight: 1.4 },
   linkBtn: { background: "none", border: "none", color: ACENTO, fontSize: 13, cursor: "pointer", padding: "10px 0", fontWeight: 600 },
   btnDificultad: { flex: "1 1 auto", minWidth: 110, padding: "16px 10px", borderRadius: 12, border: "1.5px solid", fontSize: 13.5, fontWeight: 700, cursor: "pointer", textAlign: "center" },
   insigniasGrid: { display: "flex", gap: 8, flexWrap: "wrap" },
-  insigniaCard: { flex: "1 1 84px", minWidth: 78, textAlign: "center", background: "#fff", border: "1.5px solid", borderRadius: 14, padding: "12px 6px" },
+  insigniaCard: { flex: "1 1 84px", minWidth: 78, textAlign: "center", background: "var(--superficie)", border: "1.5px solid", borderRadius: 14, padding: "12px 6px" },
   puntoVivo: { width: 8, height: 8, borderRadius: "50%", background: CORRECTO, animation: "dueloPulso 1.4s ease-in-out infinite" },
   h3Ranking: { fontFamily: "var(--font-display)", fontSize: 21, color: TINTA, margin: 0 },
   rankingColumnas: { display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 4, alignItems: "stretch" },
-  columnaRanking: { flex: 1, minWidth: 240, background: "#FFFFFF", border: `1.5px solid ${RAYA}`, borderRadius: 16, padding: "14px 14px 16px", boxShadow: SOMBRA_SUAVE },
-  tablaRanking: { background: "#FFFFFF", border: "1px solid #E4E3E0", borderRadius: 14, padding: "14px 14px 16px", boxShadow: "none" },
+  columnaRanking: { flex: 1, minWidth: 240, background: "var(--superficie)", border: `1.5px solid ${RAYA}`, borderRadius: 16, padding: "14px 14px 16px", boxShadow: SOMBRA_SUAVE },
+  tablaRanking: { background: "var(--superficie)", border: "1px solid var(--linea)", borderRadius: 14, padding: "14px 14px 16px", boxShadow: "none" },
   enRachaBadge: { display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, color: ORO, textTransform: "uppercase", letterSpacing: 0.3 },
   enRachaPunto: { position: "absolute", inset: 0, borderRadius: "50%", background: ORO },
   dueloAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "12px 16px", borderRadius: 14, border: "none", background: ACENTO, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", animation: "dueloPulso 1.6s ease-in-out infinite" },
-  rachaAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "11px 16px", borderRadius: 12, border: "none", background: "#F2F1EE", color: "#17171B", fontSize: 13, fontWeight: 500, cursor: "pointer" },
+  rachaAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "11px 16px", borderRadius: 12, border: "none", background: "var(--bloque)", color: "var(--tinta)", fontSize: 13, fontWeight: 500, cursor: "pointer" },
   main: { padding: "24px 22px 60px", maxWidth: 820, margin: "0 auto" },
-  card: { background: "#FFFFFF", border: `1px solid ${RAYA}`, borderRadius: 14, padding: 22, boxShadow: "0 1px 2px rgba(0,0,0,0.04), 0 10px 26px -18px rgba(0,0,0,0.32)" },
+  card: { background: "var(--superficie)", border: `1px solid ${RAYA}`, borderRadius: 14, padding: 22, boxShadow: "0 1px 2px rgba(0,0,0,0.04), 0 10px 26px -18px rgba(0,0,0,0.32)" },
   authCard: { textAlign: "left", borderRadius: 20, border: `1.5px solid ${RAYA}`, boxShadow: "0 18px 48px rgba(30,28,24,0.10)" },
-  input: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid #E4E3E0", fontSize: 16, fontFamily: "inherit", color: TINTA, boxSizing: "border-box" },
-  select: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid #E4E3E0", fontSize: 16, fontFamily: "inherit", color: TINTA, background: "#fff" },
-  btnPrimary: { background: "#0C0C0D", color: "#fff", border: "none", borderRadius: 12, padding: "15px 22px", fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" },
-  botonCerrarPantalla: { background: "#fff", color: TINTA, border: `1.5px solid ${RAYA_FUERTE}`, borderRadius: 999, padding: "0 16px", height: 44, fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "inherit" },
-  btnSecondary: { background: "#fff", color: TINTA, border: `1.5px solid ${RAYA}`, borderRadius: 12, padding: "12px 18px", fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center" },
+  input: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid var(--linea)", fontSize: 16, fontFamily: "inherit", color: TINTA, boxSizing: "border-box" },
+  select: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid var(--linea)", fontSize: 16, fontFamily: "inherit", color: TINTA, background: "var(--superficie)" },
+  btnPrimary: { background: "var(--negro)", color: "var(--sobre-negro)", border: "none", borderRadius: 12, padding: "15px 22px", fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center" },
+  botonCerrarPantalla: { background: "var(--superficie)", color: TINTA, border: `1.5px solid ${RAYA_FUERTE}`, borderRadius: 999, padding: "0 16px", height: 44, fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "inherit" },
+  btnSecondary: { background: "var(--superficie)", color: TINTA, border: `1.5px solid ${RAYA}`, borderRadius: 12, padding: "12px 18px", fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center" },
   iconBtn: { background: "none", border: "none", cursor: "pointer", padding: 6, display: "inline-flex" },
   chip: { border: "1.5px solid", borderRadius: 22, padding: "9px 18px", fontSize: 16, cursor: "pointer" },
-  chipEtiqueta: { border: `1.5px solid ${RAYA}`, borderRadius: 20, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, background: "#fff", color: TINTA_SUAVE, cursor: "pointer" },
-  chipEtiquetaActiva: { background: TINTA, borderColor: TINTA, color: "#fff" },
-  etiquetaTarjeta: { border: `1px solid ${RAYA}`, borderRadius: 20, padding: "2px 9px", fontSize: 11, fontWeight: 600, color: TINTA_SUAVE, background: "#F2F1EE" },
-  option: { display: "block", width: "100%", textAlign: "left", padding: "16px 18px", borderRadius: 14, border: `1.5px solid ${RAYA}`, marginBottom: 10, fontSize: 18, cursor: "pointer", color: TINTA, background: "#FFFFFF" },
+  chipEtiqueta: { border: `1.5px solid ${RAYA}`, borderRadius: 20, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, background: "var(--superficie)", color: TINTA_SUAVE, cursor: "pointer" },
+  chipEtiquetaActiva: { background: TINTA, borderColor: TINTA, color: "var(--sobre-negro)" },
+  etiquetaTarjeta: { border: `1px solid ${RAYA}`, borderRadius: 20, padding: "2px 9px", fontSize: 11, fontWeight: 600, color: TINTA_SUAVE, background: "var(--bloque)" },
+  option: { display: "block", width: "100%", textAlign: "left", padding: "16px 18px", borderRadius: 14, border: `1.5px solid ${RAYA}`, marginBottom: 10, fontSize: 18, cursor: "pointer", color: TINTA, background: "var(--superficie)" },
   runHeader: { display: "flex", justifyContent: "space-between", alignItems: "center" },
   progressTrack: { height: 4, background: RAYA, borderRadius: 2, marginTop: 10 },
   progressFill: { height: 4, background: TINTA, borderRadius: 2, transition: "width .3s" },
   cuadroPregunta: { width: 40, height: 40, borderRadius: 12, border: "2px solid", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
   expandBtn: { display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left" },
-  rankRow: { display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", border: "1px solid #E4E3E0", borderRadius: 12, marginBottom: 8, fontSize: 15, background: "#FFFFFF" },
+  rankRow: { display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", border: "1px solid var(--linea)", borderRadius: 12, marginBottom: 8, fontSize: 15, background: "var(--superficie)" },
   vsHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "14px 6px", borderBottom: `1px solid ${RAYA}` },
   choqueOverlay: { position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, height: 64, marginBottom: 2 },
   choqueDestello: { position: "absolute", top: "50%", left: "50%", width: 30, height: 30, borderRadius: "50%", background: `radial-gradient(circle, ${ACENTO_SUAVE} 0%, transparent 70%)`, pointerEvents: "none" },
   celebracionOverlay: { position: "fixed", inset: 0, overflow: "hidden", pointerEvents: "none", zIndex: 55 },
-  daypoCard: { background: "#FFFFFF", border: `1.5px solid ${RAYA}`, borderRadius: 18, padding: 26, boxShadow: SOMBRA_SUAVE },
+  daypoCard: { background: "var(--superficie)", border: `1.5px solid ${RAYA}`, borderRadius: 18, padding: 26, boxShadow: SOMBRA_SUAVE },
   daypoPregunta: { fontFamily: "var(--font-display)", fontWeight: 470, fontSize: 22, color: TINTA, lineHeight: 1.4, marginBottom: 20 },
-  daypoOpcion: { display: "flex", alignItems: "center", gap: 14, width: "100%", boxSizing: "border-box", textAlign: "left", padding: "16px 18px", borderRadius: 14, border: `1.5px solid ${RAYA}`, marginBottom: 10, fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", fontSize: 15.5, color: TINTA, background: "#FFFFFF", cursor: "pointer", WebkitAppearance: "none", appearance: "none", outline: "none" },
+  daypoOpcion: { display: "flex", alignItems: "center", gap: 14, width: "100%", boxSizing: "border-box", textAlign: "left", padding: "16px 18px", borderRadius: 14, border: `1.5px solid ${RAYA}`, marginBottom: 10, fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", fontSize: 15.5, color: TINTA, background: "var(--superficie)", cursor: "pointer", WebkitAppearance: "none", appearance: "none", outline: "none" },
   daypoOpcionCorrecta: { borderColor: CORRECTO, borderWidth: 2, background: CORRECTO_SUAVE },
   daypoOpcionIncorrecta: { borderColor: ACENTO, borderWidth: 2, background: ACENTO_SUAVE },
   daypoLetra: { display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: "50%", border: `1px solid ${RAYA}`, fontFamily: "var(--font-display)", fontSize: 15, fontWeight: 600, flexShrink: 0, color: TINTA_SUAVE },
