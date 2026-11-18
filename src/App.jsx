@@ -5774,6 +5774,13 @@ function FilaMazoEditable({ icono: Icono, titulo, subtitulo, badge, onClick, onP
         <span style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 17, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums", minWidth: 40, textAlign: "right", color: "#17171B" }}>
           {numero != null ? numero : subtitulo}
         </span>
+        {/* El resto del subtítulo (" tarjetas") va oculto a la vista pero no al
+            lector de pantalla: el número solo no dice de qué es. */}
+        {numero != null && (
+          <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" }}>
+            {String(subtitulo).slice(numero.length)}
+          </span>
+        )}
       </button>
       {/* Las acciones (renombrar, color, carpeta, copiar, borrar) siguen en
           un solo "⋯" discreto: en el prototipo la fila no lleva nada más. */}
