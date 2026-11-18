@@ -1496,7 +1496,7 @@ function AuthScreen({ onLogin, onSignup, sesion, onContinuar, onCambiarCuenta })
       <img src="/img/portada.jpg" alt="" aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "45% 40%" }} />
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(10,10,12,.55) 0%, rgba(10,10,12,.12) 30%, rgba(10,10,12,.55) 60%, rgba(10,10,12,.88) 100%)" }} />
       <div style={{ position: "relative", zIndex: 1, minHeight: "100dvh", maxWidth: 480, margin: "0 auto", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "max(18px, env(safe-area-inset-top)) 22px max(26px, env(safe-area-inset-bottom))" }}>
-        <span style={{ fontFamily: D, fontWeight: 800, fontSize: 12, letterSpacing: "0.17em", textTransform: "uppercase" }}>Autopir</span>
+        <span style={{ fontFamily: D, fontWeight: 800, fontSize: 12, letterSpacing: "0.17em", textTransform: "uppercase", textAlign: "center", paddingLeft: "0.17em" }}>Autopir</span>
         <h1 style={{ fontFamily: D, fontWeight: 800, fontSize: "clamp(40px,12vw,58px)", lineHeight: 0.86, letterSpacing: "-0.03em", textTransform: "uppercase", margin: "40px 0 0" }}>
           {sesion || modo === "login" ? <>Bienvenido<br />de nuevo</> : <>Crea tu<br />cuenta</>}
         </h1>
@@ -2445,26 +2445,51 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
     return (
       <div>
         <SectionTitle title="Autoevaluaciones" subtitle="Elige de dónde salen las preguntas y cuántas quieres." />
-        {tiradaLista && (
-          <Card style={{ marginBottom: 16, border: `1.5px solid ${ACENTO}` }}>
-            <p style={{ margin: 0, fontSize: 15, color: TINTA, fontWeight: 600 }}>
-              Tienes una autoevaluación a medias
-            </p>
-            <p style={{ margin: "6px 0 0", fontSize: 13, color: TINTA_SUAVE }}>
-              {tiradaLista.relampago
-                ? `Modo relámpago · ${tiradaLista.answers.length} respondidas`
-                : `Pregunta ${tiradaLista.idx + 1} de ${tiradaLista.pool.length}`}
-            </p>
-            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
-              <button type="button" onClick={continuarTirada} style={{ ...styles.btnPrimary, flex: 1, justifyContent: "center", margin: 0 }}>
-                Continuar
-              </button>
-              <button type="button" onClick={descartarTirada} style={{ ...styles.btnSecondary, justifyContent: "center", margin: 0 }}>
-                Descartar
-              </button>
+        {tiradaLista && (() => {
+          // Retomar: misma familia que el resto de la pantalla (gris de
+          // bloque, rótulo pequeño, cifra en Cabinet, botón negro con flecha)
+          // en vez del recuadro con borde rojo y dos botones gemelos.
+          const hechas = tiradaLista.answers.length;
+          const total = tiradaLista.pool.length;
+          const cursosTirada = [...new Set(tiradaLista.pool.map((q) => q.curso))];
+          const titulo = tiradaLista.relampago
+            ? "Modo relámpago"
+            : cursosTirada.length === 1 ? cursosTirada[0] : `${cursosTirada.length} exámenes`;
+          const D = "'Cabinet Grotesk', 'Arial Black', sans-serif";
+          return (
+            <div style={{ marginBottom: 20, borderRadius: 16, background: "var(--bloque)", padding: "16px 16px 14px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10 }}>
+                <span style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: "0.17em", textTransform: "uppercase", color: "var(--niebla)" }}>Te quedaste a medias</span>
+                <span style={{ fontSize: 12.5, color: "var(--humo)", fontVariantNumeric: "tabular-nums" }}>
+                  {tiradaLista.relampago ? `${hechas} seguidas` : `${hechas} de ${total}`}
+                </span>
+              </div>
+              <div style={{ fontFamily: D, fontWeight: 800, fontSize: 24, lineHeight: 1, letterSpacing: "-0.02em", textTransform: "uppercase", color: "var(--negro)", margin: "8px 0 12px" }}>
+                {titulo}
+              </div>
+              {!tiradaLista.relampago && (
+                <div style={{ height: 3, borderRadius: 3, background: "var(--linea)", overflow: "hidden", marginBottom: 14 }}>
+                  <div style={{ height: "100%", width: `${Math.round((hechas / Math.max(total, 1)) * 100)}%`, background: "var(--negro)" }} />
+                </div>
+              )}
+              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                <button type="button" onClick={continuarTirada} style={{
+                  flex: 1, background: "var(--negro)", color: "var(--sobre-negro)", border: "none", borderRadius: 12,
+                  padding: "14px 16px", fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center",
+                  justifyContent: "space-between", cursor: "pointer", fontFamily: "inherit",
+                }}>
+                  <span>Continuar</span><span aria-hidden="true">→</span>
+                </button>
+                <button type="button" onClick={descartarTirada} style={{
+                  background: "none", border: "none", padding: "8px 2px", fontSize: 13.5, fontWeight: 600,
+                  color: "var(--humo)", cursor: "pointer", fontFamily: "inherit",
+                }}>
+                  Descartar
+                </button>
+              </div>
             </div>
-          </Card>
-        )}
+          );
+        })()}
         <SelectorExamenes
           origenes={[
             { id: "todas", texto: "Todas" },
@@ -2504,7 +2529,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
     // siempre una pregunta por detrás de lo que acabas de ver en pantalla.
     const marcador = marcadorTirada(answers, ronda, primerIntento, revealed ? esCorrecta : null);
     return (
-      <div data-sin-deslizar="" style={{ background: "var(--superficie)", borderRadius: 15, overflow: "hidden", border: `1px solid ${E.linea}` }}>
+      <div data-sin-deslizar="" style={{ background: "var(--bloque)", borderRadius: 16, overflow: "hidden", border: `1px solid ${E.linea}` }}>
         <style>{`
           @keyframes acertarPulso {
             0% { box-shadow: 0 0 0 0 rgba(76,175,80,0.55); }
@@ -2554,7 +2579,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
             <span style={{ fontWeight: 500, fontSize: 10.5, letterSpacing: "0.16em", textTransform: "uppercase", color: E.niebla }}>{etiquetaOrigen(q)}</span>
             {onToggleFavorito && <FavoritoBtn pregunta={q} favoritos={favoritos} onToggle={onToggleFavorito} />}
           </div>
-          <p style={{ marginTop: 10, fontSize: 17.5, lineHeight: 1.42, letterSpacing: "-0.005em", whiteSpace: "pre-line" }}>{q.pregunta}</p>
+          <p style={{ marginTop: 10, fontSize: 18, lineHeight: 1.45, fontWeight: 600, letterSpacing: "-0.01em", color: E.negro, whiteSpace: "pre-line" }}>{q.pregunta}</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 18 }}>
             {q.opciones.map((op, i) => {
               const letra = String.fromCharCode(65 + i);
@@ -3457,7 +3482,7 @@ function Duelo({ user, questions, onDueloEnd, onProgresoDiario, onRespuestaPregu
   );
 
   return (
-    <div data-sin-deslizar="" style={{ fontFamily: DUELO.t, color: DUELO.tinta, background: "var(--superficie)", border: `1px solid ${DUELO.linea}`, borderRadius: 15, overflow: "hidden" }}>
+    <div data-sin-deslizar="" style={{ fontFamily: DUELO.t, color: DUELO.tinta, background: "var(--bloque)", border: `1px solid ${DUELO.linea}`, borderRadius: 16, overflow: "hidden" }}>
       {mostrarChoque && <EncuentroDuelo yo={user.name} el={oponenteNombre || "Rival"} />}
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderBottom: `1px solid ${DUELO.linea}`, fontSize: 12.5 }}>
         <span style={{ display: "flex", alignItems: "center", gap: 8 }}><b style={{ fontWeight: 600 }}>{user.name}</b>{puntos(miVidas)}</span>
