@@ -283,6 +283,43 @@ function usuarioFromSession(session) {
 // una pestaña de Safari que no se cierra eso duraba días — la portada dejaba
 // de salir, que fue justo la queja.
 const CLAVE_SIN_PORTADA = "pir-pruebas-sin-portada";
+
+// Las pestañas no se desmontan al cambiar: se esconden (ver el render del
+// raíz), así que una tirada, un repaso o un duelo siguen exactamente donde los
+// dejaste. Lo que escucha al teclado o cuenta tiempo tiene que saber entonces
+// si su pestaña es la que se ve, o el "1" que pulsas en Flashcards contestaría
+// la pregunta de una autoevaluación escondida. Fuera de una pestaña (el Banco,
+// paneles) vale `true`.
+const PestanaActiva = React.createContext(true);
+
+// Diagnóstico del trackpad: con `?depurar=trackpad` en la dirección se pinta
+// un panel con lo que llega de la rueda y lo que se decide con cada evento.
+// Existe porque el iPad no se puede probar desde aquí (solo hay Chromium) y
+// el trackpad se comporta distinto en Safari: una captura del panel dice qué
+// recibe la página de verdad. Sin el parámetro no hace nada.
+const DEPURAR_RUEDA = typeof window !== "undefined" && /[?&]depurar=trackpad\b/.test(window.location.search);
+function anotarRueda(dato) {
+  if (!DEPURAR_RUEDA) return;
+  const lista = (window.__autopirRueda = window.__autopirRueda || []);
+  lista.push({ t: Math.round(performance.now()) % 100000, ...dato });
+  if (lista.length > 18) lista.splice(0, lista.length - 18);
+}
+function PanelDepuracionRueda() {
+  const [, setTic] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTic((n) => n + 1), 150);
+    return () => clearInterval(id);
+  }, []);
+  const lista = window.__autopirRueda || [];
+  return (
+    <div style={{ position: "fixed", left: 8, bottom: 8, zIndex: 90, width: 300, maxHeight: "45vh", overflow: "hidden", background: "rgba(12,12,13,.86)", color: "#fff", font: "11px/1.35 ui-monospace, Menlo, monospace", padding: "8px 10px", borderRadius: 10, pointerEvents: "none" }}>
+      <div style={{ opacity: 0.7, marginBottom: 4 }}>trackpad · {navigator.userAgent.includes("iPad") || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1) ? "iPad" : navigator.platform}</div>
+      {lista.length === 0 ? <div>Sin eventos de rueda todavía. Desliza con dos dedos.</div> : lista.map((x, i) => (
+        <div key={i}>{Object.entries(x).map(([k, v]) => `${k}:${v}`).join(" ")}</div>
+      ))}
+    </div>
+  );
+}
 // Volver a la app tras este rato fuera también es "entrar".
 const MS_FUERA_PARA_PORTADA = 30 * 60 * 1000;
 const ORDEN_PESTANAS = ["simulacros", "flashcards", "duelo", "estadisticas", "perfil"];
@@ -292,6 +329,13 @@ export default function AcademiaPIR() {
   const [loadError, setLoadError] = useState(null);
   const [user, setUser] = useState(null);
   const [section, setSection] = useState("simulacros");
+  // Pestañas ya abiertas: se montan la primera vez que se visitan y a partir
+  // de ahí solo se esconden. Cambiar de pestaña (con el dedo, el trackpad, una
+  // flecha o un toque) no se lleva por delante lo que estabas haciendo.
+  const [visitadas, setVisitadas] = useState(["simulacros"]);
+  if (!visitadas.includes(section)) setVisitadas((v) => (v.includes(section) ? v : [...v, section]));
+  // Y cada una vuelve a la altura en que la dejaste.
+  const scrollPorSeccion = useRef({});
   // La portada sale cada vez que ENTRAS, aunque ya tengas la sesión
   // iniciada: al abrir la app y al volver tras un rato fuera. Con sesión no
   // pide nada, solo "Entrar". Vive solo en memoria, a propósito.
@@ -628,7 +672,12 @@ export default function AcademiaPIR() {
     const actual = seccionRef.current;
     if (!nueva || nueva === actual) return;
     const sinMovimiento = typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (!el || animandoRef.current || sinMovimiento) { setSection(nueva); return; }
+    if (!el || animandoRef.current || sinMovimiento) {
+      scrollPorSeccion.current[actual] = window.scrollY;
+      flushSync(() => setSection(nueva));
+      window.scrollTo(0, scrollPorSeccion.current[nueva] || 0);
+      return;
+    }
     animandoRef.current = true;
     const ancho = el.offsetWidth || window.innerWidth;
     el.style.transition = `transform ${SALIDA_MS}ms cubic-bezier(.4,0,.9,.6)`;
@@ -638,8 +687,9 @@ export default function AcademiaPIR() {
       el.style.transform = `translateX(${dir * ancho}px)`;
       // Síncrono: la página nueva tiene que estar ya dibujada fuera de la
       // pantalla antes de empezar a entrar, o entraría la vieja.
+      scrollPorSeccion.current[actual] = window.scrollY;
       flushSync(() => setSection(nueva));
-      if (window.scrollY > 0) window.scrollTo(0, 0);
+      window.scrollTo(0, scrollPorSeccion.current[nueva] || 0);
       void el.offsetWidth;
       el.style.transition = `transform ${ENTRADA_MS}ms cubic-bezier(.22,1,.36,1)`;
       el.style.transform = "translateX(0px)";
@@ -664,7 +714,9 @@ export default function AcademiaPIR() {
   // llevaría por delante lo que estás haciendo.
   useEffect(() => {
     if (!user || !portadaVista) return undefined;
-    const bloqueado = () => animandoRef.current || !!document.querySelector("[data-sin-deslizar]");
+    // Lo que está en una pestaña escondida no cuenta: una tirada a medias en
+    // Exámenes no puede bloquear los gestos cuando estás en Estadísticas.
+    const bloqueado = () => animandoRef.current || [...document.querySelectorAll("[data-sin-deslizar]")].some((n) => !n.closest("[hidden]"));
     const editable = (el) => !!el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable);
     // Lo que ya se desplaza de lado (una fila de chips) se queda su gesto.
     const scrollLateral = (el) => {
@@ -760,6 +812,16 @@ export default function AcademiaPIR() {
     let tragando = false;
     let tragarTimer = null;
     let finTimer = null;
+    // La página se mueve como mucho una vez por fotograma: el trackpad puede
+    // mandar varios eventos entre dos fotogramas y moverla en cada uno solo
+    // añade saltitos.
+    let pendiente = null;
+    let marco = 0;
+    const mostrarEnFotograma = (dx) => {
+      pendiente = dx;
+      if (!marco) marco = requestAnimationFrame(() => { marco = 0; if (pendiente !== null) mostrar(pendiente); pendiente = null; });
+    };
+    const cancelarFotograma = () => { if (marco) cancelAnimationFrame(marco); marco = 0; pendiente = null; };
     const tragarHastaSilencio = () => {
       tragando = true;
       clearTimeout(tragarTimer);
@@ -768,27 +830,32 @@ export default function AcademiaPIR() {
     const finDeRueda = () => {
       const r = rueda;
       rueda = null;
-      if (r && r.eje === "lado") volver();
+      cancelarFotograma();
+      if (r && r.eje === "lado") { anotarRueda({ accion: "vuelve", dx: Math.round(-r.sx) }); volver(); }
     };
     const alRueda = (e) => {
       if (e.ctrlKey) return; // pellizco para hacer zoom
       const k = e.deltaMode === 1 ? 16 : 1;
       const deltaX = e.deltaX * k;
       const deltaY = e.deltaY * k;
+      anotarRueda({ dX: Math.round(deltaX), dY: Math.round(deltaY), modo: e.deltaMode, cancelable: e.cancelable, tragando });
       if (tragando) {
         if (Math.abs(deltaX) > Math.abs(deltaY)) e.preventDefault();
         tragarHastaSilencio();
         return;
       }
       if (!rueda) {
-        if (bloqueado() || scrollLateral(e.target)) return;
+        if (bloqueado() || scrollLateral(e.target)) { anotarRueda({ accion: "bloqueado" }); return; }
         rueda = { sx: 0, sy: 0, eje: null };
       }
       clearTimeout(finTimer);
       finTimer = setTimeout(finDeRueda, 150);
       rueda.sx += deltaX;
       rueda.sy += deltaY;
-      if (rueda.eje === null) rueda.eje = ejeDelGesto(rueda.sx, rueda.sy);
+      if (rueda.eje === null) {
+        rueda.eje = ejeDelGesto(rueda.sx, rueda.sy);
+        if (rueda.eje) anotarRueda({ accion: "eje " + rueda.eje });
+      }
       if (rueda.eje !== "lado") return;
       e.preventDefault();
       const dx = -rueda.sx;
@@ -799,12 +866,14 @@ export default function AcademiaPIR() {
       const hayVecina = paso === 1 ? haySiguiente : hayAnterior;
       if (hayVecina && Math.abs(dx) >= umbralTrackpad(ancho)) {
         clearTimeout(finTimer);
+        cancelarFotograma();
+        anotarRueda({ accion: "pasa", dx: Math.round(dx) });
         rueda = null;
         tragarHastaSilencio();
         transicionA(ORDEN_PESTANAS[i + paso], paso);
         return;
       }
-      mostrar(dx);
+      mostrarEnFotograma(dx);
     };
 
     window.addEventListener("keydown", alTeclear);
@@ -814,6 +883,7 @@ export default function AcademiaPIR() {
     window.addEventListener("touchcancel", alSoltar, { passive: true });
     window.addEventListener("wheel", alRueda, { passive: false });
     return () => {
+      cancelarFotograma();
       clearTimeout(finTimer);
       clearTimeout(tragarTimer);
       window.removeEventListener("keydown", alTeclear);
@@ -1503,7 +1573,9 @@ export default function AcademiaPIR() {
           </button>
         )}
         <main ref={mainRef} style={styles.main} className="main-app">
-          {section === "flashcards" && (
+          {visitadas.includes("flashcards") && (
+            <div hidden={section !== "flashcards"} data-pestana="flashcards">
+            <PestanaActiva.Provider value={section === "flashcards"}>
             <Flashcards
               user={user}
               flashcards={flashcards}
@@ -1522,8 +1594,12 @@ export default function AcademiaPIR() {
               estilosMazo={estilosMazo}
               onEstiloMazo={guardarEstiloMazo}
             />
+            </PestanaActiva.Provider>
+            </div>
           )}
-          {section === "estadisticas" && (
+          {visitadas.includes("estadisticas") && (
+            <div hidden={section !== "estadisticas"} data-pestana="estadisticas">
+            <PestanaActiva.Provider value={section === "estadisticas"}>
             <Estadisticas
               miRacha={rachas.find((r) => r.name === user.name)}
               questions={questions}
@@ -1531,8 +1607,12 @@ export default function AcademiaPIR() {
               preguntasProgreso={preguntasProgreso}
               onPracticar={(filtro) => { setFiltroPedido(filtro); setSection("simulacros"); }}
             />
+            </PestanaActiva.Provider>
+            </div>
           )}
-          {section === "perfil" && (
+          {visitadas.includes("perfil") && (
+            <div hidden={section !== "perfil"} data-pestana="perfil">
+            <PestanaActiva.Provider value={section === "perfil"}>
             <MiPerfil
               user={user}
               miRacha={rachas.find((r) => r.name === user.name)}
@@ -1544,8 +1624,12 @@ export default function AcademiaPIR() {
               onGirarRuleta={girarRuleta}
               onPracticar={(filtro) => { setFiltroPedido(filtro); setSection("simulacros"); }}
             />
+            </PestanaActiva.Provider>
+            </div>
           )}
-          {section === "simulacros" && (
+          {visitadas.includes("simulacros") && (
+            <div hidden={section !== "simulacros"} data-pestana="simulacros">
+            <PestanaActiva.Provider value={section === "simulacros"}>
             <Simulacros
               questions={questions}
               user={user}
@@ -1561,8 +1645,12 @@ export default function AcademiaPIR() {
               filtroPedido={filtroPedido}
               onFiltroAplicado={() => setFiltroPedido(null)}
             />
+            </PestanaActiva.Provider>
+            </div>
           )}
-          {section === "duelo" && (
+          {visitadas.includes("duelo") && (
+            <div hidden={section !== "duelo"} data-pestana="duelo">
+            <PestanaActiva.Provider value={section === "duelo"}>
             <Duelo
               user={user}
               questions={questions}
@@ -1572,6 +1660,8 @@ export default function AcademiaPIR() {
               autoUnirse={autoUnirseDuelo}
               onAutoUnirseConsumido={() => setAutoUnirseDuelo(false)}
             />
+            </PestanaActiva.Provider>
+            </div>
           )}
         </main>
       </div>
@@ -1583,6 +1673,7 @@ export default function AcademiaPIR() {
     <div style={{ ...styles.app, background: "var(--fondo)", zoom: ajustes.escala, "--font-display": fuenteActual.familia }}>
       <div className={appEntrando ? "app-entra" : undefined}>{contenido}</div>
       {portadaEncima}
+      {DEPURAR_RUEDA && <PanelDepuracionRueda />}
       {aviso && <BarraAviso texto={aviso.texto} esperando={aviso.esperando} />}
       {mostrarAjustes && <AjustesPanel ajustes={ajustes} setAjustes={setAjustes} user={user} onLogout={() => { setMostrarAjustes(false); handleLogout(); }} onClose={() => setMostrarAjustes(false)} />}
       {insigniaDesbloqueada && <InsigniaDesbloqueadaModal insignia={insigniaDesbloqueada} onClose={() => setInsigniaDesbloqueada(null)} />}
@@ -1708,13 +1799,13 @@ function AuthScreen({ onLogin, onSignup, sesion, onContinuar, onCambiarCuenta })
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(10,10,12,.55) 0%, rgba(10,10,12,.12) 30%, rgba(10,10,12,.55) 60%, rgba(10,10,12,.88) 100%)" }} />
       <div style={{ position: "relative", zIndex: 1, minHeight: "100dvh", maxWidth: 480, margin: "0 auto", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "max(18px, env(safe-area-inset-top)) 22px max(26px, env(safe-area-inset-bottom))" }}>
         <span style={{ textAlign: "center" }}><Marca tamano={14} color="#fff" /></span>
-        <h1 style={{ fontFamily: D, fontWeight: 800, fontSize: "clamp(40px,12vw,58px)", lineHeight: 0.86, letterSpacing: "-0.03em", textTransform: "uppercase", margin: "40px 0 0" }}>
+        <h1 style={{ fontFamily: D, fontWeight: 800, fontSize: "clamp(40px,12vw,58px)", lineHeight: 0.86, letterSpacing: "-0.03em", textTransform: "uppercase", margin: "40px 0 0", textAlign: "center" }}>
           {sesion || modo === "login" ? <>Bienvenido<br />de nuevo</> : <>Crea tu<br />cuenta</>}
         </h1>
         <div style={{ flex: 1, minHeight: 40 }} />
         {sesion ? (
           <div>
-            <p style={{ fontSize: 15, lineHeight: 1.5, margin: "0 0 16px", color: "rgba(255,255,255,0.88)" }}>
+            <p style={{ fontSize: 15, lineHeight: 1.5, margin: "0 0 16px", color: "rgba(255,255,255,0.88)", textAlign: "center" }}>
               Tienes la sesión iniciada como <strong style={{ color: "#fff" }}>{sesion.name}</strong>.
             </p>
             <button type="button" onClick={onContinuar} style={btnPortada}>
@@ -1725,7 +1816,7 @@ function AuthScreen({ onLogin, onSignup, sesion, onContinuar, onCambiarCuenta })
             </button>
           </div>
         ) : (<>
-        <div style={{ display: "flex", gap: 20, marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 20, marginBottom: 16, justifyContent: "center" }}>
           <button type="button" onClick={() => cambiarModo("login")} style={tabPortada(modo === "login")}>Iniciar sesión</button>
           <button type="button" onClick={() => cambiarModo("signup")} style={tabPortada(modo === "signup")}>Crear cuenta</button>
         </div>
@@ -2189,6 +2280,11 @@ function SelectorExamenes({
   onEmpezar, onRelampago, relampagoDisponible,
 }) {
   const E = ESTILO_EXAMENES;
+  // El examen bajo el ratón sale hacia delante: se agranda un pelo, sube y se
+  // oscurece (menos que uno marcado), y los demás retroceden un poco, así que
+  // al pasar de uno a otro el foco se desliza por la lista. Solo con ratón o
+  // trackpad: en táctil un toque dejaría la fila "encima" pegada.
+  const [encima, setEncima] = useState(null);
   // El campo va VACÍO hasta que escribes (o usas − / +), con la cantidad por
   // defecto en gris de fondo. Al tocarlo se vacía del todo y lo que había
   // queda en gris: el primer número que pulsas es el nuevo, sin cursor
@@ -2244,7 +2340,7 @@ function SelectorExamenes({
         })}
       </div>
 
-      <div style={{
+      <div onPointerLeave={() => setEncima(null)} style={{
         display: "flex", flexDirection: "column", gap: 6, padding: 10, borderRadius: 14,
         backgroundColor: "#6B6257", backgroundImage: "linear-gradient(var(--velo-foto), var(--velo-foto)), url(/img/examenes-fondo.jpg)",
         backgroundSize: "cover", backgroundPosition: "center",
@@ -2253,6 +2349,8 @@ function SelectorExamenes({
           const n = conteos[c] || 0;
           const vacio = n === 0;
           const sel = cursosSel.includes(c);
+          const resaltada = encima === c && !vacio;
+          const atenuada = encima !== null && encima !== c && !sel;
           return (
             <button
               key={c}
@@ -2260,13 +2358,20 @@ function SelectorExamenes({
               disabled={vacio}
               aria-pressed={sel}
               onClick={() => alternar(c)}
+              onPointerEnter={(e) => { if (e.pointerType === "mouse") setEncima(c); }}
+              className={resaltada ? "fila-examen encima" : "fila-examen"}
               style={{
                 display: "flex", alignItems: "baseline", gap: 12, width: "100%",
                 padding: "15px 14px", borderRadius: 12, border: "none", textAlign: "left",
                 cursor: vacio ? "default" : "pointer",
-                background: sel ? "var(--velo-sel)" : vacio ? "var(--velo-vacio)" : "var(--velo-claro)",
+                position: "relative", zIndex: resaltada ? 1 : 0,
+                background: sel ? "var(--velo-sel)" : vacio ? "var(--velo-vacio)" : resaltada ? "var(--velo-encima)" : "var(--velo-claro)",
                 color: sel ? "var(--sobre-negro)" : vacio ? E.humo : E.tinta,
                 backdropFilter: "blur(9px)", WebkitBackdropFilter: "blur(9px)",
+                transform: resaltada ? "translateY(-2px) scale(1.012)" : atenuada ? "scale(0.996)" : "none",
+                opacity: atenuada ? 0.8 : 1,
+                boxShadow: resaltada ? "0 14px 30px -14px rgba(0,0,0,.55)" : "0 0 0 rgba(0,0,0,0)",
+                transition: "transform 420ms cubic-bezier(.2,.9,.25,1), background-color 420ms cubic-bezier(.2,.9,.25,1), box-shadow 420ms cubic-bezier(.2,.9,.25,1), opacity 420ms ease, color 240ms ease",
               }}
             >
               <span style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 15, letterSpacing: "-0.01em" }}>{c}</span>
@@ -2285,6 +2390,7 @@ function SelectorExamenes({
           type="button"
           disabled={!relampagoDisponible}
           onClick={onRelampago}
+          onPointerEnter={() => setEncima(null)}
           style={{
             display: "flex", alignItems: "center", gap: 12, width: "100%", marginTop: 4,
             padding: "16px 14px", borderRadius: 12, border: "none", textAlign: "left",
@@ -2394,6 +2500,7 @@ function SelectorExamenes({
 }
 
 function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo, onRespuestaPregunta, favoritos, onToggleFavorito, miRacha, preguntasProgreso, fallos, filtroPedido, onFiltroAplicado }) {
+  const activa = React.useContext(PestanaActiva);
   const [incluirInventadas, setIncluirInventadas] = useState(false);
   const base = useMemo(() => (incluirInventadas ? questions : questions.filter((q) => !q.inventada)), [questions, incluirInventadas]);
   // El DSM-5-TR sale aquí como un examen más, pero relámpago (más abajo)
@@ -2464,11 +2571,13 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
 
   useEffect(() => {
     let timer;
-    if (state === "running") {
+    // En otra pestaña el reloj se para: el tiempo de la tirada es el que
+    // pasas contestando, no el que la dejas aparcada.
+    if (state === "running" && activa) {
       timer = setInterval(() => setSeconds((s) => s + 1), 1000);
     }
     return () => clearInterval(timer);
-  }, [state]);
+  }, [state, activa]);
 
   // OJO con el sitio: estos dos efectos leen `state` y `disponibles`, así que
   // tienen que ir DESPUÉS de los useState. Estaban más arriba, y como el array
@@ -2649,7 +2758,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
   // Qué hace cada tecla lo decide `accionDeTecla`, que se prueba sola; aquí
   // solo quedan las guardas del navegador.
   useEffect(() => {
-    if (state !== "running") return undefined;
+    if (state !== "running" || !activa) return undefined;
     const alPulsar = (e) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const d = e.target;
@@ -2671,7 +2780,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
     };
     window.addEventListener("keydown", alPulsar);
     return () => window.removeEventListener("keydown", alPulsar);
-  }, [state, revealed, pool, idx, elegir, next]);
+  }, [state, activa, revealed, pool, idx, elegir, next]);
 
   if (questions.length === 0) {
     return (
@@ -4977,6 +5086,7 @@ function GrupoEstadistica({ titulo, filas }) {
 }
 
 function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo, onCopiarMazo, onCopiarFlashcard, estilosMazo, onEstiloMazo }) {
+  const activa = React.useContext(PestanaActiva);
   const hoy = new Date().toISOString().slice(0, 10);
   // Mismo techo que se aplicará al pulsar, para que lo que anuncia el botón
   // sea exactamente lo que va a pasar.
@@ -5354,16 +5464,24 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
       const etiqueta = d && d.tagName ? d.tagName.toLowerCase() : "";
       if (etiqueta === "input" || etiqueta === "textarea" || etiqueta === "select") return;
       if (d && d.isContentEditable) return;
-      // Con Intro sobre un botón, dejar que el botón haga lo suyo.
-      if (e.key === "Enter" && etiqueta === "button") return;
-      if (!sesion || revelada || editandoCarta) return;
+      if (!activa || !sesion || revelada || editandoCarta) return;
+      // Antes de revelar no hay ningún botón propio del repaso a la vista,
+      // así que un botón con el foco es de FUERA (la pestaña que acabas de
+      // tocar, "Empezar repaso"…). Antes el atajo se apartaba ante cualquier
+      // botón para no pisarlo, y en el iPad el foco se queda en uno de esos:
+      // Intro no hacía nada. Solo se aparta si el foco está dentro de otra
+      // pantalla abierta encima (el Banco, el Ranking, un panel).
+      const capa = d && d.closest ? d.closest("[data-sin-deslizar]") : null;
+      if (capa && !capa.contains(document.querySelector(".flip-container"))) return;
       e.preventDefault();
+      if (etiqueta === "button" && d.blur) d.blur();
       setDorsoDe(idx);
       setRevelada(true);
     };
-    window.addEventListener("keydown", alPulsar);
-    return () => window.removeEventListener("keydown", alPulsar);
-  }, [sesion, revelada, editandoCarta, idx]);
+    // En captura: que nada por el camino se quede la tecla antes.
+    window.addEventListener("keydown", alPulsar, true);
+    return () => window.removeEventListener("keydown", alPulsar, true);
+  }, [activa, sesion, revelada, editandoCarta, idx]);
 
   // 1/2/3/4 califican: Otra vez / Difícil / Bien / Fácil, en el orden en que se
   // dibujan los botones. La regla vive en `calificacionDeTecla` y no repartida
@@ -5384,7 +5502,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
       const etiqueta = d && d.tagName ? d.tagName.toLowerCase() : "";
       if (etiqueta === "input" || etiqueta === "textarea" || etiqueta === "select") return;
       if (d && d.isContentEditable) return;
-      if (!sesion || editandoCarta || enviando) return;
+      if (!activa || !sesion || editandoCarta || enviando) return;
       const i = calificacionDeTecla(e.key, { revelada, numBotones: CALIFICACIONES_FLASHCARD.length });
       if (i === null) return;
       e.preventDefault();
@@ -5398,7 +5516,7 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
     };
     window.addEventListener("keydown", alPulsar);
     return () => window.removeEventListener("keydown", alPulsar);
-  }, [sesion, revelada, editandoCarta, enviando, calificar]);
+  }, [activa, sesion, revelada, editandoCarta, enviando, calificar]);
 
   // La limpieza va en su propio efecto con dependencias vacías: así solo corre
   // al desmontar y nunca cancela una pulsación en marcha.
@@ -5432,9 +5550,14 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
         <div style={{ height: 2, background: "var(--linea)", margin: "10px 0 0" }}>
           <div style={{ height: 2, background: "var(--negro)", width: `${(idx / sesion.length) * 100}%`, transition: "width .45s cubic-bezier(.22,1,.36,1)" }} />
         </div>
+        {/* La tarjeta va en el centro de la pantalla y con forma de tarjeta
+            (7:5, como una ficha), no como una banda a lo ancho pegada arriba.
+            Debajo hay un hueco de alto fijo para la pista o los botones, para
+            que la tarjeta no salte hacia arriba al revelarla. */}
+        <div style={{ maxWidth: 560, margin: "0 auto", minHeight: "calc(100dvh - 300px)", display: "flex", flexDirection: "column", justifyContent: "center", paddingTop: 20 }}>
         <style>{`
-          .flip-container { perspective: 1600px; margin-top: 16px; }
-          .flip-inner { display: grid; width: 100%; transition: transform 0.5s; -webkit-transform-style: preserve-3d; transform-style: preserve-3d; }
+          .flip-container { perspective: 1600px; }
+          .flip-inner { display: grid; width: 100%; aspect-ratio: 7 / 5; transition: transform 0.5s; -webkit-transform-style: preserve-3d; transform-style: preserve-3d; }
           .flip-inner.flipped { transform: rotateY(180deg); }
           /* Tarjeta recién cambiada: ni un grado de giro y ni un milisegundo de
              transición. Antes esto se conseguía con una key que montaba un nodo
@@ -5445,7 +5568,12 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
              por ahí. Sin key el nodo no se retira nunca: el contenido se
              cambia en sitio y esta clase quita la animación. */
           .flip-inner.sin-animar, .flip-inner.sin-animar .flip-face { transition: none; }
-          .flip-face { position: relative; grid-area: 1 / 1; min-height: 260px; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; overflow-y: auto; padding: 28px 22px; border: 1px solid var(--linea); border-radius: 16px; background: var(--superficie); box-shadow: 0 14px 34px -28px rgba(0,0,0,.6); }
+          /* La proporción es la de una tarjeta de cartulina (apaisada en
+             pantalla ancha, cuadrada en el móvil), pero es un MÍNIMO: sin
+             overflow propio en las caras, un texto largo estira la tarjeta en
+             vez de quedarse cortado con una barra de desplazamiento dentro. */
+          @media (max-width: 620px) { .flip-inner { aspect-ratio: 1 / 1; } }
+          .flip-face { position: relative; grid-area: 1 / 1; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; box-sizing: border-box; margin: 0; padding: 44px 24px 34px; border: 1px solid var(--linea); border-radius: 20px; background: var(--superficie); box-shadow: 0 24px 50px -34px rgba(0,0,0,.55); }
           .flip-face.flip-back { background: var(--bloque); }
           .gr-btn { transition: background-color .18s, color .18s, border-color .18s; }
           .gr-btn:active:not([disabled]) { background-color: rgb(var(--c)) !important; border-color: rgb(var(--c)) !important; color: #fff !important; }
@@ -5487,20 +5615,21 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
           <div className={`flip-inner${revelada ? " flipped" : ""}${dorsoDe === idx ? "" : " sin-animar"}`}>
             <div className="flip-face">
               <div style={{ position: "absolute", top: 16, left: 18, right: 18, fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--niebla)", lineHeight: 1.4 }}>{carta.mazo}</div>
-              <p style={{ fontFamily: "'Cabinet Grotesk','Arial Black',sans-serif", fontWeight: 700, fontSize: 25, lineHeight: 1.14, letterSpacing: "-0.025em", color: "var(--tinta)", margin: 0 }}>{carta.frontal}</p>
+              <p style={{ fontFamily: "'Cabinet Grotesk','Arial Black',sans-serif", fontWeight: 700, fontSize: "clamp(20px, 5.4vw, 25px)", lineHeight: 1.14, letterSpacing: "-0.025em", color: "var(--tinta)", margin: 0 }}>{carta.frontal}</p>
             </div>
             <div className="flip-face flip-back">
               {dorsoDe === idx ? (
                 <>
                   <div style={{ position: "absolute", top: 16, left: 18, right: 18, fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--niebla)", lineHeight: 1.4 }}>{carta.mazo}</div>
-                  <p style={{ fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: 19, lineHeight: 1.38, letterSpacing: "-0.01em", color: "var(--tinta)", margin: 0 }}>{carta.posterior}</p>
+                  <p style={{ fontFamily: "'Switzer','Helvetica Neue',Arial,sans-serif", fontWeight: 500, fontSize: "clamp(16.5px, 4.4vw, 19px)", lineHeight: 1.38, letterSpacing: "-0.01em", color: "var(--tinta)", margin: 0 }}>{carta.posterior}</p>
                 </>
               ) : null}
             </div>
           </div>
         </div>
+        <div style={{ minHeight: 150 }}>
         {!revelada ? (
-          <p style={{ fontSize: 12.5, color: "var(--niebla)", textAlign: "center", marginTop: 14 }}>Toca la tarjeta para ver la respuesta</p>
+          <p style={{ fontSize: 12.5, color: "var(--niebla)", textAlign: "center", marginTop: 14 }}>Toca la tarjeta o pulsa Intro para ver la respuesta</p>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6, marginTop: 16 }}>
             {CALIFICACIONES_FLASHCARD.map((c, i) => {
@@ -5595,6 +5724,8 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
             </div>
           </Card>
         )}
+        </div>
+        </div>
       </div>
     );
   }
@@ -6966,7 +7097,7 @@ const styles = {
   // (hover, también en index.html) y en la pestaña abierta, que lo lleva
   // sombreado en gris.
   navBtn: { flex: "1 1 0", maxWidth: 150, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "transparent", color: "var(--humo)", border: "none", borderRadius: 10, padding: "10px 4px", fontSize: 11.5, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", whiteSpace: "nowrap", transition: "background-color .15s, color .15s" },
-  navBtnActivo: { background: "var(--bloque)", color: "var(--negro)" },
+  navBtnActivo: { background: "var(--pestana-activa)", color: "var(--negro)" },
   navBtnEncima: { background: "var(--pestana-hover)", color: "var(--tinta)" },
   navDot: { position: "absolute", top: 10, right: 6, width: 8, height: 8, borderRadius: "50%", background: ACENTO, animation: "dueloPulso 1.2s ease-in-out infinite" },
   tabsOrigen: { display: "flex", gap: 8, marginBottom: 14 },
