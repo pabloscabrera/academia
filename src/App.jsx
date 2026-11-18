@@ -22,7 +22,7 @@ import {
   mediaCalificacionPorTarjeta, estadoCuadricula,
   etiquetaOrigen, accionDeTecla,
   calificacionDeTecla, MS_PULSACION,
-  tomarPreguntas, rgbDeHex,
+  tomarPreguntas, rgbDeHex, rankingExamenes, esBancoComoExamen,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -1695,7 +1695,7 @@ function Header({
     <header style={styles.header} className="cabecera">
       <div className="cabecera-marca" style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <Compass size={20} color={ACENTO} strokeWidth={1.8} />
-        <span style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: 19, color: TINTA, letterSpacing: 0.3 }}>AUTOPIR</span>
+        <span style={{ fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: 13, color: "#0C0C0D", letterSpacing: "0.14em" }}>AUTOPIR</span>
         {enLinea > 0 && (
           <span
             title={`${enLinea} ${enLinea === 1 ? "persona conectada" : "personas conectadas"} ahora mismo`}
@@ -3035,7 +3035,12 @@ const PREGUNTAS_POR_DUELO = 200;
 const DUELO_ESPERA_MAX_MS = 30 * 1000;
 
 function Duelo({ user, questions, onDueloEnd, onProgresoDiario, onRespuestaPregunta, autoUnirse, onAutoUnirseConsumido }) {
-  const questionsReales = useMemo(() => questions.filter((q) => !q.inventada), [questions]);
+  // Salen de todos los exámenes, el DSM-5-TR, BELLOCH y FONSECA. CEDE no entra
+  // (simulacros de academia, no exámenes), igual que en el prototipo.
+  const questionsReales = useMemo(
+    () => questions.filter((q) => !q.inventada && (esExamen(q.curso) || esBancoComoExamen(q.curso)) && q.curso !== "CEDE"),
+    [questions]
+  );
   const [fase, setFase] = useState("lobby");
   const [duelo, setDuelo] = useState(null);
   const [preguntasDuelo, setPreguntasDuelo] = useState([]);
@@ -3306,30 +3311,30 @@ function Duelo({ user, questions, onDueloEnd, onProgresoDiario, onRespuestaPregu
       );
     }
     return (
-      <div>
-        <SectionTitle title="Duelo 1v1" subtitle="Reta a otra persona en tiempo real. 3 vidas, sin límite de preguntas." />
-        <Card style={{ textAlign: "center", padding: "32px 20px" }}>
-          <Swords size={30} color={ACENTO} style={{ marginBottom: 14 }} />
-          <p style={{ color: "#6E6A61", fontSize: 14, marginBottom: 20 }}>
-            Al pulsar "Buscar duelo", te empareja con la primera persona que también esté buscando. Si nadie está buscando, esperas a que otro entre.
-          </p>
-          <button type="button" onClick={buscarDuelo} disabled={buscando} style={{ ...styles.btnPrimary, width: "100%" }}>
-            {buscando ? "Buscando..." : "Buscar duelo"}
-          </button>
-        </Card>
+      <div style={{ fontFamily: DUELO.t, color: DUELO.tinta, padding: "18px 2px 0" }}>
+        <span style={DUELO.k}>Uno contra uno</span>
+        <h1 style={DUELO.h1}>Duelo</h1>
+        <p style={DUELO.dice}>
+          <b style={{ color: DUELO.tinta, fontWeight: 600 }}>Tres vidas cada uno y un minuto por pregunta.</b> Pierde quien se quede sin vidas. Salen al azar de todos los exámenes, el DSM-5-TR, BELLOCH y FONSECA.
+        </p>
+        <button type="button" onClick={buscarDuelo} disabled={buscando} style={{ ...DUELO.go, marginTop: 28, opacity: buscando ? 0.6 : 1 }}>
+          <span>{buscando ? "Buscando..." : "Buscar duelo"}</span><span aria-hidden="true">→</span>
+        </button>
       </div>
     );
   }
 
   if (fase === "esperando") {
     return (
-      <div>
-        <SectionTitle title="Duelo 1v1" />
-        <Card style={{ textAlign: "center", padding: "32px 20px" }}>
-          <Loader2 className="animate-spin" size={26} color={ACENTO} style={{ marginBottom: 14 }} />
-          <p style={{ color: "#6E6A61", fontSize: 14, marginBottom: 20 }}>Esperando a un oponente...</p>
-          <button type="button" onClick={salirDuelo} style={styles.btnSecondary}>Cancelar</button>
-        </Card>
+      <div style={{ fontFamily: DUELO.t, color: DUELO.tinta, padding: "18px 2px 0" }}>
+        <style>{`@keyframes dueloBarre { 0% { left: -38%; } 100% { left: 100%; } }`}</style>
+        <span style={DUELO.k}>Uno contra uno</span>
+        <h1 style={DUELO.h1}>Duelo</h1>
+        <p style={{ fontSize: 13.5, color: DUELO.humo, marginTop: 26 }}>Esperando a un oponente…</p>
+        <div style={{ position: "relative", height: 2, background: DUELO.linea, marginTop: 12, overflow: "hidden" }}>
+          <i style={{ position: "absolute", top: 0, bottom: 0, width: "38%", background: DUELO.negro, animation: "dueloBarre 1.25s ease-in-out infinite" }} />
+        </div>
+        <button type="button" onClick={salirDuelo} style={{ ...styles.btnSecondary, width: "100%", justifyContent: "center", marginTop: 26 }}>Cancelar</button>
       </div>
     );
   }
@@ -3341,18 +3346,24 @@ function Duelo({ user, questions, onDueloEnd, onProgresoDiario, onRespuestaPregu
       streakRegistradaRef.current = duelo.id;
       onDueloEnd(gane);
     }
+    const misV = soyJugador1 ? duelo.vidas1 : duelo.vidas2;
+    const susV = soyJugador1 ? duelo.vidas2 : duelo.vidas1;
     return (
-      <div>
+      <div style={{ fontFamily: DUELO.t, color: DUELO.tinta, padding: "18px 2px 0" }}>
         {mostrarCelebracion && !empate && <CelebracionDuelo gane={gane} />}
-        <SectionTitle title="Duelo terminado" />
-        <Card style={{ textAlign: "center", padding: "32px 20px" }}>
-          <EspadaResultado resultado={empate ? "empate" : gane ? "gane" : "perdi"} />
-          <div style={{ fontSize: 22, fontFamily: "var(--font-display)", color: "#1E1C18" }}>
-            {empate ? "Empate" : gane ? "¡Has ganado!" : "Has perdido"}
-          </div>
-          {!empate && <div style={{ color: "#6E6A61", fontSize: 14, marginTop: 6 }}>Ganador: {duelo.ganador}</div>}
-          <button type="button" onClick={salirDuelo} style={{ ...styles.btnPrimary, marginTop: 22 }}>Volver al lobby</button>
-        </Card>
+        <span style={DUELO.k}>Duelo terminado</span>
+        <h1 style={{ ...DUELO.h1, fontSize: "clamp(52px,16vw,78px)", color: empate ? DUELO.tinta : gane ? DUELO.bien : DUELO.mal }}>
+          {empate ? "Empate" : gane ? "Ganas" : "Pierdes"}
+        </h1>
+        <div style={{ fontFamily: DUELO.d, fontWeight: 800, fontSize: 26, letterSpacing: "-0.03em", fontVariantNumeric: "tabular-nums" }}>
+          {misV ?? 0} – {susV ?? 0}
+        </div>
+        <p style={DUELO.dice}>
+          {empate ? "Os habéis quedado sin vidas a la vez." : gane ? `${oponenteNombre || "Tu rival"} se ha quedado sin vidas.` : "Te has quedado sin vidas."} En {duelo.indice + 1} {duelo.indice + 1 === 1 ? "pregunta" : "preguntas"}.
+        </p>
+        <button type="button" onClick={salirDuelo} style={{ ...DUELO.go, marginTop: 28 }}>
+          <span>Volver al lobby</span><span aria-hidden="true">→</span>
+        </button>
       </div>
     );
   }
@@ -3361,68 +3372,100 @@ function Duelo({ user, questions, onDueloEnd, onProgresoDiario, onRespuestaPregu
   const revelando = !!duelo.revelado_en;
   const miVidas = soyJugador1 ? duelo.vidas1 : duelo.vidas2;
   const suVidas = soyJugador1 ? duelo.vidas2 : duelo.vidas1;
+  const suClave = soyJugador1 ? "jugador2" : "jugador1";
+  const elYaContesto = respuestas[suClave] !== null && respuestas[suClave] !== undefined;
+  const puntos = (n) => (
+    <span style={{ display: "inline-flex", gap: 4 }} aria-label={`${n} vidas`}>
+      {[0, 1, 2].map((i) => (
+        <i key={i} style={{ width: 9, height: 9, borderRadius: "50%", background: i < n ? DUELO.tinta : DUELO.linea, transform: i < n ? "none" : "scale(.8)", transition: "background-color .3s, transform .3s" }} />
+      ))}
+    </span>
+  );
 
   return (
-    <div>
-      {mostrarChoque && <ChoqueEspadas />}
-      <div style={styles.vsHeader}>
-        <div style={{ textAlign: "left" }}>
-          <div style={{ fontSize: 13, color: "#1E1C18", fontWeight: 600 }}>{user.name}</div>
-          <Corazones vidas={miVidas} />
-        </div>
-        <div style={{ fontSize: 12, color: "#9B9689", textAlign: "center" }}>
-          <div>VS</div>
-          <div>Pregunta {duelo.indice + 1}</div>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 13, color: "#1E1C18", fontWeight: 600 }}>{oponenteNombre || "..."}</div>
-          <Corazones vidas={suVidas} align="right" />
-        </div>
+    <div style={{ fontFamily: DUELO.t, color: DUELO.tinta, background: "#fff", border: `1px solid ${DUELO.linea}`, borderRadius: 15, overflow: "hidden" }}>
+      {mostrarChoque && <EncuentroDuelo yo={user.name} el={oponenteNombre || "Rival"} />}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 16px", borderBottom: `1px solid ${DUELO.linea}`, fontSize: 12.5 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}><b style={{ fontWeight: 600 }}>{user.name}</b>{puntos(miVidas)}</span>
+        <span style={{ flex: 1, textAlign: "center", fontSize: 11.5, color: DUELO.niebla, fontVariantNumeric: "tabular-nums" }}>Pregunta {duelo.indice + 1}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>{puntos(suVidas)}<b style={{ fontWeight: 600 }}>{oponenteNombre || "…"}</b></span>
+      </div>
+      <div style={{ height: 2, background: DUELO.linea }}>
+        <i style={{ display: "block", height: "100%", width: revelando ? "0%" : `${(tiempoRestante / DURACION_PREGUNTA) * 100}%`, background: tiempoRestante <= 10 ? DUELO.mal : DUELO.negro, transition: "width .9s linear" }} />
       </div>
 
-      {!revelando && (
-        <div style={{ textAlign: "center", margin: "10px 0" }}>
-          <span style={{ fontSize: 13, color: tiempoRestante <= 10 ? "#A6362B" : "#6E6A61" }}>
-            <Clock size={13} style={{ verticalAlign: "middle", marginRight: 4 }} />{tiempoRestante}s
-          </span>
+      {preguntaActual && (
+        <div style={{ padding: "22px 16px 20px" }}>
+          <span style={DUELO.k}>{etiquetaOrigen(preguntaActual)}</span>
+          <p style={{ margin: "10px 0 18px", fontFamily: DUELO.d, fontWeight: 700, fontSize: "clamp(19px,5.6vw,23px)", lineHeight: 1.16, letterSpacing: "-0.025em" }}>{preguntaActual.pregunta}</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            {preguntaActual.opciones.map((op, i) => {
+              const esBien = revelando && i === preguntaActual.correcta;
+              const esMal = revelando && i === respuestas[miClave] && i !== preguntaActual.correcta;
+              const elegida = !revelando && miRespuesta === i;
+              const tono = esBien ? { border: `1.5px solid ${DUELO.bien}`, background: DUELO.bienSuave, color: DUELO.bien }
+                : esMal ? { border: `1.5px solid ${DUELO.mal}`, background: DUELO.malSuave, color: DUELO.mal }
+                : elegida ? { border: `1.5px solid ${DUELO.negro}`, background: "#EFEDE8", color: DUELO.tinta }
+                : { border: `1.5px solid ${DUELO.linea}`, background: DUELO.bloque, color: DUELO.tinta };
+              const letra = { border: `1.5px solid ${esBien ? DUELO.bien : esMal ? DUELO.mal : DUELO.linea}`, background: esBien ? DUELO.bien : esMal ? DUELO.mal : "transparent", color: esBien || esMal ? "#fff" : DUELO.humo };
+              return (
+                <button
+                  type="button"
+                  key={i}
+                  onClick={() => responder(i)}
+                  disabled={miRespuesta !== null || revelando}
+                  style={{ display: "flex", gap: 12, alignItems: "flex-start", width: "100%", textAlign: "left", padding: 14, borderRadius: 14, fontSize: 14.5, lineHeight: 1.4, cursor: miRespuesta !== null || revelando ? "default" : "pointer", ...tono }}
+                >
+                  <span style={{ flex: "none", width: 24, height: 24, borderRadius: "50%", display: "grid", placeItems: "center", fontFamily: DUELO.d, fontWeight: 800, fontSize: 11.5, textTransform: "uppercase", ...letra }}>{"abcd"[i]}</span>
+                  <span style={{ flex: 1, paddingTop: 2 }}>{op}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p style={{ marginTop: 14, minHeight: 20, fontSize: 12.5, color: DUELO.humo }}>
+            {revelando
+              ? `Siguiente pregunta en ${cuentaRevelacion ?? PAUSA_REVELACION}s…`
+              : miRespuesta !== null
+                ? `Esperando a ${oponenteNombre || "tu rival"}…`
+                : elYaContesto ? `${oponenteNombre || "Tu rival"} ya ha contestado.` : ""}
+          </p>
         </div>
       )}
+    </div>
+  );
+}
 
-      {preguntaActual && (
-        <Card style={{ marginTop: 10 }}>
-          <p style={{ fontSize: 21, color: "#1E1C18", lineHeight: 1.5, marginBottom: 20 }}>{preguntaActual.pregunta}</p>
-          {preguntaActual.opciones.map((op, i) => {
-            let borderColor = "#C9C5B7", background = "#F6F4EC";
-            if (revelando) {
-              if (i === preguntaActual.correcta) { borderColor = CORRECTO; background = CORRECTO_SUAVE; }
-              else if (i === respuestas[miClave]) { borderColor = ACENTO; background = ACENTO_SUAVE; }
-            } else if (miRespuesta === i) {
-              borderColor = "#1E1C18"; background = "#E8E5D9";
-            }
-            return (
-              <button
-                type="button"
-                key={i}
-                onClick={() => responder(i)}
-                disabled={miRespuesta !== null || revelando}
-                style={{ ...styles.option, borderColor, background, opacity: miRespuesta !== null && miRespuesta !== i && !revelando ? 0.6 : 1 }}
-              >
-                {op}
-                {revelando && i === respuestas[miClave] && i !== preguntaActual.correcta && <span style={{ fontSize: 11, color: "#A6362B" }}> — tu respuesta</span>}
-                {revelando && respuestas[soyJugador1 ? "jugador2" : "jugador1"] === i && i !== preguntaActual.correcta && i !== respuestas[miClave] && <span style={{ fontSize: 11, color: "#9B9689" }}> — respuesta de {oponenteNombre}</span>}
-              </button>
-            );
-          })}
-          {miRespuesta !== null && !revelando && (
-            <p style={{ fontSize: 12, color: "#9B9689", textAlign: "center", marginTop: 8 }}>Esperando al oponente...</p>
-          )}
-          {revelando && (
-            <p style={{ fontSize: 12, color: "#9B9689", textAlign: "center", marginTop: 8 }}>
-              Siguiente pregunta en {cuentaRevelacion ?? PAUSA_REVELACION}s...
-            </p>
-          )}
-        </Card>
-      )}
+// Estilo del duelo (prototipo "Duelo"): Cabinet en versales para lo que se
+// lee de lejos, Switzer para el resto, vidas en puntos y tiempo en una raya.
+const DUELO = {
+  d: "'Cabinet Grotesk', 'Arial Black', sans-serif",
+  t: "'Switzer', 'Helvetica Neue', Arial, sans-serif",
+  negro: "#0C0C0D", tinta: "#17171B", humo: "#6A6A72", niebla: "#A2A2AB", linea: "#E4E3E0", bloque: "#F7F6F3",
+  bien: "#1B6B4F", bienSuave: "#ECF5F1", mal: "#9E2B20", malSuave: "#FBEFED",
+  k: { display: "block", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.17em", textTransform: "uppercase", color: "#A2A2AB" },
+  h1: { fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: "clamp(46px,14vw,66px)", lineHeight: 0.88, letterSpacing: "-0.04em", textTransform: "uppercase", margin: "8px 0 14px", color: "#0C0C0D" },
+  dice: { fontSize: 14, lineHeight: 1.5, color: "#6A6A72", maxWidth: "34ch", margin: "12px 0 0" },
+  go: { width: "100%", background: "#0C0C0D", color: "#fff", border: "none", borderRadius: 12, padding: "17px 18px", fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer" },
+};
+
+// El encuentro: los dos nombres entran desde los lados y una raya los une,
+// con "contra" encima. Sustituye a las espadas; dura lo mismo (1,1 s).
+function EncuentroDuelo({ yo, el }) {
+  return (
+    <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 55, background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", animation: "encuentroFuera 1.1s ease forwards", pointerEvents: "none" }}>
+      <style>{`
+        @keyframes encuentroIzq { from { opacity: 0; transform: translateX(-26px); } to { opacity: 1; transform: none; } }
+        @keyframes encuentroDer { from { opacity: 0; transform: translateX(26px); } to { opacity: 1; transform: none; } }
+        @keyframes encuentroRaya { to { left: 0; right: 0; } }
+        @keyframes encuentroAparece { to { opacity: 1; } }
+        @keyframes encuentroFuera { 0%, 78% { opacity: 1; } 100% { opacity: 0; } }
+      `}</style>
+      <span style={{ fontFamily: DUELO.d, fontWeight: 800, fontSize: "clamp(28px,8vw,38px)", textTransform: "uppercase", letterSpacing: "-0.03em", opacity: 0, animation: "encuentroIzq .5s cubic-bezier(.22,1,.36,1) forwards" }}>{yo}</span>
+      <div style={{ position: "relative", width: "100%", maxWidth: 240, height: 40, margin: "16px 0", display: "grid", placeItems: "center" }}>
+        <i style={{ position: "absolute", left: "50%", right: "50%", top: "50%", height: 1.5, background: DUELO.negro, animation: "encuentroRaya .5s cubic-bezier(.22,1,.36,1) .3s forwards" }} />
+        <span style={{ position: "relative", zIndex: 1, background: "#fff", padding: "0 12px", fontWeight: 600, fontSize: 12, letterSpacing: "0.2em", textTransform: "uppercase", color: DUELO.niebla, opacity: 0, animation: "encuentroAparece .4s ease .55s forwards" }}>contra</span>
+      </div>
+      <span style={{ fontFamily: DUELO.d, fontWeight: 800, fontSize: "clamp(28px,8vw,38px)", textTransform: "uppercase", letterSpacing: "-0.03em", opacity: 0, animation: "encuentroDer .5s cubic-bezier(.22,1,.36,1) .08s forwards" }}>{el}</span>
     </div>
   );
 }
@@ -3895,27 +3938,74 @@ function MiPerfil({ user, questions, fallos, favoritos, onToggleFavorito }) {
   );
 }
 
-// Estadísticas: lo que antes estaba en Perfil menos las listas de repaso.
-// Arriba el total y el acierto; debajo "Dónde fallas" por examen y por tema.
+// Estadísticas (prototipo tipo "Wrapped"): paneles que se leen bajando, sobre
+// una foto quieta. Portada con lo respondido, el aro del acierto, los cinco
+// exámenes que peor llevas, los cinco que mejor (con 10 preguntas hechas como
+// mínimo, ver rankingExamenes) y un cierre que manda a Exámenes.
 function Estadisticas({ miRacha, questions, fallos, preguntasProgreso, onPracticar }) {
   const respondidas = (miRacha && miRacha.total_respondidas) || 0;
   const correctas = (miRacha && miRacha.total_correctas) || 0;
-  const pct = respondidas > 0 ? Math.round((correctas / respondidas) * 100) : null;
-  const banco = questions.filter((q) => !q.inventada).length;
-  const mil = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  const pct = respondidas > 0 ? Math.round((correctas / respondidas) * 100) : 0;
+  const reales = useMemo(() => questions.filter((q) => !q.inventada), [questions]);
+  const ranking = useMemo(() => {
+    const progresoPorId = {};
+    (preguntasProgreso || []).forEach((p) => { progresoPorId[p.pregunta_id] = p; });
+    const fallosPorId = {};
+    (fallos || []).forEach((f) => { fallosPorId[f.pregunta_id] = f; });
+    return rankingExamenes(agruparAciertos(reales, (q) => q.curso, progresoPorId, fallosPorId), 10, 5);
+  }, [reales, preguntasProgreso, fallos]);
+  const mil = (n) => n.toLocaleString("es-ES");
+  const D = DUELO.d;
+  const panel = { margin: "0 0 10px", borderRadius: 20, background: "#fff", padding: "30px 22px 32px", boxShadow: "0 16px 36px -26px rgba(0,0,0,.85)", animation: "estSube .6s cubic-bezier(.22,1,.36,1) both" };
+  const radio = 54, circ = 2 * Math.PI * radio;
+  const lista = (filas, color, vacio) => filas.length === 0
+    ? <p style={{ ...DUELO.dice, margin: "14px 0 0" }}>{vacio}</p>
+    : filas.map((g, i) => (
+      <button key={g.nombre} type="button" onClick={() => onPracticar && onPracticar({ curso: g.nombre })} style={{ display: "flex", alignItems: "center", gap: 12, width: "100%", background: "none", border: "none", borderTop: i ? `1px solid ${DUELO.linea}` : "none", padding: "13px 0", cursor: "pointer", textAlign: "left", fontFamily: DUELO.t, color: DUELO.tinta }}>
+        <span style={{ flex: 1, fontWeight: 600, fontSize: 15 }}>{g.nombre}</span>
+        <span style={{ fontSize: 11.5, color: DUELO.niebla }}>{g.hechas} hechas</span>
+        <span style={{ fontFamily: D, fontWeight: 800, fontSize: 22, letterSpacing: "-0.03em", minWidth: 58, textAlign: "right", color, fontVariantNumeric: "tabular-nums" }}>{g.pct}%</span>
+      </button>
+    ));
   return (
-    <div>
-      <SectionTitle title="Estadísticas" />
-      <div style={{ borderRadius: 20, padding: "28px 22px 30px", background: "#17171B", color: "#fff", marginBottom: 28 }}>
-        <span style={{ display: "block", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.17em", textTransform: "uppercase", color: "rgba(255,255,255,.6)" }}>Llevas</span>
-        <span style={{ display: "block", fontFamily: "'Cabinet Grotesk', 'Arial Black', sans-serif", fontWeight: 800, fontSize: "clamp(56px,17vw,88px)", lineHeight: 0.9, letterSpacing: "-0.045em", margin: "8px 0 6px", fontVariantNumeric: "tabular-nums" }}>
-          {mil(respondidas)}
-        </span>
-        <span style={{ display: "block", fontSize: 14, lineHeight: 1.5, color: "rgba(255,255,255,.75)" }}>
-          preguntas respondidas de las {mil(banco)} del banco{pct != null ? `, con un ${pct}% de acierto` : ""}.
-        </span>
+    <div style={{ fontFamily: DUELO.t, color: DUELO.tinta, borderRadius: 22, padding: "8px 8px 2px", background: "#2A2822 url(/img/fondo-estadisticas.jpg) center/cover" }}>
+      <style>{`@keyframes estSube { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: none; } }`}</style>
+      <div style={{ ...panel, minHeight: 340, display: "flex", flexDirection: "column", justifyContent: "flex-end", background: "linear-gradient(180deg, rgba(14,13,11,.34), rgba(14,13,11,.62))", boxShadow: "none", color: "#fff" }}>
+        <span style={{ ...DUELO.k, color: "rgba(255,255,255,.7)" }}>Tu PIR, en números</span>
+        <span style={{ fontFamily: D, fontWeight: 800, fontSize: "clamp(62px,19vw,96px)", lineHeight: 0.88, letterSpacing: "-0.045em", margin: "10px 0 8px", fontVariantNumeric: "tabular-nums" }}>{mil(respondidas)}</span>
+        <span style={{ fontSize: 15, lineHeight: 1.5, color: "rgba(255,255,255,.85)" }}>preguntas respondidas de las {mil(reales.length)} del banco.</span>
       </div>
-      <DondeFallas questions={questions} fallos={fallos} preguntasProgreso={preguntasProgreso} onPracticar={onPracticar} />
+
+      <div style={{ ...panel, animationDelay: ".08s", textAlign: "center" }}>
+        <span style={DUELO.k}>Acierto</span>
+        <svg viewBox="0 0 140 140" width="168" height="168" style={{ display: "block", margin: "14px auto 6px" }} aria-label={`${pct}% de acierto`}>
+          <circle cx="70" cy="70" r={radio} fill="none" stroke={DUELO.linea} strokeWidth="10" />
+          <circle cx="70" cy="70" r={radio} fill="none" stroke={DUELO.negro} strokeWidth="10" strokeLinecap="round" strokeDasharray={`${(circ * pct) / 100} ${circ}`} transform="rotate(-90 70 70)" />
+          <text x="70" y="80" textAnchor="middle" style={{ fontFamily: D, fontWeight: 800, fontSize: 32, letterSpacing: "-0.03em" }} fill={DUELO.negro}>{pct}%</text>
+        </svg>
+        <p style={{ ...DUELO.dice, margin: "6px auto 0" }}>{respondidas > 0 ? `${mil(correctas)} bien de ${mil(respondidas)}.` : "Todavía no has respondido ninguna."}</p>
+      </div>
+
+      <div style={{ ...panel, animationDelay: ".16s" }}>
+        <span style={DUELO.k}>Lo que peor llevas</span>
+        <h2 style={{ fontFamily: D, fontWeight: 800, fontSize: 30, lineHeight: 0.95, letterSpacing: "-0.03em", textTransform: "uppercase", margin: "8px 0 10px" }}>Para repasar</h2>
+        {lista(ranking.peores, DUELO.mal, "Aún no hay ningún examen con 10 preguntas hechas.")}
+      </div>
+
+      <div style={{ ...panel, animationDelay: ".24s" }}>
+        <span style={DUELO.k}>Lo que mejor llevas</span>
+        <h2 style={{ fontFamily: D, fontWeight: 800, fontSize: 30, lineHeight: 0.95, letterSpacing: "-0.03em", textTransform: "uppercase", margin: "8px 0 10px" }}>Tu fuerte</h2>
+        {lista(ranking.mejores, DUELO.bien, "Aún no hay ningún examen con 10 preguntas hechas.")}
+        <p style={{ fontSize: 11.5, color: DUELO.niebla, margin: "12px 0 0" }}>Toca un examen para practicarlo. Solo cuentan los que tienen 10 preguntas hechas o más.</p>
+      </div>
+
+      <div style={{ ...panel, animationDelay: ".32s" }}>
+        <span style={DUELO.k}>Y ahora</span>
+        <h2 style={{ fontFamily: D, fontWeight: 800, fontSize: 30, lineHeight: 0.95, letterSpacing: "-0.03em", textTransform: "uppercase", margin: "8px 0 18px" }}>A seguir</h2>
+        <button type="button" onClick={() => onPracticar && onPracticar(null)} style={DUELO.go}>
+          <span>Ir a Exámenes</span><span aria-hidden="true">→</span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -6522,8 +6612,8 @@ const styles = {
   // longhand al redibujar. `env(safe-area-inset-top)` reserva la franja del
   // reloj en modo pantalla de inicio; en navegador vale 0 y manda el 18.
   header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", paddingTop: "max(18px, env(safe-area-inset-top))", paddingRight: 24, paddingBottom: 18, paddingLeft: 24, borderBottom: `1px solid ${RAYA}` },
-  nav: { display: "flex", gap: 6, padding: "0 18px", borderBottom: `1px solid ${RAYA}`, overflowX: "auto" },
-  navBtn: { display: "flex", alignItems: "center", gap: 8, background: "none", border: "none", padding: "15px 12px 13px", fontSize: 11.5, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", whiteSpace: "nowrap" },
+  nav: { position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, display: "flex", justifyContent: "center", gap: 2, background: "#fff", borderTop: `1px solid ${RAYA}`, paddingTop: 4, paddingRight: 12, paddingBottom: "max(6px, env(safe-area-inset-bottom))", paddingLeft: 12 },
+  navBtn: { flex: "1 1 0", maxWidth: 140, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, background: "none", border: "none", padding: "12px 2px 12px", fontSize: 11.5, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase", cursor: "pointer", whiteSpace: "nowrap" },
   navDot: { position: "absolute", top: 10, right: 6, width: 8, height: 8, borderRadius: "50%", background: ACENTO, animation: "dueloPulso 1.2s ease-in-out infinite" },
   tabsOrigen: { display: "flex", gap: 8, marginBottom: 14 },
   tabOrigenBtn: { flex: 1, padding: "11px 14px", borderRadius: 10, border: `1px solid ${RAYA}`, background: "#fff", color: TINTA_SUAVE, fontSize: 14, fontWeight: 600, cursor: "pointer" },
@@ -6585,7 +6675,7 @@ const styles = {
   enRachaPunto: { position: "absolute", inset: 0, borderRadius: "50%", background: ORO },
   dueloAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "12px 16px", borderRadius: 14, border: "none", background: ACENTO, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", animation: "dueloPulso 1.6s ease-in-out infinite" },
   rachaAviso: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "calc(100% - 36px)", margin: "14px 18px 0", padding: "11px 16px", borderRadius: 14, border: `1.5px solid ${ACENTO_SUAVE}`, background: ACENTO_SUAVE, color: "#7A2E21", fontSize: 13.5, fontWeight: 600, cursor: "pointer" },
-  main: { padding: "24px 22px 50px", maxWidth: 820, margin: "0 auto" },
+  main: { padding: "24px 22px 110px", maxWidth: 820, margin: "0 auto" },
   card: { background: "#FFFFFF", border: `1px solid ${RAYA}`, borderRadius: 14, padding: 22, boxShadow: "none" },
   authCard: { textAlign: "left", borderRadius: 20, border: `1.5px solid ${RAYA}`, boxShadow: "0 18px 48px rgba(30,28,24,0.10)" },
   input: { width: "100%", padding: "13px 15px", borderRadius: 12, border: "1.5px solid #E4E3E0", fontSize: 16, fontFamily: "inherit", color: TINTA, boxSizing: "border-box" },
