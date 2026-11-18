@@ -35,6 +35,24 @@
     <meta name="twitter:description" content="2.102 preguntas reales de exámenes oficiales, autoevaluaciones, flashcards y duelos 1v1." />
     <meta name="twitter:image" content="https://academia-mocha.vercel.app/og.png" />
     <style>
+      /* Pantalla de carga del rediseño: AUTOPIR sube letra a letra y una raya
+         barre debajo, como la del duelo. Es la MISMA en el HTML (antes de que
+         llegue el JavaScript) y en React (mientras cargan los datos), así que
+         no hay salto de una a otra. */
+      .carga { min-height: 100vh; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: #fff; }
+      .carga-marca { display: flex; font-family: 'Cabinet Grotesk', 'Arial Black', sans-serif; font-weight: 800; font-size: 24px; letter-spacing: 0.22em; color: #0C0C0D; padding-left: 0.22em; }
+      .carga-marca span { display: inline-block; opacity: 0; transform: translateY(10px); animation: cargaLetra 0.55s cubic-bezier(.22,1,.36,1) forwards; }
+      .carga-via { position: relative; width: 132px; height: 2px; background: #E4E3E0; overflow: hidden; opacity: 0; animation: cargaAparece 0.4s ease 0.55s forwards; }
+      .carga-via i { position: absolute; top: 0; bottom: 0; width: 38%; background: #0C0C0D; animation: cargaBarre 1.15s cubic-bezier(.65,0,.35,1) infinite; }
+      .carga-dice { font-family: 'Switzer', 'Helvetica Neue', Arial, sans-serif; font-weight: 500; font-size: 10.5px; letter-spacing: 0.18em; text-transform: uppercase; color: #A2A2AB; opacity: 0; animation: cargaAparece 0.4s ease 0.75s forwards; }
+      @keyframes cargaLetra { to { opacity: 1; transform: none; } }
+      @keyframes cargaAparece { to { opacity: 1; } }
+      @keyframes cargaBarre { 0% { left: -38%; } 100% { left: 100%; } }
+      @media (prefers-reduced-motion: reduce) {
+        .carga-marca span, .carga-via, .carga-dice { animation: none; opacity: 1; transform: none; }
+        .carga-via i { animation: none; left: 31%; }
+      }
+
       /* Tipografía del rediseño, autoalojada (Fontshare, licencia libre). */
       @font-face { font-family: 'Cabinet Grotesk'; src: url('/fonts/cabinet-grotesk-700.woff2') format('woff2'); font-weight: 700; font-display: swap; }
       @font-face { font-family: 'Cabinet Grotesk'; src: url('/fonts/cabinet-grotesk-800.woff2') format('woff2'); font-weight: 800; font-display: swap; }
@@ -103,8 +121,10 @@
   </head>
   <body>
     <div id="root">
-      <div id="arranque" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #6E6A61; padding: 48px 24px; text-align: center; font-size: 15px; line-height: 1.6;">
-        Cargando AUTOPIR…
+      <div id="arranque" class="carga">
+        <div class="carga-marca" aria-label="AUTOPIR"><span style="animation-delay:0ms">A</span><span style="animation-delay:70ms">U</span><span style="animation-delay:140ms">T</span><span style="animation-delay:210ms">O</span><span style="animation-delay:280ms">P</span><span style="animation-delay:350ms">I</span><span style="animation-delay:420ms">R</span></div>
+        <div class="carga-via"><i></i></div>
+        <div class="carga-dice">Preparando tus preguntas</div>
       </div>
     </div>
     <script>
