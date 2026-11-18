@@ -70,6 +70,7 @@ try {
   // 2) Dentro, con sesión: las cinco pestañas.
   const c2 = await navegador.newContext({ viewport: { width: 390, height: 844 } });
   await c2.addInitScript(() => {
+    sessionStorage.setItem("pir-portada-vista", "1");
     localStorage.setItem("sb-slwifwjwtipoqtkhbhbr-auth-token", JSON.stringify({
       access_token: "x", refresh_token: "y", expires_at: 9999999999,
       user: { id: "u1", email: "prueba@ruta-pir.local", user_metadata: { username: "prueba" } },
@@ -120,29 +121,81 @@ try {
   if (nav.icono > 16) fallos.push("los iconos de la cabecera no son pequeños");
   if (nav.ancho > nav.vista) fallos.push("la página se ensancha");
   // 5) La pantalla de carga, con el JavaScript bloqueado para que se quede:
-  // sin raya ni texto, marca rellenándose de tinta y casillas A-D marcándose.
+  // las letras de AUTOPIR y el asterisco que cambia de forma; sin texto.
   const c3 = await navegador.newContext({ viewport: { width: 390, height: 844 } });
   await c3.route("**/assets/*.js", (r) => r.abort());
   const p3 = await c3.newPage();
   await p3.goto(`http://localhost:${PUERTO}/`, { waitUntil: "load" });
-  await esperar(1900);
+  await esperar(1500);
+  const formas = new Set();
+  for (let i = 0; i < 12; i++) {
+    formas.add(await p3.evaluate(() => [...document.querySelectorAll(".carga-piensa span")].find((s) => getComputedStyle(s).opacity === "1")?.textContent || ""));
+    await esperar(70);
+  }
   const carga = await p3.evaluate(() => {
     const a = document.getElementById("arranque");
-    const casillas = [...a.querySelectorAll(".carga-casillas span")];
-    return {
-      texto: a.innerText.replace(/\s+/g, " ").trim(),
-      raya: !!a.querySelector(".carga-via"),
-      casillas: casillas.map((c) => c.textContent).join(""),
-      marcada: casillas.some((c) => getComputedStyle(c).backgroundColor !== "rgba(0, 0, 0, 0)"),
-      tinta: getComputedStyle(a.querySelector(".carga-tinta")).clipPath,
-    };
+    return { texto: a.innerText.replace(/\s+/g, "").trim(), letras: a.querySelectorAll(".carga-marca span").length };
   });
-  console.log("5) carga ->", JSON.stringify(carga));
-  if (/Preparando/i.test(carga.texto) || carga.raya) fallos.push("la carga sigue con la raya o el texto");
-  if (carga.casillas !== "ABCD") fallos.push("faltan las casillas A-D");
-  if (!carga.marcada) fallos.push("ninguna casilla se marca");
-  if (!/inset\(0(px|%)?( 0(px|%)?)*\)|none/.test(carga.tinta)) fallos.push("la marca no se rellena de tinta: " + carga.tinta);
+  console.log("5) carga ->", JSON.stringify({ ...carga, formas: [...formas] }));
+  if (/Preparando/i.test(carga.texto)) fallos.push("la carga sigue con texto");
+  if (carga.letras !== 7) fallos.push("faltan las letras de AUTOPIR");
+  if (formas.size < 3) fallos.push("el asterisco de la carga no cambia de forma");
   await c3.close();
+
+  // 6) Con sesión, al ABRIR la app sale la portada con un solo "Entrar".
+  const c4 = await navegador.newContext({ viewport: { width: 390, height: 844 } });
+  await c4.addInitScript(() => {
+    localStorage.setItem("sb-slwifwjwtipoqtkhbhbr-auth-token", JSON.stringify({
+      access_token: "x", refresh_token: "y", expires_at: 9999999999,
+      user: { id: "u1", email: "prueba@ruta-pir.local", user_metadata: { username: "prueba" } },
+    }));
+  });
+  await rutas(c4);
+  const p4 = await c4.newPage();
+  await p4.goto(`http://localhost:${PUERTO}/`, { waitUntil: "load" });
+  await p4.getByText(/sesión iniciada como/).waitFor({ timeout: 20000 });
+  if ((await p4.locator("input").count()) !== 0) fallos.push("con sesión la portada pide datos");
+  await p4.getByRole("button", { name: "Entrar", exact: true }).click();
+  await p4.locator("nav.nav-app").waitFor({ timeout: 20000 });
+  // Flechas del teclado: derecha pasa a Flashcards, izquierda vuelve.
+  await p4.keyboard.press("ArrowRight");
+  await esperar(300);
+  const tras = await p4.evaluate(() => document.querySelector("nav.nav-app button.activa")?.textContent);
+  await p4.keyboard.press("ArrowLeft");
+  await esperar(300);
+  const vuelta = await p4.evaluate(() => document.querySelector("nav.nav-app button.activa")?.textContent);
+  console.log("6) portada con sesión y flechas ->", tras, "/", vuelta);
+  if (tras !== "Flashcards" || vuelta !== "Exámenes") fallos.push("las flechas no cambian de pestaña");
+  // Recargar no vuelve a sacar la portada.
+  await p4.reload();
+  await p4.locator("nav.nav-app").waitFor({ timeout: 20000 });
+  await c4.close();
+
+  // 7) Deslizar el dedo a la izquierda pasa a la pestaña siguiente.
+  const c5 = await navegador.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  await c5.addInitScript(() => {
+    sessionStorage.setItem("pir-portada-vista", "1");
+    localStorage.setItem("sb-slwifwjwtipoqtkhbhbr-auth-token", JSON.stringify({
+      access_token: "x", refresh_token: "y", expires_at: 9999999999,
+      user: { id: "u1", email: "prueba@ruta-pir.local", user_metadata: { username: "prueba" } },
+    }));
+  });
+  await rutas(c5);
+  const p5 = await c5.newPage();
+  await p5.goto(`http://localhost:${PUERTO}/`, { waitUntil: "load" });
+  await p5.locator("nav.nav-app").waitFor({ timeout: 20000 });
+  await p5.evaluate(() => {
+    const t = (tipo, x) => {
+      const toque = new Touch({ identifier: 1, target: document.body, clientX: x, clientY: 400 });
+      document.body.dispatchEvent(new TouchEvent(tipo, { touches: tipo === "touchend" ? [] : [toque], changedTouches: [toque], bubbles: true }));
+    };
+    t("touchstart", 300); t("touchend", 120);
+  });
+  await esperar(300);
+  const deslizada = await p5.evaluate(() => document.querySelector("nav.nav-app button.activa")?.textContent);
+  console.log("7) deslizar ->", deslizada);
+  if (deslizada !== "Flashcards") fallos.push("deslizar no cambia de pestaña");
+  await c5.close();
   if (e2.length) fallos.push("errores dentro: " + e2.join(" | "));
 } catch (err) {
   fallos.push(err.message);
