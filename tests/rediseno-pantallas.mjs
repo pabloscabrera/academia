@@ -247,15 +247,31 @@ try {
   await gesto(conInercia.slice(4));
   await esperar(900);
   const trasRueda = await activa(p6);
+  // Un segundo gesto, después de que se calle la inercia, pasa otra.
+  await gesto(conInercia);
+  await esperar(900);
+  const trasSegundo = await activa(p6);
+  // Volver atrás para el resto.
+  await gesto(conInercia.map((d) => -d));
+  await esperar(900);
   // Corto y lento: vuelve.
   await gesto([2, 3, 3, 3, 3, 2, 2]);
   await esperar(700);
   const trasCorto6 = await activa(p6);
+  // Vertical un poco torcido: ni se mueve ni cambia.
+  let movida = false;
+  for (let k = 0; k < 12; k++) {
+    await p6.mouse.wheel(10, 30); await esperar(16);
+    if (await p6.evaluate(() => !!document.querySelector("main.main-app").style.transform)) movida = true;
+  }
+  await esperar(400);
   // Rueda vertical: nada.
   for (let k = 0; k < 12; k++) { await p6.mouse.wheel(0, 60); await esperar(16); }
   await esperar(500);
   const trasVertical = await activa(p6);
-  console.log("8) trackpad ->", JSON.stringify({ siguiendo, trasRueda, trasCorto6, trasVertical }));
+  console.log("8) trackpad ->", JSON.stringify({ siguiendo, trasRueda, trasSegundo, trasCorto6, movida, trasVertical }));
+  if (trasSegundo !== "Duelo") fallos.push("el segundo gesto de trackpad no pasó otra página: " + trasSegundo);
+  if (movida) fallos.push("un desplazamiento vertical torcido arrastró la página de lado");
   if (!siguiendo || siguiendo === "none") fallos.push("la página no sigue a los dedos del trackpad");
   if (trasRueda !== "Flashcards") fallos.push("un gesto de trackpad con inercia no pasó exactamente una página: " + trasRueda);
   if (trasCorto6 !== "Flashcards") fallos.push("un gesto corto de trackpad cambió de página");
@@ -269,17 +285,31 @@ try {
   });
   console.log("9) pestaña bajo el ratón ->", JSON.stringify(sombra));
   if (!/encima/.test(sombra.clase) || sombra.fondo === "rgba(0, 0, 0, 0)") fallos.push("la pestaña no se sombrea al pasar el ratón");
-  // 10) Tocar el número de preguntas lo selecciona entero.
+  // 10) El número de preguntas: vacío hasta que escribes (la cantidad por
+  // defecto en gris), y al tocarlo se vacía para que lo que escribes lo
+  // sustituya, sin cursor delante de nada.
   await p6.locator("nav button", { hasText: "Exámenes" }).click();
   await esperar(900);
   const campo = p6.getByLabel("Cuántas preguntas");
+  const inicio = await campo.evaluate((i) => [i.value, i.placeholder, i.inputMode]);
   await campo.click();
-  const sel = await campo.evaluate((i) => [i.selectionStart, i.selectionEnd, i.value.length, i.inputMode]);
   await p6.keyboard.type("3");
-  const tecleado = await campo.inputValue();
-  console.log("10) número de preguntas ->", JSON.stringify({ sel, tecleado }));
-  if (sel[0] !== 0 || sel[1] !== sel[2]) fallos.push("tocar el número no lo selecciona entero");
-  if (tecleado !== "3") fallos.push("escribir no sustituye el número: " + tecleado);
+  await p6.keyboard.press("Enter");
+  const trasEscribir = await campo.inputValue();
+  await campo.click();
+  const alTocar = await campo.evaluate((i) => [i.value, i.placeholder]);
+  await p6.keyboard.type("5");
+  await campo.evaluate((i) => i.blur());
+  const trasCambiar = await campo.inputValue();
+  await campo.click();
+  await campo.evaluate((i) => i.blur());
+  const sinEscribir = await campo.inputValue();
+  console.log("10) número de preguntas ->", JSON.stringify({ inicio, trasEscribir, alTocar, trasCambiar, sinEscribir }));
+  if (inicio[0] !== "" || inicio[1] !== "6") fallos.push("el número no empieza vacío con la cantidad en gris: " + inicio);
+  if (trasEscribir !== "3") fallos.push("escribir no pone el número: " + trasEscribir);
+  if (alTocar[0] !== "" || alTocar[1] !== "3") fallos.push("tocar el número no lo vacía dejándolo en gris: " + alTocar);
+  if (trasCambiar !== "5") fallos.push("el número nuevo no sustituye al anterior: " + trasCambiar);
+  if (sinEscribir !== "5") fallos.push("tocar y salir sin escribir pierde el número: " + sinEscribir);
   await c6.close();
   if (e2.length) fallos.push("errores dentro: " + e2.join(" | "));
 } catch (err) {
