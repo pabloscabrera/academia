@@ -1503,14 +1503,41 @@ export function pestanaVecina(orden, actual, paso) {
   return orden[j];
 }
 
-// Un deslizamiento cuenta como "cambia de pestaña" si es claramente
-// horizontal, largo y rápido; si no, es desplazar la página o un toque.
-// Devuelve +1 (siguiente: el dedo va hacia la izquierda), -1 (anterior) o 0.
-export const DESLIZAR_MIN_PX = 70;
-export const DESLIZAR_MAX_MS = 600;
-export function pasoDeDeslizar({ dx, dy, ms }) {
-  if (!(ms <= DESLIZAR_MAX_MS)) return 0;
-  if (Math.abs(dx) < DESLIZAR_MIN_PX) return 0;
-  if (Math.abs(dy) > Math.abs(dx) * 0.6) return 0;
-  return dx < 0 ? 1 : -1;
+// Arrastre de página, como al pasar publicaciones en Instagram: la página
+// sigue al dedo (o a los dos dedos del trackpad) y al soltar decide si pasa a
+// la vecina o vuelve a su sitio.
+//
+// Sin vecina por ese lado (Exámenes hacia la izquierda, Perfil hacia la
+// derecha) la página se resiste: se mueve a un cuarto de lo que mueves, para
+// que se note que ahí no hay nada sin que parezca que no responde.
+export const RESISTENCIA_BORDE = 0.25;
+export function conResistencia(dx, hayAnterior, haySiguiente) {
+  if (dx > 0 && !hayAnterior) return dx * RESISTENCIA_BORDE;
+  if (dx < 0 && !haySiguiente) return dx * RESISTENCIA_BORDE;
+  return dx;
+}
+
+// Al soltar: pasa si has arrastrado más de una fracción del ancho, o si el
+// gesto ha sido rápido aunque corto (el "golpe de dedo"). Devuelve +1
+// (siguiente: el dedo fue hacia la izquierda), -1 (anterior) o 0 (vuelve).
+export const FRACCION_PARA_PASAR = 0.22;
+export const VELOCIDAD_PARA_PASAR = 0.45; // px/ms
+export const MIN_PX_GOLPE = 24;
+export function decidirPaso({ dx, velocidad = 0, ancho, hayAnterior, haySiguiente }) {
+  const paso = dx < 0 ? 1 : dx > 0 ? -1 : 0;
+  if (!paso) return 0;
+  if (paso === 1 && !haySiguiente) return 0;
+  if (paso === -1 && !hayAnterior) return 0;
+  const lejos = Math.abs(dx) >= ancho * FRACCION_PARA_PASAR;
+  // El golpe tiene que ir en la misma dirección que el arrastre: un
+  // arrepentimiento al final (vuelves el dedo) no puede contar como golpe.
+  const golpe = Math.abs(dx) >= MIN_PX_GOLPE && Math.abs(velocidad) >= VELOCIDAD_PARA_PASAR && Math.sign(velocidad) === Math.sign(dx);
+  return lejos || golpe ? paso : 0;
+}
+
+// Con el trackpad no hay "soltar": los eventos de rueda llegan mientras
+// mueves los dedos. Se pasa en cuanto lo acumulado cruza este umbral, para
+// que responda al gesto y no al final de la inercia.
+export function umbralTrackpad(ancho) {
+  return Math.min(ancho * 0.18, 140);
 }
