@@ -10,7 +10,7 @@ import { spawn } from "node:child_process";
 const PUERTO = 4405;
 const URL_SUPABASE = "slwifwjwtipoqtkhbhbr.supabase.co";
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
-const PREGUNTAS = [1, 2, 3].map((n) => ({
+const PREGUNTAS = [1, 2, 3, 4, 5, 6].map((n) => ({
   id: `p${n}`, curso: "PIR 25", tema: `Pregunta ${n}`, pregunta: `Enunciado ${n}`,
   opciones: ["A", "B", "C", "D"], correcta: 0, explicacion: null, inventada: false,
   created_at: "2026-01-01T00:00:00+00:00", actualizado_en: "2026-10-01T10:00:00+00:00",
@@ -82,7 +82,7 @@ try {
   await p2.getByText("Elige", { exact: false }).first().waitFor({ timeout: 20000 });
   const fuentes = await p2.evaluate(async () => { await document.fonts.ready; return document.fonts.check("800 30px 'Cabinet Grotesk'"); });
   if (!fuentes) fallos.push("dentro de la app no carga Cabinet Grotesk");
-  for (const [pestana, espera] of [["Flashcards", /Flashcards/i], ["Duelo", /Duelo|oponente|Buscar/i], ["Estadísticas", /Llevas/i], ["Perfil", /Favoritas \(1\)/i], ["Exámenes", /Elige/i]]) {
+  for (const [pestana, espera] of [["Flashcards", /Flashcards/i], ["Duelo", /Tres vidas cada uno/i], ["Estadísticas", /Tu PIR, en números/i], ["Perfil", /Favoritas \(1\)/i], ["Exámenes", /Elige/i]]) {
     await p2.locator("nav button", { hasText: pestana }).first().click();
     await esperar(700);
     const t = await p2.locator("body").innerText();
@@ -97,6 +97,10 @@ try {
   await p2.getByRole("button", { name: /Falladas \(1\)/ }).click();
   const tf = await p2.locator("body").innerText();
   if (!/fallada 2 veces/.test(tf)) fallos.push("Falladas no muestra el recuento");
+  // 4) La navegación va abajo, como en el prototipo.
+  const nav = await p2.evaluate(() => { const n = document.querySelector("nav.nav-app"); const r = n.getBoundingClientRect(); return { abajo: Math.round(window.innerHeight - r.bottom), pos: getComputedStyle(n).position }; });
+  console.log("4) navegación ->", JSON.stringify(nav));
+  if (nav.pos !== "fixed" || nav.abajo > 2) fallos.push("la navegación no va pegada abajo");
   if (e2.length) fallos.push("errores dentro: " + e2.join(" | "));
 } catch (err) {
   fallos.push(err.message);

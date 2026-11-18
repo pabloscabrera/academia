@@ -1481,3 +1481,14 @@ export function rgbDeHex(hex) {
   if (completo.length !== 6 || Number.isNaN(n)) return null;
   return `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
 }
+
+// Estadísticas (prototipo tipo "Wrapped"): los exámenes que peor y mejor
+// llevas. Solo cuenta un examen con `minimo` preguntas hechas o más: con dos
+// preguntas un 100% no dice nada y se colaría arriba del todo. Empates por
+// nombre, para que la lista no baile de una carga a otra.
+export function rankingExamenes(grupos, minimo = 10, cuantos = 5) {
+  const conBase = (grupos || []).filter((g) => g.pct != null && g.hechas >= minimo);
+  const asc = conBase.slice().sort((a, b) => a.pct - b.pct || (a.nombre < b.nombre ? -1 : 1));
+  const desc = conBase.slice().sort((a, b) => b.pct - a.pct || (a.nombre < b.nombre ? -1 : 1));
+  return { peores: asc.slice(0, cuantos), mejores: desc.slice(0, cuantos), conBase: conBase.length };
+}
