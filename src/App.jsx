@@ -1924,6 +1924,10 @@ const ESTILO_EXAMENES = {
   niebla: "#A2A2AB",
   linea: "#E4E3E0",
   mal: "#9E2B20",
+  malSuave: "#FBEFED",
+  bien: "#1B6B4F",
+  bienSuave: "#ECF5F1",
+  bloque: "#F7F6F3",
 };
 
 function SelectorExamenes({
@@ -2340,8 +2344,11 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
       return;
     }
 
+    // Se guarda el PRIMER intento de cada pregunta: la repetición de las
+    // falladas no lo pisa. Así la pantalla de resultados sigue marcando el
+    // error aunque luego se acierte (lo pidió así, y es lo que enseña la nota).
     const nuevosResultados = { ...resultados };
-    nextAnswers.forEach((a) => { nuevosResultados[a.qId] = a; });
+    nextAnswers.forEach((a) => { if (!nuevosResultados[a.qId]) nuevosResultados[a.qId] = a; });
     setResultados(nuevosResultados);
 
     if (ronda === 1) {
@@ -2551,41 +2558,74 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
   const pctPrimeraVuelta = total > 0 ? Math.round((aciertosPrimeraVuelta / total) * 100) : 0;
   const abierta = preguntaAbierta != null ? resultados[preguntaAbierta] : null;
   const relampagoCompleto = relampago && primerIntento && primerIntento.completo;
+  const E = ESTILO_EXAMENES;
+  const reloj = (n) => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, "0")}`;
+  const cursoLabel = cursosSel.length === 0
+    ? "todos los exámenes"
+    : cursosSel.length === 1 ? cursosSel[0] : `${cursosSel.length} exámenes`;
+  const fallosPrimeraVuelta = total - aciertosPrimeraVuelta;
+  const abiertaNumero = preguntaAbierta != null ? poolOriginal.findIndex((q) => q.id === preguntaAbierta) + 1 : 0;
+
   return (
-    <div>
-      <SectionTitle title={relampago ? (relampagoCompleto ? "¡Racha perfecta!" : "Racha terminada") : "Autoevaluación completada"} />
-      <Card style={{ textAlign: "center", padding: "28px 20px" }}>
-        {relampago
-          ? <Zap size={26} color="#C89B3C" style={{ marginBottom: 10 }} />
-          : <Flag size={26} color={CORRECTO} style={{ marginBottom: 10 }} />}
-        <div style={{ color: "#1E1C18", fontSize: 16 }}>
-          {relampago
-            ? (relampagoCompleto
-                ? `¡Has respondido bien las ${total} preguntas de todos los exámenes sin fallar ninguna!`
-                : `Acertaste ${aciertosPrimeraVuelta} de ${total} antes de fallar.`)
-            : `Has respondido correctamente las ${total} preguntas.`}
+    <div style={{ fontFamily: E.texto, color: E.tinta, margin: "-4px 0 0" }}>
+      <div style={{ padding: "18px 0 22px", borderBottom: `1px solid ${E.linea}` }}>
+        <span style={{ display: "block", fontWeight: 500, fontSize: 10.5, letterSpacing: "0.17em", textTransform: "uppercase", color: E.niebla }}>
+          {relampago ? (relampagoCompleto ? "¡Racha perfecta!" : "Racha terminada") : "A la primera"}
+        </span>
+        <span style={{
+          display: "block", fontFamily: E.display, fontWeight: 800, lineHeight: 0.88, letterSpacing: "-0.045em",
+          fontSize: "clamp(62px,19vw,92px)", fontVariantNumeric: "tabular-nums", margin: "8px 0 6px", color: E.negro,
+        }}>
+          {relampago ? aciertosPrimeraVuelta : `${pctPrimeraVuelta}%`}
+        </span>
+        <span style={{ display: "block", fontSize: 14, lineHeight: 1.5, color: E.humo }}>
+          {relampago ? (
+            relampagoCompleto
+              ? `¡Has respondido bien las ${total} preguntas de todos los exámenes sin fallar ninguna!`
+              : `Acertaste ${aciertosPrimeraVuelta} de ${total} antes de fallar.`
+          ) : (
+            <>
+              <b style={{ color: E.tinta, fontWeight: 600 }}>{aciertosPrimeraVuelta} de {total}</b> a la primera, en {reloj(seconds)} de {cursoLabel}.
+            </>
+          )}
+        </span>
+        <div style={{ display: "flex", gap: 16, marginTop: 14, fontSize: 12.5, fontVariantNumeric: "tabular-nums" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: E.bien, fontWeight: 600 }}>
+            <Check size={13} strokeWidth={2.6} />{aciertosPrimeraVuelta}
+          </span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: E.mal, fontWeight: 600 }}>
+            <X size={13} strokeWidth={2.6} />{fallosPrimeraVuelta}
+          </span>
+          {!relampago && (
+            <span style={{ color: E.niebla }}>{reloj(Math.round(seconds / Math.max(1, total)))} por pregunta</span>
+          )}
         </div>
-        <div style={{ color: "#9B9689", fontSize: 13, marginTop: 6 }}>
-          {relampago ? "" : `${aciertosPrimeraVuelta} de ${total} a la primera (${pctPrimeraVuelta}%) · `}{Math.floor(seconds / 60)} min {seconds % 60}s
-        </div>
-      </Card>
-      <div style={{ marginTop: 20 }}>
-        <FieldLabel>Toca una pregunta para repasarla</FieldLabel>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+      </div>
+
+      <div style={{ padding: "20px 0 22px" }}>
+        <h2 style={{ fontFamily: E.display, fontWeight: 800, fontSize: 15, textTransform: "uppercase", letterSpacing: "-0.01em", margin: 0 }}>Repasa</h2>
+        <p style={{ marginTop: 6, fontSize: 11.5, lineHeight: 1.5, color: E.niebla, maxWidth: "40ch" }}>
+          Toca una pregunta para verla. El color es el de tu primer intento.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(42px,1fr))", gap: 7, marginTop: 14 }}>
           {poolOriginal.map((q, i) => {
-            const correcta = resultados[q.id] ? resultados[q.id].correct : true;
-            const color = correcta ? CORRECTO : ACENTO;
-            const colorSuave = correcta ? CORRECTO_SUAVE : ACENTO_SUAVE;
+            const r = resultados[q.id];
+            const correcta = r ? r.correct : true;
+            const c = correcta ? E.bien : E.mal;
+            const abiertaAqui = preguntaAbierta === q.id;
             return (
               <button
-                type="button"
                 key={q.id}
-                onClick={() => setPreguntaAbierta(preguntaAbierta === q.id ? null : q.id)}
+                type="button"
+                aria-label={`Pregunta ${i + 1}, ${correcta ? "acertada" : "fallada"} a la primera`}
+                onClick={() => setPreguntaAbierta(abiertaAqui ? null : q.id)}
                 style={{
-                  ...styles.cuadroPregunta,
-                  borderColor: preguntaAbierta === q.id ? "#1E1C18" : color,
-                  background: preguntaAbierta === q.id ? "#1E1C18" : colorSuave,
-                  color: preguntaAbierta === q.id ? "#fff" : color,
+                  aspectRatio: "1", borderRadius: 10, padding: 0, cursor: "pointer",
+                  border: `1.5px solid ${abiertaAqui ? c : correcta ? "rgba(27,107,79,0.55)" : "rgba(158,43,32,0.55)"}`,
+                  background: abiertaAqui ? c : "#fff",
+                  color: abiertaAqui ? "#fff" : c,
+                  fontFamily: E.display, fontWeight: 800, fontSize: 13,
+                  display: "grid", placeItems: "center",
                 }}
               >
                 {i + 1}
@@ -2593,27 +2633,59 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
             );
           })}
         </div>
+
         {abierta && (
-          <Card style={{ marginTop: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-              <div style={{ fontSize: 11, color: TINTA_SUAVE }}>{etiquetaOrigen(abierta.pregunta)}</div>
-              {onToggleFavorito && (
-                <FavoritoBtn pregunta={abierta.pregunta} favoritos={favoritos} onToggle={onToggleFavorito} />
-              )}
-            </div>
-            <p style={{ fontSize: 15, color: "#1E1C18", lineHeight: 1.5, marginBottom: 14 }}>{abierta.pregunta.pregunta}</p>
-            {abierta.pregunta.opciones.map((op, i) => (
-              <div key={i} style={{ ...styles.opcion, cursor: "default", ...(i === abierta.pregunta.correcta ? styles.opcionCorrectaLegacy : {}) }}>
-                {i === abierta.pregunta.correcta && <Check size={13} color={CORRECTO} />}
-                {op}
+          <div style={{ marginTop: 16, border: `1px solid ${E.linea}`, borderRadius: 14, overflow: "hidden" }}>
+            <div style={{ padding: "14px 15px 0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <span style={{ display: "block", fontWeight: 500, fontSize: 10, letterSpacing: "0.14em", textTransform: "uppercase", color: E.niebla, marginBottom: 6 }}>
+                  {etiquetaOrigen(abierta.pregunta)} · Pregunta {abiertaNumero}
+                </span>
+                {onToggleFavorito && (
+                  <FavoritoBtn pregunta={abierta.pregunta} favoritos={favoritos} onToggle={onToggleFavorito} />
+                )}
               </div>
-            ))}
-            {abierta.pregunta.explicacion && <p style={{ fontSize: 13, color: "#6E6A61", marginTop: 10, lineHeight: 1.5, whiteSpace: "pre-line" }}>{abierta.pregunta.explicacion}</p>}
-          </Card>
+              <span style={{ display: "block", fontSize: 14.5, lineHeight: 1.4, color: E.tinta, whiteSpace: "pre-line" }}>
+                {abierta.pregunta.pregunta}
+              </span>
+            </div>
+            <div style={{ padding: "12px 15px 14px" }}>
+              {abierta.pregunta.opciones.map((op, j) => {
+                const esBien = j === abierta.pregunta.correcta;
+                const esMal = j === abierta.selected && !esBien;
+                const tono = esBien ? { border: `1px solid ${E.bien}`, background: E.bienSuave, color: E.bien }
+                  : esMal ? { border: `1px solid ${E.mal}`, background: E.malSuave, color: E.mal }
+                  : { border: `1px solid ${E.linea}`, background: E.bloque, color: E.tinta };
+                return (
+                  <div key={j} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "11px 12px", borderRadius: 11, fontSize: 13.5, lineHeight: 1.4, marginTop: j ? 7 : 0, ...tono }}>
+                    <span style={{ flex: "none", fontFamily: E.display, fontWeight: 800, fontSize: 11.5, textTransform: "uppercase", paddingTop: 2, color: "inherit" }}>
+                      {"abcd"[j]}
+                    </span>
+                    <span>{op}</span>
+                  </div>
+                );
+              })}
+              {abierta.pregunta.explicacion && (
+                <p style={{ fontSize: 13, color: E.humo, marginTop: 10, lineHeight: 1.5, whiteSpace: "pre-line" }}>{abierta.pregunta.explicacion}</p>
+              )}
+              <p style={{ marginTop: 10, fontSize: 12, color: E.humo }}>
+                {abierta.correct ? "La acertaste a la primera." : `Contestaste la ${"abcd"[abierta.selected].toUpperCase()}.`}
+              </p>
+            </div>
+          </div>
         )}
       </div>
-      <button type="button" onClick={() => setState("config")} style={{ ...styles.btnPrimary, width: "100%", marginTop: 20 }}>
-        Finalizar
+
+      <button
+        type="button"
+        onClick={() => setState("config")}
+        style={{
+          width: "100%", background: E.negro, color: "#fff", padding: "17px 18px", borderRadius: 12, border: "none",
+          fontWeight: 600, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer",
+        }}
+      >
+        <span>Volver a Exámenes</span>
+        <span aria-hidden="true">→</span>
       </button>
     </div>
   );
