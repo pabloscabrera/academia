@@ -39,9 +39,14 @@ test("decidirPaso: sin vecina por ese lado no pasa", () => {
   assert.equal(decidirPaso({ ...base, dx: 300, hayAnterior: false }), 0);
 });
 
-test("umbralTrackpad: una fracción del ancho, con techo", () => {
-  assert.equal(umbralTrackpad(400), 60);
-  assert.equal(umbralTrackpad(1200), 120);
+test("umbralTrackpad: corto, una fracción del ancho entre un suelo y un techo", () => {
+  assert.equal(umbralTrackpad(400), 40);
+  assert.equal(umbralTrackpad(800), 56);
+  assert.equal(umbralTrackpad(980), 64);
+  assert.equal(umbralTrackpad(1200), 64);
+  // Lo que los dedos llevan en un gesto normal (unos 70-80 px antes de que
+  // empiece la inercia) tiene que bastar en cualquier pantalla.
+  for (const ancho of [390, 820, 1024, 1366]) assert.ok(umbralTrackpad(ancho) <= 70);
 });
 
 import { ejeDelGesto } from "../src/logica.js";

@@ -103,17 +103,6 @@
       .campo-cantidad::placeholder { color: var(--niebla); opacity: 1; }
       .campo-cantidad:focus { outline: none; box-shadow: inset 0 -2px 0 var(--negro) !important; }
 
-      /* De la portada a la app: la portada se difumina y se aleja un poco
-         mientras la app, que ya estaba debajo, pasa de borrosa a nítida. */
-      .portada-sale { animation: portadaSale .65s cubic-bezier(.4,0,.2,1) forwards; }
-      .app-entra { animation: appEntra .8s cubic-bezier(.22,1,.36,1) both; }
-      @keyframes portadaSale { to { opacity: 0; filter: blur(14px); transform: scale(1.05); } }
-      @keyframes appEntra { from { opacity: 0; filter: blur(10px); transform: scale(.975); } to { opacity: 1; filter: blur(0); transform: none; } }
-      @media (prefers-reduced-motion: reduce) {
-        .portada-sale { animation: desvanecer .3s ease forwards; }
-        .app-entra { animation: none; }
-        @keyframes desvanecer { to { opacity: 0; } }
-      }
       /* Que el gesto de dos dedos del trackpad (o el borde de la pantalla)
          no lo coja el navegador para ir atrás: es de la app, para pasar de
          página. */

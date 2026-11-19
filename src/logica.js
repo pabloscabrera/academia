@@ -1537,9 +1537,15 @@ export function decidirPaso({ dx, velocidad = 0, ancho, hayAnterior, haySiguient
 
 // Con el trackpad no hay "soltar": los eventos de rueda llegan mientras
 // mueves los dedos. Se pasa en cuanto lo acumulado cruza este umbral, para
-// que responda al gesto y no al final de la inercia.
+// que responda al gesto y no al final de la inercia. Es CORTO a propósito:
+// con 120 px, un gesto normal se quedaba en unos 80 mientras movías los
+// dedos y la cola de la inercia (empujones de 1 y 2 px, medio segundo largo)
+// lo iba arrastrando hasta cruzar — o sea, pasaba ya con los dedos
+// levantados, "cuando le daba la gana"; y uno lento llegaba a 110 y volvía.
+// Lo que protege de pasar sin querer no es este número sino el eje
+// (`ejeDelGesto`): un desplazamiento vertical no llega nunca aquí.
 export function umbralTrackpad(ancho) {
-  return Math.min(ancho * 0.15, 120);
+  return Math.round(Math.min(Math.max(ancho * 0.07, 40), 64));
 }
 
 // Trackpad: antes de mover nada se decide de qué eje es el gesto, como hacen
