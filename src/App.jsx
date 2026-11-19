@@ -1755,9 +1755,23 @@ function AuthScreen({ onLogin, onSignup }) {
       if (e.cancelable) e.preventDefault();
     };
     document.addEventListener("touchmove", alArrastrar, { passive: false });
+    // Y lo que no para eso: con un campo activo, iOS reserva abajo el sitio
+    // de la barra del teclado y DESPLAZA la página (unos 65 px en el iPad con
+    // teclado físico, se ve la barra de desplazamiento en el vídeo del
+    // usuario) aunque no haya nada que desplazar y el documento tenga
+    // `overflow: hidden`. Ese desplazamiento no lo provoca un touchmove que
+    // se pueda cancelar, así que se deshace en cuanto ocurre.
+    const aSuSitio = () => {
+      if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
+    };
+    const vv = window.visualViewport;
+    window.addEventListener("scroll", aSuSitio, { passive: true });
+    if (vv) { vv.addEventListener("scroll", aSuSitio); vv.addEventListener("resize", aSuSitio); }
     return () => {
       document.documentElement.classList.remove("sin-rebote");
       document.removeEventListener("touchmove", alArrastrar);
+      window.removeEventListener("scroll", aSuSitio);
+      if (vv) { vv.removeEventListener("scroll", aSuSitio); vv.removeEventListener("resize", aSuSitio); }
     };
   }, []);
 
