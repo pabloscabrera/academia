@@ -66,6 +66,24 @@ try {
     console.log(`   tocar la foto -> ${trasToque}`);
     if (trasToque !== "password") throw new Error(`${ancho}px: tocar la foto no llevó al campo vacío (${trasToque})`);
 
+    // En el iPad el Tab no pasaba de campo: la app lo cancelaba y movía el
+    // foco a mano, y iOS no acepta ese foco. Ahora el Tab NO se cancela (lo
+    // hace el navegador, y los campos van en un <form>, que es lo que iOS
+    // recorre), y si el foco no se movió se mueve a mano. Un Tab sintético no
+    // mueve el foco por sí solo, así que sirve para probar ese respaldo.
+    const tabSintetico = await p.evaluate(async () => {
+      const nombre = document.querySelector('input[name="username"]');
+      nombre.focus();
+      const ev = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+      nombre.dispatchEvent(ev);
+      await new Promise((r) => setTimeout(r, 30));
+      return { cancelado: ev.defaultPrevented, foco: document.activeElement.getAttribute("name"), enForm: !!nombre.closest("form") && nombre.form === document.querySelector('input[name="password"]').form };
+    });
+    console.log(`   Tab sintético -> ${JSON.stringify(tabSintetico)}`);
+    if (tabSintetico.cancelado) throw new Error(`${ancho}px: la app cancela el Tab (en el iPad eso lo deja sin hacer nada)`);
+    if (tabSintetico.foco !== "password") throw new Error(`${ancho}px: si el navegador no mueve el foco, la app tampoco (${tabSintetico.foco})`);
+    if (!tabSintetico.enForm) throw new Error(`${ancho}px: los campos no van dentro de un formulario`);
+
     // Tab del nombre a la contraseña, y Mayúsculas+Tab de vuelta.
     await p.getByPlaceholder("Nombre de usuario").click();
     await p.keyboard.type("admin");
