@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Prueba del Tab</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; font: 16px/1.4 -apple-system, "Helvetica Neue", Arial, sans-serif; background: #F4F4F5; color: #17171B; }
+  main { max-width: 640px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; margin: 8px 0 4px; }
+  p.ayuda { margin: 0 0 14px; color: #555; font-size: 14px; }
+  section { background: #fff; border: 1px solid #ddd; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+  section h2 { font-size: 15px; margin: 0 0 8px; display: flex; justify-content: space-between; gap: 8px; }
+  .estado { font-weight: 600; font-size: 14px; color: #888; }
+  .estado.si { color: #1B7F3B; }
+  input { display: block; width: 100%; box-sizing: border-box; padding: 10px 12px; margin: 6px 0; font-size: 16px; border: 1px solid #bbb; border-radius: 8px; background: #fff; color: #17171B; }
+  #registro { position: sticky; top: 0; z-index: 5; background: #17171B; color: #fff; font: 12px/1.35 ui-monospace, Menlo, monospace; padding: 8px 10px; border-radius: 10px; margin-bottom: 12px; min-height: 64px; max-height: 150px; overflow: hidden; }
+  .sin-seleccion { -webkit-user-select: none; user-select: none; }
+  .sin-seleccion input { -webkit-user-select: text; user-select: text; }
+  .fija { position: fixed; inset: auto 0 0 0; height: 170px; overflow-y: auto; overscroll-behavior: none; background: #222; color: #fff; padding: 10px 14px; box-sizing: border-box; }
+  .fija input { max-width: 420px; }
+  .hueco { height: 190px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Prueba del Tab</h1>
+  <p class="ayuda">En cada recuadro: toca el primer campo, escribe una letra y pulsa <b>Tab</b>. Si el cursor salta al segundo campo, sale <b>«Tab funciona»</b> en verde. Haz los 5 y manda una captura de toda la página.</p>
+  <div id="registro">Aquí se apunta cada tecla que llega.</div>
+
+  <section data-caso="1">
+    <h2>1 · Como la web anterior <span class="estado">sin probar</span></h2>
+    <input placeholder="Nombre">
+    <input placeholder="Contraseña" type="password">
+  </section>
+
+  <section data-caso="2">
+    <h2>2 · Dentro de un formulario <span class="estado">sin probar</span></h2>
+    <form onsubmit="return false">
+      <input placeholder="Nombre" name="username" autocomplete="username" autocapitalize="none" autocorrect="off">
+      <input placeholder="Contraseña" type="password" name="password" autocomplete="current-password">
+    </form>
+  </section>
+
+  <section data-caso="3" class="sin-seleccion">
+    <h2>3 · Con el estilo de la app (sin selección) <span class="estado">sin probar</span></h2>
+    <input placeholder="Nombre" autocapitalize="none" autocorrect="off">
+    <input placeholder="Contraseña" type="password">
+  </section>
+
+  <section data-caso="4" class="sin-seleccion">
+    <h2>4 · Como la portada de ahora <span class="estado">sin probar</span></h2>
+    <form onsubmit="return false">
+      <input placeholder="Nombre" name="username2" autocomplete="username" autocapitalize="none" autocorrect="off">
+      <input placeholder="Contraseña" type="password" name="password2" autocomplete="current-password">
+    </form>
+  </section>
+
+  <div class="hueco"></div>
+</main>
+
+<section data-caso="5" class="fija sin-seleccion">
+  <h2>5 · En una capa fija, como la portada <span class="estado">sin probar</span></h2>
+  <input placeholder="Nombre" autocapitalize="none" autocorrect="off">
+  <input placeholder="Contraseña" type="password">
+</section>
+
+<script>
+  var registro = document.getElementById("registro");
+  var lineas = [];
+  function apuntar(texto) {
+    lineas.push(texto);
+    if (lineas.length > 8) lineas.shift();
+    registro.textContent = lineas.join("\n");
+    registro.style.whiteSpace = "pre-wrap";
+  }
+  function caso(el) { var s = el && el.closest && el.closest("[data-caso]"); return s ? s.getAttribute("data-caso") : "-"; }
+  function cual(el) { return el && el.placeholder ? el.placeholder : (el ? el.tagName : "-"); }
+  window.addEventListener("keydown", function (e) {
+    apuntar("tecla " + e.key + " (caso " + caso(e.target) + ", " + cual(e.target) + ")");
+  }, true);
+  // Que el cursor pase al segundo campo TOCÁNDOLO no cuenta: solo cuenta si
+  // no ha habido un toque justo antes.
+  var ultimoToque = 0;
+  document.addEventListener("pointerdown", function () { ultimoToque = Date.now(); }, true);
+  document.addEventListener("touchstart", function () { ultimoToque = Date.now(); }, true);
+  document.addEventListener("focusin", function (e) {
+    var anterior = e.relatedTarget;
+    if (Date.now() - ultimoToque < 700) { apuntar("foco (tocando) -> caso " + caso(e.target) + " " + cual(e.target)); return; }
+    apuntar("foco -> caso " + caso(e.target) + " " + cual(e.target));
+    if (anterior && caso(anterior) === caso(e.target) && anterior.placeholder === "Nombre" && e.target.placeholder === "Contraseña") {
+      var est = e.target.closest("[data-caso]").querySelector(".estado");
+      est.textContent = "Tab funciona";
+      est.className = "estado si";
+    }
+  });
+  apuntar("modo: " + (navigator.standalone ? "icono" : "navegador"));
+</script>
+</body>
+</html>
