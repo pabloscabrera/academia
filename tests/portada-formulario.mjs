@@ -84,6 +84,31 @@ try {
     if (tabSintetico.foco !== "password") throw new Error(`${ancho}px: si el navegador no mueve el foco, la app tampoco (${tabSintetico.foco})`);
     if (!tabSintetico.enForm) throw new Error(`${ancho}px: los campos no van dentro de un formulario`);
 
+    // El Tab real del iPad no llega a la página: lo único que llega es que
+    // el campo pierde el foco y lo recupera en el mismo instante (medido con
+    // ?depurar=teclas). Esa huella tiene que llevar a la contraseña.
+    const huella = await p.evaluate(async () => {
+      const nombre = document.querySelector('input[name="username"]');
+      nombre.focus();
+      await new Promise((r) => setTimeout(r, 120));
+      nombre.blur();
+      nombre.focus();
+      await new Promise((r) => setTimeout(r, 30));
+      const tras = document.activeElement.getAttribute("name");
+      // Volver de otra app: también pierde y recupera el mismo campo, pero
+      // con tiempo de por medio. Eso NO es un Tab.
+      nombre.focus();
+      await new Promise((r) => setTimeout(r, 120));
+      nombre.blur();
+      await new Promise((r) => setTimeout(r, 300));
+      nombre.focus();
+      await new Promise((r) => setTimeout(r, 30));
+      return { tras, trasVolver: document.activeElement.getAttribute("name") };
+    });
+    console.log(`   huella del Tab del iPad -> ${JSON.stringify(huella)}`);
+    if (huella.tras !== "password") throw new Error(`${ancho}px: la huella del Tab del iPad no lleva a la contraseña (${huella.tras})`);
+    if (huella.trasVolver !== "username") throw new Error(`${ancho}px: volver al campo tras un rato se toma por un Tab (${huella.trasVolver})`);
+
     // Tab del nombre a la contraseña, y Mayúsculas+Tab de vuelta.
     await p.getByPlaceholder("Nombre de usuario").click();
     await p.keyboard.type("admin");
