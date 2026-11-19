@@ -1785,7 +1785,6 @@ function AuthScreen({ onLogin, onSignup }) {
   // Los campos del formulario, en orden, para que el tabulador y el Intro
   // pasen de uno a otro sin depender de cómo lo haga cada navegador.
   const camposRef = useRef([]);
-  const cambiosFocoRef = useRef(0);
   // La última vez que un campo perdió el foco (ver `alEnfocarCampo`). Lo que
   // enfoca la propia app la borra antes, o su propio "quitar y poner" el foco
   // se tomaría por el Tab del iPad.
@@ -1910,13 +1909,16 @@ function AuthScreen({ onLogin, onSignup }) {
     const campos = camposRef.current.filter(Boolean);
     const origen = e.currentTarget;
     const pos = campos.indexOf(origen);
+    // El Tab lo hace la app: se cancela y el foco pasa al campo siguiente
+    // en el acto. Sin cancelarlo, el iPad (con la web sin instalar en la
+    // pantalla de inicio) recorría antes los botones de la barra del teclado
+    // — Contraseñas, el micrófono, las flechas — y llegaba a la contraseña a
+    // la cuarta pulsación. Con la web instalada el Tab ni siquiera llegaba a
+    // la página (medido con el panel de teclas), y ahí esto no puede hacer
+    // nada.
     if (e.key === "Tab") {
       const destino = campos[pos + (e.shiftKey ? -1 : 1)];
-      // Solo si el foco no se ha movido NADA desde la tecla: si el navegador
-      // ya lo pasó y luego algo lo devolvió (un Intro tecleado deprisa), el
-      // respaldo llegaría tarde y robaría el foco a mitad de escribir.
-      const marca = cambiosFocoRef.current;
-      if (destino) setTimeout(() => { if (cambiosFocoRef.current === marca && document.activeElement === origen) destino.focus(); }, 0);
+      if (destino) { e.preventDefault(); destino.focus(); }
       return;
     }
     // Intro es "Entrar", desde cualquier campo, igual que el botón. Antes
@@ -1940,7 +1942,6 @@ function AuthScreen({ onLogin, onSignup }) {
   // mismo campo, pero con segundos de por medio, y no cuenta.
   const alDesenfocarCampo = (e) => { ultimaSalidaRef.current = { campo: e.target, t: performance.now() }; };
   const alEnfocarCampo = (e) => {
-    cambiosFocoRef.current += 1;
     const salida = ultimaSalidaRef.current;
     ultimaSalidaRef.current = null;
     if (!salida || salida.campo !== e.target || performance.now() - salida.t > MS_HUELLA_TAB) return;

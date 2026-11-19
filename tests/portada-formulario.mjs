@@ -66,11 +66,11 @@ try {
     console.log(`   tocar la foto -> ${trasToque}`);
     if (trasToque !== "password") throw new Error(`${ancho}px: tocar la foto no llevó al campo vacío (${trasToque})`);
 
-    // En el iPad el Tab no pasaba de campo: la app lo cancelaba y movía el
-    // foco a mano, y iOS no acepta ese foco. Ahora el Tab NO se cancela (lo
-    // hace el navegador, y los campos van en un <form>, que es lo que iOS
-    // recorre), y si el foco no se movió se mueve a mano. Un Tab sintético no
-    // mueve el foco por sí solo, así que sirve para probar ese respaldo.
+    // El Tab lo hace la app: se cancela y el foco pasa al campo siguiente en
+    // el acto. Sin eso, el iPad recorría antes los botones de la barra del
+    // teclado y llegaba a la contraseña a la cuarta pulsación. Un Tab
+    // sintético no mueve el foco por sí solo, así que prueba que lo mueve la
+    // app.
     const tabSintetico = await p.evaluate(async () => {
       const nombre = document.querySelector('input[name="username"]');
       nombre.focus();
@@ -80,7 +80,7 @@ try {
       return { cancelado: ev.defaultPrevented, foco: document.activeElement.getAttribute("name"), enForm: !!nombre.closest("form") && nombre.form === document.querySelector('input[name="password"]').form };
     });
     console.log(`   Tab sintético -> ${JSON.stringify(tabSintetico)}`);
-    if (tabSintetico.cancelado) throw new Error(`${ancho}px: la app cancela el Tab (en el iPad eso lo deja sin hacer nada)`);
+    if (!tabSintetico.cancelado) throw new Error(`${ancho}px: la app no se queda el Tab (en el iPad pasaría antes por la barra del teclado)`);
     if (tabSintetico.foco !== "password") throw new Error(`${ancho}px: si el navegador no mueve el foco, la app tampoco (${tabSintetico.foco})`);
     if (!tabSintetico.enForm) throw new Error(`${ancho}px: los campos no van dentro de un formulario`);
 
