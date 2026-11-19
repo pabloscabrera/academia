@@ -1738,6 +1738,7 @@ function AuthScreen({ onLogin, onSignup }) {
   // Los campos del formulario, en orden, para que el tabulador y el Intro
   // pasen de uno a otro sin depender de cómo lo haga cada navegador.
   const camposRef = useRef([]);
+  const cambiosFocoRef = useRef(0);
 
   // La portada es una pantalla FIJA: va clavada a la ventana (`position:
   // fixed`), el documento no se desplaza, y un arrastre sobre ella no mueve
@@ -1835,13 +1836,23 @@ function AuthScreen({ onLogin, onSignup }) {
 
   // Tab va al campo siguiente (Mayúsculas+Tab al anterior) e Intro también
   // avanza, salvo en el último, donde entra. En el iPad con teclado el Tab no
-  // pasaba del nombre a la contraseña.
+  // pasaba del nombre a la contraseña, y la primera versión de esto lo
+  // empeoró: cancelaba el Tab y movía el foco a mano, pero iOS no acepta un
+  // `focus()` puesto así, de modo que el Tab se quedaba sin hacer nada. Ahora
+  // el Tab NO se cancela: lo hace el navegador (los campos van dentro de un
+  // <form>, que es lo que iOS recorre con Tab y con las flechas del teclado),
+  // y solo si un instante después el foco no se ha movido se mueve a mano.
   const teclaCampo = (i) => (e) => {
     const campos = camposRef.current.filter(Boolean);
-    const pos = campos.indexOf(e.currentTarget);
+    const origen = e.currentTarget;
+    const pos = campos.indexOf(origen);
     if (e.key === "Tab") {
       const destino = campos[pos + (e.shiftKey ? -1 : 1)];
-      if (destino) { e.preventDefault(); destino.focus(); }
+      // Solo si el foco no se ha movido NADA desde la tecla: si el navegador
+      // ya lo pasó y luego algo lo devolvió (un Intro tecleado deprisa), el
+      // respaldo llegaría tarde y robaría el foco a mitad de escribir.
+      const marca = cambiosFocoRef.current;
+      if (destino) setTimeout(() => { if (cambiosFocoRef.current === marca && document.activeElement === origen) destino.focus(); }, 0);
       return;
     }
     if (e.key === "Enter") {
@@ -1908,7 +1919,7 @@ function AuthScreen({ onLogin, onSignup }) {
             </button>
           </div>
         ) : (
-          <div>
+          <form onSubmit={(e) => { e.preventDefault(); submit(); }} onFocus={() => { cambiosFocoRef.current += 1; }} noValidate>
             <input ref={(el) => { camposRef.current[0] = el; }} value={username} onChange={(e) => setUsername(e.target.value)} onKeyDown={teclaCampo(0)} placeholder="Nombre de usuario" name="username" autoComplete="username" style={{ ...inputPortada, marginBottom: 10 }} autoCapitalize="none" autoCorrect="off" autoFocus={!tactil} />
             <input ref={(el) => { camposRef.current[1] = el; }} value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={teclaCampo(1)} placeholder="Contraseña" type="password" name="password" autoComplete={modo === "login" ? "current-password" : "new-password"} style={{ ...inputPortada, marginBottom: 10 }} />
             {modo === "signup" && (
@@ -1921,11 +1932,11 @@ function AuthScreen({ onLogin, onSignup }) {
               </>
             )}
             {error && <p style={{ color: "#FFB4A8", fontSize: 14, margin: "4px 2px 8px", fontWeight: 600 }}>{error}</p>}
-            <button type="button" onClick={submit} disabled={cargando} style={{ ...btnPortada, marginTop: 6, opacity: cargando ? 0.7 : 1 }}>
+            <button type="submit" disabled={cargando} style={{ ...btnPortada, marginTop: 6, opacity: cargando ? 0.7 : 1 }}>
               <span>{cargando ? "Un momento…" : modo === "login" ? "Entrar" : "Crear cuenta"}</span>
               {cargando ? <Loader2 className="animate-spin" size={18} /> : <span aria-hidden="true">→</span>}
             </button>
-          </div>
+          </form>
         )}
         </>
       </div>
