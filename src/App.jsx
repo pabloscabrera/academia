@@ -301,6 +301,43 @@ const PestanaActiva = React.createContext(true);
 // el trackpad se comporta distinto en Safari: una captura del panel dice qué
 // recibe la página de verdad. Sin el parámetro no hace nada.
 const DEPURAR_RUEDA = typeof window !== "undefined" && /[?&]depurar=trackpad\b/.test(window.location.search);
+// Lo mismo para el teclado de la portada: con `?depurar=teclas` se pinta un
+// panel con cada tecla que LLEGA a la página y cada cambio de foco. Existe
+// porque el Tab del iPad no pasa del nombre a la contraseña, en Chromium sí,
+// y dos arreglos a ciegas no lo han resuelto: hace falta saber si Safari
+// entrega el Tab a la página y qué pasa con el foco después.
+const DEPURAR_TECLAS = typeof window !== "undefined" && /[?&]depurar=teclas\b/.test(window.location.search);
+function PanelDepuracionTeclas() {
+  const [lista, setLista] = useState([]);
+  useEffect(() => {
+    const t0 = performance.now();
+    const nombre = (el) => (el ? (el.name || el.getAttribute?.("placeholder") || el.tagName) : "-");
+    const anotar = (dato) => setLista((l) => [...l.slice(-13), { t: Math.round(performance.now() - t0), ...dato }]);
+    const alTecla = (e) => {
+      const antes = nombre(document.activeElement);
+      setTimeout(() => anotar({ ev: e.type, key: e.key, code: e.code, kc: e.keyCode, cancelada: e.defaultPrevented, en: nombre(e.target), antes, despues: nombre(document.activeElement) }), 0);
+    };
+    const alFoco = (e) => anotar({ ev: e.type, en: nombre(e.target) });
+    window.addEventListener("keydown", alTecla, true);
+    window.addEventListener("keyup", alTecla, true);
+    window.addEventListener("focusin", alFoco, true);
+    window.addEventListener("focusout", alFoco, true);
+    return () => {
+      window.removeEventListener("keydown", alTecla, true);
+      window.removeEventListener("keyup", alTecla, true);
+      window.removeEventListener("focusin", alFoco, true);
+      window.removeEventListener("focusout", alFoco, true);
+    };
+  }, []);
+  return (
+    <div style={{ position: "fixed", left: 8, top: 8, zIndex: 90, width: 340, maxHeight: "60vh", overflow: "hidden", background: "rgba(12,12,13,.9)", color: "#fff", font: "11px/1.35 ui-monospace, Menlo, monospace", padding: "8px 10px", borderRadius: 10, pointerEvents: "none" }}>
+      <div style={{ opacity: 0.7, marginBottom: 4 }}>teclas · {window.navigator.standalone ? "icono" : "navegador"} · {navigator.userAgent.match(/OS [\d_]+/)?.[0] || navigator.platform}</div>
+      {lista.length === 0 ? <div>Toca el nombre y pulsa Tab.</div> : lista.map((x, i) => (
+        <div key={i}>{Object.entries(x).map(([k, v]) => `${k}:${v}`).join(" ")}</div>
+      ))}
+    </div>
+  );
+}
 function anotarRueda(dato) {
   if (!DEPURAR_RUEDA) return;
   // El desplazamiento vertical normal no interesa y en un momento llena el
@@ -1896,6 +1933,7 @@ function AuthScreen({ onLogin, onSignup }) {
 
   return (
     <div ref={raizRef} onPointerDown={tocarFondo} style={{ position: "fixed", inset: 0, overflowX: "hidden", overflowY: "auto", overscrollBehavior: "none", background: "#111", fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", color: "#fff" }}>
+      {DEPURAR_TECLAS && <PanelDepuracionTeclas />}
       <img src="/img/portada.jpg" alt="" aria-hidden="true" style={{ position: "fixed", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "45% 40%" }} />
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, background: "linear-gradient(to bottom, rgba(10,10,12,.55) 0%, rgba(10,10,12,.12) 30%, rgba(10,10,12,.55) 60%, rgba(10,10,12,.88) 100%)" }} />
       <div style={{ position: "relative", zIndex: 1, minHeight: "100dvh", maxWidth: 480, margin: "0 auto", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "max(18px, env(safe-area-inset-top)) 22px max(26px, env(safe-area-inset-bottom))" }}>
