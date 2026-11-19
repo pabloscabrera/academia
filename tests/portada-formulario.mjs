@@ -50,9 +50,25 @@ try {
     if (medidas.rebote !== "none") throw new Error(`${ancho}px: la portada sigue rebotando`);
     if (medidas.seleccion === "none") throw new Error(`${ancho}px: el campo hereda user-select: none`);
 
+    // Se escribe nada más entrar, sin tocar el campo: aunque el foco no
+    // esté en él (en el iPad sale marcado pero las teclas no le llegan), una
+    // tecla que cae en la página se escribe en el nombre.
+    await p.evaluate(() => document.activeElement && document.activeElement.blur());
+    await p.keyboard.type("pablo");
+    const directo = await p.evaluate(() => [document.querySelector('input[name="username"]').value, document.activeElement.getAttribute("name")]);
+    console.log(`   sin tocar nada -> ${JSON.stringify(directo)}`);
+    if (directo[0] !== "pablo" || directo[1] !== "username") throw new Error(`${ancho}px: escribir sin tocar el campo no escribe en el nombre ${JSON.stringify(directo)}`);
+    // Y tocar la foto lleva al campo que toca (el nombre ya tiene texto, así
+    // que la contraseña, que está vacía).
+    await p.evaluate(() => document.activeElement && document.activeElement.blur());
+    await p.mouse.click(ancho / 2, 120);
+    const trasToque = await p.evaluate(() => document.activeElement.getAttribute("name"));
+    console.log(`   tocar la foto -> ${trasToque}`);
+    if (trasToque !== "password") throw new Error(`${ancho}px: tocar la foto no llevó al campo vacío (${trasToque})`);
+
     // Tab del nombre a la contraseña, y Mayúsculas+Tab de vuelta.
     await p.getByPlaceholder("Nombre de usuario").click();
-    await p.keyboard.type("pabloadmin");
+    await p.keyboard.type("admin");
     await p.keyboard.press("Tab");
     const trasTab = await p.evaluate(() => document.activeElement.getAttribute("placeholder"));
     await p.keyboard.press("Shift+Tab");

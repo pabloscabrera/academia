@@ -42,7 +42,6 @@ const navegador = await chromium.launch({ executablePath: process.env.PLAYWRIGHT
 async function abrir(ancho) {
   const ctx = await navegador.newContext({ viewport: { width: ancho, height: 900 } });
   await ctx.addInitScript(() => {
-    sessionStorage.setItem("pir-pruebas-sin-portada", "1");
     localStorage.setItem("sb-slwifwjwtipoqtkhbhbr-auth-token", JSON.stringify({
       access_token: "x", refresh_token: "y", expires_at: 9999999999,
       user: { id: "u1", email: "prueba@ruta-pir.local", user_metadata: { username: "prueba" } },

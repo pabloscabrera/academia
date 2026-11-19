@@ -70,7 +70,6 @@ try {
   // 2) Dentro, con sesión: las cinco pestañas.
   const c2 = await navegador.newContext({ viewport: { width: 390, height: 844 } });
   await c2.addInitScript(() => {
-    sessionStorage.setItem("pir-pruebas-sin-portada", "1");
     localStorage.setItem("sb-slwifwjwtipoqtkhbhbr-auth-token", JSON.stringify({
       access_token: "x", refresh_token: "y", expires_at: 9999999999,
       user: { id: "u1", email: "prueba@ruta-pir.local", user_metadata: { username: "prueba" } },
@@ -149,7 +148,6 @@ try {
   const conSesion = async (opciones = {}, sinPortada = false) => {
     const c = await navegador.newContext({ viewport: { width: 390, height: 844 }, ...opciones });
     await c.addInitScript((saltar) => {
-      if (saltar) sessionStorage.setItem("pir-pruebas-sin-portada", "1");
       localStorage.setItem("sb-slwifwjwtipoqtkhbhbr-auth-token", JSON.stringify({
         access_token: "x", refresh_token: "y", expires_at: 9999999999,
         user: { id: "u1", email: "prueba@ruta-pir.local", user_metadata: { username: "prueba" } },
@@ -160,28 +158,15 @@ try {
   };
   const activa = (p) => p.evaluate(() => document.querySelector("nav.nav-app button.activa")?.textContent);
 
-  // 6) Con sesión, al ABRIR la app sale la portada con un solo "Entrar", y
-  // vuelve a salir al recargar (antes se apuntaba como vista y dejaba de
-  // salir en una pestaña que no se cierra).
+  // 6) Con sesión se entra DIRECTAMENTE en la app, sin portada: ni al
+  // abrir ni al recargar ("si tengo iniciada la sesión que me entre del
+  // tirón, como antiguamente").
   const c4 = await conSesion();
   const p4 = await c4.newPage();
   await p4.goto(`http://localhost:${PUERTO}/`, { waitUntil: "load" });
-  await p4.getByText(/sesión iniciada como/).waitFor({ timeout: 20000 });
-  if ((await p4.locator("input").count()) !== 0) fallos.push("con sesión la portada pide datos");
-  await p4.getByRole("button", { name: "Entrar", exact: true }).click();
   await p4.locator("nav.nav-app").waitFor({ timeout: 20000 });
-  // A mitad de la transición la portada se está difuminando, no ha
-  // desaparecido de golpe.
-  await esperar(250);
-  const enTransicion = await p4.evaluate(() => {
-    const o = document.querySelector(".portada-sale");
-    return o ? Number(getComputedStyle(o).opacity) : null;
-  });
-  await esperar(900);
-  console.log("6) transición de la portada ->", enTransicion);
-  if (!(enTransicion > 0 && enTransicion < 1)) fallos.push("la portada no se desvanece al entrar: " + enTransicion);
-  if (await p4.getByText(/sesión iniciada como/).count()) fallos.push("Entrar no quita la portada");
-  if (await p4.evaluate(() => !!document.querySelector(".app-entra, .portada-sale"))) fallos.push("las clases de la transición se quedan puestas");
+  if (await p4.locator('img[src="/img/portada.jpg"]').count()) fallos.push("con sesión sigue saliendo la portada");
+  if (await p4.getByText(/Bienvenido/).count()) fallos.push("con sesión sale el Bienvenido");
   // Flechas del teclado: derecha pasa a Flashcards, izquierda vuelve.
   await p4.keyboard.press("ArrowRight");
   await esperar(700);
@@ -189,10 +174,11 @@ try {
   await p4.keyboard.press("ArrowLeft");
   await esperar(700);
   const vuelta = await activa(p4);
-  console.log("6) portada con sesión y flechas ->", tras, "/", vuelta);
+  console.log("6) con sesión, directo y flechas ->", tras, "/", vuelta);
   if (tras !== "Flashcards" || vuelta !== "Exámenes") fallos.push("las flechas no cambian de pestaña");
   await p4.reload();
-  await p4.getByText(/sesión iniciada como/).waitFor({ timeout: 20000 }).catch(() => fallos.push("al recargar no vuelve la portada"));
+  await p4.locator("nav.nav-app").waitFor({ timeout: 20000 }).catch(() => fallos.push("al recargar no entra en la app"));
+  if (await p4.locator('img[src="/img/portada.jpg"]').count()) fallos.push("al recargar con sesión sale la portada");
   await c4.close();
 
   // 7) Dedo: la página SIGUE al dedo mientras se arrastra, y al soltar lejos

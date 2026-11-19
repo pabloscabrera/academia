@@ -30,7 +30,6 @@ const navegador = await chromium.launch(ejecutable ? { executablePath: ejecutabl
 try {
   const contexto = await navegador.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1 });
   await contexto.addInitScript(() => {
-    sessionStorage.setItem("pir-pruebas-sin-portada", "1");
     localStorage.setItem("sb-slwifwjwtipoqtkhbhbr-auth-token", JSON.stringify({
       access_token: "x", refresh_token: "y", expires_at: 9999999999,
       user: { id: "u1", email: "prueba@ruta-pir.local", user_metadata: { username: "prueba" } },

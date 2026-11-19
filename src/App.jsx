@@ -278,12 +278,6 @@ function usuarioFromSession(session) {
   return { name: isAdmin ? "Pablo" : username, isAdmin };
 }
 
-// Las pruebas de navegador ponen esta clave para no pasar por la portada. La
-// app no la escribe nunca: antes guardaba "ya vista" en sessionStorage, y en
-// una pestaña de Safari que no se cierra eso duraba días — la portada dejaba
-// de salir, que fue justo la queja.
-const CLAVE_SIN_PORTADA = "pir-pruebas-sin-portada";
-
 // El "Salir" de una autoevaluación o de un repaso de flashcards: el mismo
 // enlace de vuelta que el de "Mazos", pero en gris, porque salir no es la
 // acción principal de la pantalla.
@@ -333,8 +327,6 @@ function PanelDepuracionRueda() {
     </div>
   );
 }
-// Volver a la app tras este rato fuera también es "entrar".
-const MS_FUERA_PARA_PORTADA = 30 * 60 * 1000;
 const ORDEN_PESTANAS = ["simulacros", "flashcards", "duelo", "estadisticas", "perfil"];
 
 export default function AcademiaPIR() {
@@ -349,27 +341,6 @@ export default function AcademiaPIR() {
   if (!visitadas.includes(section)) setVisitadas((v) => (v.includes(section) ? v : [...v, section]));
   // Y cada una vuelve a la altura en que la dejaste.
   const scrollPorSeccion = useRef({});
-  // La portada sale cada vez que ENTRAS, aunque ya tengas la sesión
-  // iniciada: al abrir la app y al volver tras un rato fuera. Con sesión no
-  // pide nada, solo "Entrar". Vive solo en memoria, a propósito.
-  const [portadaVista, setPortadaVista] = useState(() => {
-    try { return sessionStorage.getItem(CLAVE_SIN_PORTADA) === "1"; } catch { return false; }
-  });
-  const pasarPortada = () => setPortadaVista(true);
-  // Al pulsar Entrar la portada no desaparece de golpe: se difumina y se
-  // aleja mientras la app, que ya estaba debajo, pasa de borrosa a nítida
-  // (`.portada-sale` y `.app-entra` en index.html). Las dos clases se quitan
-  // al acabar: un `filter` o un `transform` en un antepasado vuelve relativo
-  // todo lo `position: fixed` de dentro.
-  const [saliendoPortada, setSaliendoPortada] = useState(false);
-  const [appEntrando, setAppEntrando] = useState(false);
-  const entrarDesdePortada = () => {
-    if (saliendoPortada) return;
-    setSaliendoPortada(true);
-    setAppEntrando(true);
-    setTimeout(() => { setPortadaVista(true); setSaliendoPortada(false); }, 650);
-    setTimeout(() => setAppEntrando(false), 850);
-  };
   const mainRef = useRef(null);
   const animandoRef = useRef(false);
   const seccionRef = useRef(section);
@@ -653,24 +624,6 @@ export default function AcademiaPIR() {
     return () => window.removeEventListener("online", alVolverLaRed);
   }, []);
 
-  // Volver a la app tras media hora fuera es entrar otra vez: sale la
-  // portada ENCIMA de lo que hubiera (ver el render), sin desmontarlo, así
-  // que un repaso a medias sigue ahí al pulsar Entrar.
-  useEffect(() => {
-    let fuera = null;
-    const alCambiar = () => {
-      if (document.hidden) { fuera = Date.now(); return; }
-      if (fuera && Date.now() - fuera >= MS_FUERA_PARA_PORTADA) {
-        let enPruebas = false;
-        try { enPruebas = sessionStorage.getItem(CLAVE_SIN_PORTADA) === "1"; } catch { /* nada */ }
-        if (!enPruebas) setPortadaVista(false);
-      }
-      fuera = null;
-    };
-    document.addEventListener("visibilitychange", alCambiar);
-    return () => document.removeEventListener("visibilitychange", alCambiar);
-  }, []);
-
   // Pasar de página como en Instagram: la página sigue al dedo (o a los dos
   // dedos del trackpad), y al soltar sale por un lado y entra la vecina por
   // el otro. Se mueve el <main> tocando su estilo directamente, sin estado de
@@ -726,7 +679,7 @@ export default function AcademiaPIR() {
   // pantallas completas y los paneles): ahí un roce cambiaría de pestaña y se
   // llevaría por delante lo que estás haciendo.
   useEffect(() => {
-    if (!user || !portadaVista) return undefined;
+    if (!user) return undefined;
     // Lo que está en una pestaña escondida no cuenta: una tirada a medias en
     // Exámenes no puede bloquear los gestos cuando estás en Estadísticas.
     const bloqueado = () => animandoRef.current || [...document.querySelectorAll("[data-sin-deslizar]")].some((n) => !n.closest("[hidden]"));
@@ -906,7 +859,7 @@ export default function AcademiaPIR() {
       window.removeEventListener("touchcancel", alSoltar);
       window.removeEventListener("wheel", alRueda);
     };
-  }, [user, portadaVista]);
+  }, [user]);
 
   const validarUsuario = (username) => {
     const limpio = (username || "").trim();
@@ -1517,14 +1470,6 @@ export default function AcademiaPIR() {
     return !error;
   };
 
-  // Con sesión, la portada va ENCIMA de la app (o de la carga) en vez de en
-  // su lugar: mientras la miras los datos siguen cargando, y si sale al
-  // volver tras un rato fuera, lo que estuvieras haciendo sigue ahí debajo.
-  const portadaEncima = user && !portadaVista && !loadError ? (
-    <div data-sin-deslizar="" className={saliendoPortada ? "portada-sale" : undefined} style={{ position: "fixed", inset: 0, zIndex: 80, overflowY: "auto", pointerEvents: saliendoPortada ? "none" : undefined }}>
-      <AuthScreen sesion={user} onContinuar={entrarDesdePortada} onCambiarCuenta={handleLogout} />
-    </div>
-  ) : null;
   let contenido;
   if (!ready) {
     contenido = <PantallaCarga />;
@@ -1543,15 +1488,9 @@ export default function AcademiaPIR() {
       </div>
     );
   } else if (!user) {
-    // Quien entra desde el formulario no tiene que pasar otra vez por la
-    // portada: se marca antes de llamar, porque la sesión llega por
-    // onAuthStateChange y podría adelantarse a la respuesta.
-    contenido = (
-      <AuthScreen
-        onLogin={(u, c) => { pasarPortada(); return handleLogin(u, c); }}
-        onSignup={(u, c, cod) => { pasarPortada(); return handleSignup(u, c, cod); }}
-      />
-    );
+    // Sin sesión, la portada con el formulario. Con sesión no sale: se
+    // entra directamente, como antes del rediseño.
+    contenido = <AuthScreen onLogin={handleLogin} onSignup={handleSignup} />;
   } else {
     contenido = (
       <div>
@@ -1684,8 +1623,7 @@ export default function AcademiaPIR() {
   const fuenteActual = FUENTES.find((f) => f.id === ajustes.fuente) || FUENTES[0];
   return (
     <div style={{ ...styles.app, background: "var(--fondo)", zoom: ajustes.escala, "--font-display": fuenteActual.familia }}>
-      <div className={appEntrando ? "app-entra" : undefined}>{contenido}</div>
-      {portadaEncima}
+      <div>{contenido}</div>
       {DEPURAR_RUEDA && <PanelDepuracionRueda />}
       {aviso && <BarraAviso texto={aviso.texto} esperando={aviso.esperando} />}
       {mostrarAjustes && <AjustesPanel ajustes={ajustes} setAjustes={setAjustes} user={user} onLogout={() => { setMostrarAjustes(false); handleLogout(); }} onClose={() => setMostrarAjustes(false)} />}
@@ -1763,7 +1701,7 @@ function codigoDelEnlace() {
   }
 }
 
-function AuthScreen({ onLogin, onSignup, sesion, onContinuar, onCambiarCuenta }) {
+function AuthScreen({ onLogin, onSignup }) {
   const [codigo, setCodigo] = useState(codigoDelEnlace);
   const [modo, setModo] = useState(() => (codigoDelEnlace() ? "signup" : "login"));
   const [username, setUsername] = useState("");
@@ -1781,6 +1719,57 @@ function AuthScreen({ onLogin, onSignup, sesion, onContinuar, onCambiarCuenta })
     document.documentElement.classList.add("sin-rebote");
     return () => document.documentElement.classList.remove("sin-rebote");
   }, []);
+
+  // Se escribe nada más entrar, sin tener que tocar el campo. El autoFocus
+  // no basta en el iPad: desde el icono de la pantalla de inicio el campo
+  // sale marcado pero las teclas no le llegan, porque iOS no da el teclado a
+  // un foco puesto sin un toque. Así que: (1) se vuelve a enfocar cuando la
+  // app pasa a primer plano; (2) una tecla que llega a la página y no a un
+  // campo se escribe en el campo que toca; (3) tocar cualquier parte de la
+  // portada que no sea un botón o un campo lleva al campo, y como eso sí es
+  // un toque, iOS abre el teclado.
+  const campoQueToca = () => {
+    const campos = camposRef.current.filter(Boolean);
+    return campos.find((c) => !c.value) || campos[campos.length - 1] || null;
+  };
+  useEffect(() => {
+    const enfocar = () => {
+      const a = document.activeElement;
+      if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+      campoQueToca()?.focus();
+    };
+    const alTeclear = (e) => {
+      const a = document.activeElement;
+      if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+      if (a && a.tagName === "BUTTON" && e.key === " ") return;
+      if (e.metaKey || e.ctrlKey || e.altKey || e.key.length !== 1) return;
+      const campo = campoQueToca();
+      if (!campo) return;
+      e.preventDefault();
+      campo.focus();
+      const i = camposRef.current.indexOf(campo);
+      const poner = [setUsername, setPassword, setPassword2, setCodigo][i];
+      if (poner) poner((v) => v + e.key);
+    };
+    const t = setTimeout(enfocar, 60);
+    window.addEventListener("focus", enfocar);
+    window.addEventListener("pageshow", enfocar);
+    const alVolver = () => { if (!document.hidden) enfocar(); };
+    document.addEventListener("visibilitychange", alVolver);
+    document.addEventListener("keydown", alTeclear);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("focus", enfocar);
+      window.removeEventListener("pageshow", enfocar);
+      document.removeEventListener("visibilitychange", alVolver);
+      document.removeEventListener("keydown", alTeclear);
+    };
+  }, []);
+  const tocarFondo = (e) => {
+    if (e.target.closest("button, input, textarea, select, a")) return;
+    const campo = campoQueToca();
+    if (campo) { e.preventDefault(); campo.focus(); }
+  };
 
   const cambiarModo = (m) => { setModo(m); setError(null); setCuentaCreada(false); };
 
@@ -1835,28 +1824,16 @@ function AuthScreen({ onLogin, onSignup, sesion, onContinuar, onCambiarCuenta })
   const btnPortada = { width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff", color: "#0C0C0D", border: "none", borderRadius: 12, padding: "16px 18px", fontWeight: 600, fontSize: 15, cursor: "pointer", fontFamily: "inherit" };
 
   return (
-    <div style={{ minHeight: "100dvh", position: "relative", overflow: "hidden", background: "#111", fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", color: "#fff" }}>
+    <div onPointerDown={tocarFondo} style={{ minHeight: "100dvh", position: "relative", overflow: "hidden", background: "#111", fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", color: "#fff" }}>
       <img src="/img/portada.jpg" alt="" aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "45% 40%" }} />
       <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(10,10,12,.55) 0%, rgba(10,10,12,.12) 30%, rgba(10,10,12,.55) 60%, rgba(10,10,12,.88) 100%)" }} />
       <div style={{ position: "relative", zIndex: 1, minHeight: "100dvh", maxWidth: 480, margin: "0 auto", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "max(18px, env(safe-area-inset-top)) 22px max(26px, env(safe-area-inset-bottom))" }}>
         <span style={{ textAlign: "center" }}><Marca tamano={14} color="#fff" /></span>
         <h1 style={{ fontFamily: D, fontWeight: 800, fontSize: "clamp(40px,12vw,58px)", lineHeight: 0.86, letterSpacing: "-0.03em", textTransform: "uppercase", margin: "40px 0 0", textAlign: "center" }}>
-          {sesion || modo === "login" ? <>Bienvenido<br />de nuevo</> : <>Crea tu<br />cuenta</>}
+          {modo === "login" ? <>Bienvenido<br />de nuevo</> : <>Crea tu<br />cuenta</>}
         </h1>
         <div style={{ flex: 1, minHeight: 40 }} />
-        {sesion ? (
-          <div>
-            <p style={{ fontSize: 15, lineHeight: 1.5, margin: "0 0 16px", color: "rgba(255,255,255,0.88)", textAlign: "center" }}>
-              Tienes la sesión iniciada como <strong style={{ color: "#fff" }}>{sesion.name}</strong>.
-            </p>
-            <button type="button" onClick={onContinuar} style={btnPortada}>
-              <span>Entrar</span><span aria-hidden="true">→</span>
-            </button>
-            <button type="button" onClick={onCambiarCuenta} style={{ ...tabPortada(false), display: "block", margin: "14px auto 0", padding: "6px 4px" }}>
-              Entrar con otra cuenta
-            </button>
-          </div>
-        ) : (<>
+        <>
         <div style={{ display: "flex", gap: 20, marginBottom: 16, justifyContent: "center" }}>
           <button type="button" onClick={() => cambiarModo("login")} style={tabPortada(modo === "login")}>Iniciar sesión</button>
           <button type="button" onClick={() => cambiarModo("signup")} style={tabPortada(modo === "signup")}>Crear cuenta</button>
@@ -1890,7 +1867,7 @@ function AuthScreen({ onLogin, onSignup, sesion, onContinuar, onCambiarCuenta })
             </button>
           </div>
         )}
-        </>)}
+        </>
       </div>
     </div>
   );
