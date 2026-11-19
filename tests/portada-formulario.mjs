@@ -1,0 +1,78 @@
+// La portada llena la pantalla sin marco ni desplazamiento, y el teclado pasa
+// de un campo al siguiente. NO la ejecuta `npm test`: necesita Playwright y
+// un build hecho.
+//
+//   npm run build && node tests/portada-formulario.mjs
+//
+// Las dos quejas, desde el icono de la pantalla de inicio del iPad: "no estaba
+// bien calibrada y se mueve" —el body conservaba los 8 px de margen del
+// navegador, así que la foto tenía un marco blanco y la página medía 16 px más
+// que la pantalla— y "el tabulador no funciona para pasar del nombre a la
+// contraseña" —la app pone user-select: none en todo y los campos lo heredaban.
+import { chromium } from "playwright";
+import { spawn } from "node:child_process";
+
+const PUERTO = 4533;
+const servidor = spawn("npx", ["--yes", "serve", "-s", "dist", "-l", String(PUERTO)], { stdio: "ignore" });
+const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
+await esperar(4000);
+
+let fallo = null;
+const navegador = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM });
+try {
+  for (const [ancho, alto] of [[1024, 768], [390, 844]]) {
+    const ctx = await navegador.newContext({ viewport: { width: ancho, height: alto } });
+    // Sin sesión: Supabase inalcanzable a propósito, sale el formulario.
+    await ctx.route("**/*.supabase.co/rest/**", (r) => r.fulfill({ status: 200, contentType: "application/json", headers: { "content-range": "0-0/0" }, body: "[]" }));
+    await ctx.route("**/*.supabase.co/auth/**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
+    const p = await ctx.newPage();
+    const errores = [];
+    p.on("pageerror", (e) => errores.push(e.message));
+    await p.goto(`http://localhost:${PUERTO}/`, { waitUntil: "domcontentloaded" });
+    await p.getByPlaceholder("Nombre de usuario").waitFor({ timeout: 15000 });
+    await esperar(500);
+
+    const medidas = await p.evaluate(() => {
+      const foto = document.querySelector('img[src="/img/portada.jpg"]').getBoundingClientRect();
+      return {
+        margenBody: getComputedStyle(document.body).marginTop,
+        foto: [Math.round(foto.left), Math.round(foto.top), Math.round(foto.width), Math.round(foto.height)],
+        alto: document.documentElement.scrollHeight, ancho: document.documentElement.scrollWidth,
+        vista: [innerWidth, innerHeight],
+        rebote: getComputedStyle(document.documentElement).overscrollBehaviorY,
+        seleccion: getComputedStyle(document.querySelector('input[name="username"]')).userSelect,
+      };
+    });
+    console.log(`${ancho}px) ${JSON.stringify(medidas)}`);
+    if (medidas.margenBody !== "0px") throw new Error(`${ancho}px: el body sigue con margen ${medidas.margenBody}`);
+    if (medidas.foto[0] !== 0 || medidas.foto[1] !== 0 || medidas.foto[2] !== ancho) throw new Error(`${ancho}px: la foto no llega a los bordes ${medidas.foto}`);
+    if (medidas.alto > alto || medidas.ancho > ancho) throw new Error(`${ancho}px: la página es más grande que la pantalla (${medidas.ancho}x${medidas.alto})`);
+    if (medidas.rebote !== "none") throw new Error(`${ancho}px: la portada sigue rebotando`);
+    if (medidas.seleccion === "none") throw new Error(`${ancho}px: el campo hereda user-select: none`);
+
+    // Tab del nombre a la contraseña, y Mayúsculas+Tab de vuelta.
+    await p.getByPlaceholder("Nombre de usuario").click();
+    await p.keyboard.type("pabloadmin");
+    await p.keyboard.press("Tab");
+    const trasTab = await p.evaluate(() => document.activeElement.getAttribute("placeholder"));
+    await p.keyboard.press("Shift+Tab");
+    const trasVuelta = await p.evaluate(() => document.activeElement.getAttribute("placeholder"));
+    // Intro con la contraseña vacía también avanza, en vez de intentar entrar.
+    await p.keyboard.press("Enter");
+    const trasIntro = await p.evaluate(() => document.activeElement.getAttribute("placeholder"));
+    console.log(`   Tab -> ${trasTab} · Mayús+Tab -> ${trasVuelta} · Intro -> ${trasIntro}`);
+    if (trasTab !== "Contraseña") throw new Error(`${ancho}px: Tab no llevó a la contraseña (${trasTab})`);
+    if (trasVuelta !== "Nombre de usuario") throw new Error(`${ancho}px: Mayús+Tab no volvió al nombre (${trasVuelta})`);
+    if (trasIntro !== "Contraseña") throw new Error(`${ancho}px: Intro no pasó a la contraseña (${trasIntro})`);
+    // Y lo escrito se escribe donde toca.
+    await p.keyboard.type("secreta");
+    const valores = await p.evaluate(() => [...document.querySelectorAll("input")].map((i) => i.value));
+    if (valores[0] !== "pabloadmin" || valores[1] !== "secreta") throw new Error(`${ancho}px: los campos no recibieron lo tecleado ${JSON.stringify(valores)}`);
+
+    if (errores.length) throw new Error("errores JS: " + errores.join(" | "));
+    await ctx.close();
+  }
+  console.log("\nOK: la portada llena la pantalla sin desplazarse, y Tab e Intro pasan de campo");
+} catch (e) { fallo = e; } finally { await navegador.close(); servidor.kill(); }
+
+if (fallo) { console.error("\nFALLA:", fallo.message); process.exit(1); }

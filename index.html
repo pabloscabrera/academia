@@ -118,6 +118,17 @@
          no lo coja el navegador para ir atrás: es de la app, para pasar de
          página. */
       html, body { overscroll-behavior-x: none; }
+      /* Sin esto el navegador le pone 8 px de margen al body: un marco blanco
+         alrededor de la portada (la foto no llegaba a los bordes) y una
+         página 16 px más alta que la pantalla, que por eso "se movía". */
+      html, body { margin: 0; }
+      /* La app lleva user-select: none para que tocar no seleccione texto, y
+         los campos lo heredaban: Safari puede negarse a llevar el foco (o el
+         tabulador) a un campo así. Los campos sí se escriben y se seleccionan. */
+      input, textarea, select, [contenteditable="true"] { -webkit-user-select: text; user-select: text; }
+      /* Mientras se ve la portada no hay rebote: es una pantalla fija, no una
+         página que se desplace. */
+      html.sin-rebote, html.sin-rebote body { overscroll-behavior: none; }
 
 
       /* Tipografía del rediseño, autoalojada (Fontshare, licencia libre). */
