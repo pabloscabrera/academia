@@ -117,7 +117,11 @@
       input, textarea, select, [contenteditable="true"] { -webkit-user-select: text; user-select: text; }
       /* Mientras se ve la portada no hay rebote: es una pantalla fija, no una
          página que se desplace. */
-      html.sin-rebote, html.sin-rebote body { overscroll-behavior: none; }
+      /* La portada es una pantalla fija: ni se desplaza ni rebota, y si iOS
+         rebota igual (lo hace al arrastrar desde el borde de abajo aunque
+         haya overscroll-behavior), lo que asoma es oscuro y no una franja
+         blanca. Ver el oyente de touchmove en AuthScreen. */
+      html.sin-rebote, html.sin-rebote body { overscroll-behavior: none; overflow: hidden; height: 100%; background: #111 !important; }
 
 
       /* Tipografía del rediseño, autoalojada (Fontshare, licencia libre). */

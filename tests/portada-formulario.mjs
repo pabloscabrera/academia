@@ -105,6 +105,22 @@ try {
     const trasTocar = await p.evaluate(() => document.activeElement.getAttribute("name"));
     console.log(`táctil) al entrar -> ${alEntrar} · tocar la foto -> ${trasTocar}`);
     if (alEntrar === "INPUT") throw new Error("en pantalla táctil sale un campo marcado al entrar");
+    // Arrastrar desde abajo no mueve la portada: el arrastre se cancela (que
+    // es lo único que para el rebote de iOS, aunque haya overscroll-behavior)
+    // y la portada está clavada a la ventana.
+    const arrastre = await p.evaluate(() => {
+      const foto = document.querySelector('img[src="/img/portada.jpg"]');
+      const t = new Touch({ identifier: 1, target: foto, clientX: 500, clientY: 740 });
+      const ev = new TouchEvent("touchmove", { touches: [t], targetTouches: [t], changedTouches: [t], cancelable: true, bubbles: true });
+      foto.dispatchEvent(ev);
+      const raiz = foto.parentElement;
+      return { cancelado: ev.defaultPrevented, posicion: getComputedStyle(raiz).position, desplazable: document.documentElement.scrollHeight > innerHeight, overflow: getComputedStyle(document.documentElement).overflow, fondo: getComputedStyle(document.body).backgroundColor };
+    });
+    console.log(`táctil) arrastre -> ${JSON.stringify(arrastre)}`);
+    if (!arrastre.cancelado) throw new Error("arrastrar sobre la portada no se cancela: iOS la hace rebotar");
+    if (arrastre.posicion !== "fixed") throw new Error("la portada no está clavada a la ventana");
+    if (arrastre.desplazable || arrastre.overflow !== "hidden") throw new Error("el documento se puede desplazar bajo la portada");
+    if (arrastre.fondo !== "rgb(17, 17, 17)") throw new Error("si rebota asoma el fondo claro: " + arrastre.fondo);
     if (trasTocar !== "username") throw new Error(`en pantalla táctil tocar la foto no lleva al nombre (${trasTocar})`);
     await ctx.close();
   }
