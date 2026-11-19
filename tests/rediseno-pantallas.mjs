@@ -228,9 +228,9 @@ try {
   const gesto = async (deltas) => { for (const d of deltas) { await p6.mouse.wheel(d, 0); await esperar(16); } };
   // Empujón y su inercia: sube, y luego decae durante medio segundo.
   const conInercia = [6, 14, 24, 32, 36, 34, 30, 26, 22, 19, 16, 14, 12, 10, 9, 8, 7, 6, 5, 5, 4, 4, 3, 3, 2, 2, 2, 1, 1, 1];
-  await gesto(conInercia.slice(0, 4));
+  await gesto(conInercia.slice(0, 3));
   const siguiendo = await p6.evaluate(() => getComputedStyle(document.querySelector("main.main-app")).transform);
-  await gesto(conInercia.slice(4));
+  await gesto(conInercia.slice(3));
   await esperar(900);
   const trasRueda = await activa(p6);
   // Un segundo gesto, después de que se calle la inercia, pasa otra.
@@ -244,6 +244,22 @@ try {
   await gesto([2, 3, 3, 3, 3, 2, 2]);
   await esperar(700);
   const trasCorto6 = await activa(p6);
+  // Como lo manda el iPad (la captura del panel de diagnóstico): los dedos
+  // llevan unos 70 px y luego una cola larga de empujones de 2 y de 1. La
+  // página tiene que pasar MIENTRAS se mueven los dedos, no con la cola: con
+  // el umbral viejo (120) los dedos la dejaban en 80 y la inercia la iba
+  // arrastrando hasta cruzar, ya con los dedos levantados.
+  await gesto([1, 2, 4, 6, 8, 9, 9, 8, 7, 6, 5, 4]);
+  await esperar(220);
+  const conDedos = await activa(p6);
+  await gesto([3, 3, 3, ...Array(8).fill(2), ...Array(30).fill(1)]);
+  await esperar(900);
+  const trasCola = await activa(p6);
+  // Lento, todo de 2 en 2 (80 px): pasa. Con el umbral viejo llegaba a 110
+  // siguiendo a los dedos y volvía.
+  await gesto(Array(40).fill(-2));
+  await esperar(900);
+  const trasLento = await activa(p6);
   // Vertical un poco torcido: ni se mueve ni cambia.
   let movida = false;
   for (let k = 0; k < 12; k++) {
@@ -255,7 +271,10 @@ try {
   for (let k = 0; k < 12; k++) { await p6.mouse.wheel(0, 60); await esperar(16); }
   await esperar(500);
   const trasVertical = await activa(p6);
-  console.log("8) trackpad ->", JSON.stringify({ siguiendo, trasRueda, trasSegundo, trasCorto6, movida, trasVertical }));
+  console.log("8) trackpad ->", JSON.stringify({ siguiendo, trasRueda, trasSegundo, trasCorto6, conDedos, trasCola, trasLento, movida, trasVertical }));
+  if (conDedos !== "Duelo") fallos.push("el gesto del iPad no pasó mientras se movían los dedos: " + conDedos);
+  if (trasCola !== "Duelo") fallos.push("la cola de la inercia pasó otra página: " + trasCola);
+  if (trasLento === trasCola || trasLento !== "Flashcards") fallos.push("un gesto lento de 80 px no pasó: " + trasCola + " -> " + trasLento);
   if (trasSegundo !== "Duelo") fallos.push("el segundo gesto de trackpad no pasó otra página: " + trasSegundo);
   if (movida) fallos.push("un desplazamiento vertical torcido arrastró la página de lado");
   if (!siguiendo || siguiendo === "none") fallos.push("la página no sigue a los dedos del trackpad");

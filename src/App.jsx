@@ -646,24 +646,38 @@ export default function AcademiaPIR() {
     }
     animandoRef.current = true;
     const ancho = el.offsetWidth || window.innerWidth;
+    // Pase lo que pase, la página no se puede quedar fuera de la pantalla:
+    // si algo de en medio lanza, o un temporizador llega tarde, se suelta
+    // todo y se queda en su sitio. Antes, un fallo entre la salida y la
+    // entrada dejaba el <main> desplazado un ancho entero (la página "en
+    // blanco") y `animandoRef` en true, que bloqueaba todos los gestos.
+    const soltarTodo = () => {
+      el.style.transition = "";
+      el.style.transform = "";
+      animandoRef.current = false;
+    };
+    const salvavidas = setTimeout(soltarTodo, SALIDA_MS + ENTRADA_MS + 600);
     el.style.transition = `transform ${SALIDA_MS}ms cubic-bezier(.4,0,.9,.6)`;
     el.style.transform = `translateX(${-dir * ancho}px)`;
     setTimeout(() => {
-      el.style.transition = "none";
-      el.style.transform = `translateX(${dir * ancho}px)`;
-      // Síncrono: la página nueva tiene que estar ya dibujada fuera de la
-      // pantalla antes de empezar a entrar, o entraría la vieja.
-      scrollPorSeccion.current[actual] = window.scrollY;
-      flushSync(() => setSection(nueva));
-      window.scrollTo(0, scrollPorSeccion.current[nueva] || 0);
-      void el.offsetWidth;
-      el.style.transition = `transform ${ENTRADA_MS}ms cubic-bezier(.22,1,.36,1)`;
-      el.style.transform = "translateX(0px)";
-      setTimeout(() => {
-        el.style.transition = "";
-        el.style.transform = "";
-        animandoRef.current = false;
-      }, ENTRADA_MS + 40);
+      try {
+        el.style.transition = "none";
+        el.style.transform = `translateX(${dir * ancho}px)`;
+        // Síncrono: la página nueva tiene que estar ya dibujada fuera de la
+        // pantalla antes de empezar a entrar, o entraría la vieja.
+        scrollPorSeccion.current[actual] = window.scrollY;
+        flushSync(() => setSection(nueva));
+        window.scrollTo(0, scrollPorSeccion.current[nueva] || 0);
+        void el.offsetWidth;
+        el.style.transition = `transform ${ENTRADA_MS}ms cubic-bezier(.22,1,.36,1)`;
+        el.style.transform = "translateX(0px)";
+        setTimeout(() => { clearTimeout(salvavidas); soltarTodo(); }, ENTRADA_MS + 40);
+      } catch (err) {
+        clearTimeout(salvavidas);
+        soltarTodo();
+        setSection(nueva);
+        throw err;
+      }
     }, SALIDA_MS);
   };
   // Pulsar una pestaña también desliza, hacia el lado en que está.
@@ -695,9 +709,15 @@ export default function AcademiaPIR() {
       const i = ORDEN_PESTANAS.indexOf(seccionRef.current);
       return { i, hayAnterior: i > 0, haySiguiente: i >= 0 && i < ORDEN_PESTANAS.length - 1 };
     };
+    // El "volver a su sitio" deja un temporizador que limpia el estilo al
+    // acabar. Si mientras tanto empieza otro gesto, ese temporizador le
+    // borraba el desplazamiento a mitad: la página daba un salto atrás. Se
+    // cancela en cuanto la página vuelve a moverse.
+    let volverTimer = null;
     const mostrar = (dx) => {
       const el = mainRef.current;
-      if (!el) return;
+      if (!el || animandoRef.current) return;
+      clearTimeout(volverTimer);
       const { hayAnterior, haySiguiente } = vecinas();
       el.style.transition = "none";
       el.style.transform = `translateX(${conResistencia(dx, hayAnterior, haySiguiente)}px)`;
@@ -705,9 +725,11 @@ export default function AcademiaPIR() {
     const volver = () => {
       const el = mainRef.current;
       if (!el) return;
+      if (animandoRef.current) return;
       el.style.transition = "transform 260ms cubic-bezier(.22,1,.36,1)";
       el.style.transform = "translateX(0px)";
-      setTimeout(() => { if (!animandoRef.current) { el.style.transition = ""; el.style.transform = ""; } }, 300);
+      clearTimeout(volverTimer);
+      volverTimer = setTimeout(() => { if (!animandoRef.current) { el.style.transition = ""; el.style.transform = ""; } }, 300);
     };
     const soltar = (dx, velocidad) => {
       const el = mainRef.current;
@@ -772,6 +794,8 @@ export default function AcademiaPIR() {
     // inercia sigue mandando eventos casi un segundo después de levantar los
     // dedos y, sin esto, arrancaba otro paso "cuando le daba la gana";
     // (4) si se calla sin llegar al umbral, la página vuelve a su sitio.
+    // El umbral es corto (ver `umbralTrackpad`): tiene que cruzarse mientras
+    // los dedos se mueven, no con la cola de la inercia.
     // Lo que se probó y NO vale: decidir "al soltar" mirando cuándo decaen los
     // empujones — cualquier frenazo natural a mitad de gesto parecía soltar.
     let rueda = null;
@@ -850,6 +874,7 @@ export default function AcademiaPIR() {
     window.addEventListener("wheel", alRueda, { passive: false });
     return () => {
       cancelarFotograma();
+      clearTimeout(volverTimer);
       clearTimeout(finTimer);
       clearTimeout(tragarTimer);
       window.removeEventListener("keydown", alTeclear);
