@@ -116,14 +116,18 @@ try {
     const trasTab = await p.evaluate(() => document.activeElement.getAttribute("placeholder"));
     await p.keyboard.press("Shift+Tab");
     const trasVuelta = await p.evaluate(() => document.activeElement.getAttribute("placeholder"));
-    // Intro con la contraseña vacía también avanza, en vez de intentar entrar.
+    // Intro es "Entrar" desde cualquier campo (no avanza): con la contraseña
+    // vacía, entrar dice que falta, y el foco no se mueve.
     await p.keyboard.press("Enter");
+    await esperar(150);
     const trasIntro = await p.evaluate(() => document.activeElement.getAttribute("placeholder"));
+    const avisoIntro = await p.getByText("Escribe tu contraseña.").count();
     console.log(`   Tab -> ${trasTab} · Mayús+Tab -> ${trasVuelta} · Intro -> ${trasIntro}`);
     if (trasTab !== "Contraseña") throw new Error(`${ancho}px: Tab no llevó a la contraseña (${trasTab})`);
     if (trasVuelta !== "Nombre de usuario") throw new Error(`${ancho}px: Mayús+Tab no volvió al nombre (${trasVuelta})`);
-    if (trasIntro !== "Contraseña") throw new Error(`${ancho}px: Intro no pasó a la contraseña (${trasIntro})`);
+    if (trasIntro !== "Nombre de usuario" || !avisoIntro) throw new Error(`${ancho}px: Intro no hizo de "Entrar" (${trasIntro}, aviso ${avisoIntro})`);
     // Y lo escrito se escribe donde toca.
+    await p.getByPlaceholder("Contraseña").click();
     await p.keyboard.type("secreta");
     const valores = await p.evaluate(() => [...document.querySelectorAll("input")].map((i) => i.value));
     if (valores[0] !== "pabloadmin" || valores[1] !== "secreta") throw new Error(`${ancho}px: los campos no recibieron lo tecleado ${JSON.stringify(valores)}`);
@@ -179,10 +183,20 @@ try {
     });
     console.log(`táctil) desplazada a 300 -> ${desplazado}`);
     if (desplazado !== 0) throw new Error("la portada se queda desplazada (como al activar un campo en el iPad): " + desplazado);
+    // Cinco toques en el logo abren el panel de diagnóstico del teclado (desde
+    // el icono no se puede poner ?depurar=teclas en la dirección); sin ellos
+    // no está.
+    const panel = () => p.evaluate(() => [...document.querySelectorAll("div")].some((d) => d.textContent.startsWith("teclas ·")));
+    const antesPanel = await panel();
+    const logo = await p.getByText("AUTO", { exact: true }).first().boundingBox();
+    for (let k = 0; k < 5; k++) await p.touchscreen.tap(logo.x + logo.width / 2, logo.y + logo.height / 2);
+    const trasPanel = await panel();
+    console.log(`táctil) panel de teclas -> antes ${antesPanel} · tras 5 toques ${trasPanel}`);
+    if (antesPanel || !trasPanel) throw new Error("los cinco toques en el logo no abren el panel de teclas");
     if (trasTocar !== "username") throw new Error(`en pantalla táctil tocar la foto no lleva al nombre (${trasTocar})`);
     await ctx.close();
   }
-  console.log("\nOK: la portada llena la pantalla sin desplazarse, y Tab e Intro pasan de campo");
+  console.log("\nOK: la portada llena la pantalla sin desplazarse, Tab pasa de campo e Intro entra");
 } catch (e) { fallo = e; } finally { await navegador.close(); servidor.kill(); }
 
 if (fallo) { console.error("\nFALLA:", fallo.message); process.exit(1); }
