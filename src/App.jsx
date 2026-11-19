@@ -1739,10 +1739,26 @@ function AuthScreen({ onLogin, onSignup }) {
   // pasen de uno a otro sin depender de cómo lo haga cada navegador.
   const camposRef = useRef([]);
 
-  // Mientras se ve la portada la página no rebota: es una pantalla fija.
+  // La portada es una pantalla FIJA: va clavada a la ventana (`position:
+  // fixed`), el documento no se desplaza, y un arrastre sobre ella no mueve
+  // nada. En el iPad, arrastrando desde abajo, la página entera subía y
+  // asomaba una franja blanca: iOS rebota aunque haya `overscroll-behavior:
+  // none`, y lo único que lo para es cancelar el touchmove. Solo se deja
+  // pasar si la propia portada no cabe y tiene que desplazarse (un móvil
+  // pequeño con el formulario de crear cuenta).
+  const raizRef = useRef(null);
   useEffect(() => {
     document.documentElement.classList.add("sin-rebote");
-    return () => document.documentElement.classList.remove("sin-rebote");
+    const alArrastrar = (e) => {
+      const raiz = raizRef.current;
+      if (raiz && raiz.contains(e.target) && raiz.scrollHeight > raiz.clientHeight + 1) return;
+      if (e.cancelable) e.preventDefault();
+    };
+    document.addEventListener("touchmove", alArrastrar, { passive: false });
+    return () => {
+      document.documentElement.classList.remove("sin-rebote");
+      document.removeEventListener("touchmove", alArrastrar);
+    };
   }, []);
 
   // Con ratón y teclado (un ordenador) se escribe nada más entrar: el campo
@@ -1854,9 +1870,9 @@ function AuthScreen({ onLogin, onSignup }) {
   const btnPortada = { width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff", color: "#0C0C0D", border: "none", borderRadius: 12, padding: "16px 18px", fontWeight: 600, fontSize: 15, cursor: "pointer", fontFamily: "inherit" };
 
   return (
-    <div onPointerDown={tocarFondo} style={{ minHeight: "100dvh", position: "relative", overflow: "hidden", background: "#111", fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", color: "#fff" }}>
-      <img src="/img/portada.jpg" alt="" aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "45% 40%" }} />
-      <div aria-hidden="true" style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, rgba(10,10,12,.55) 0%, rgba(10,10,12,.12) 30%, rgba(10,10,12,.55) 60%, rgba(10,10,12,.88) 100%)" }} />
+    <div ref={raizRef} onPointerDown={tocarFondo} style={{ position: "fixed", inset: 0, overflowX: "hidden", overflowY: "auto", overscrollBehavior: "none", background: "#111", fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", color: "#fff" }}>
+      <img src="/img/portada.jpg" alt="" aria-hidden="true" style={{ position: "fixed", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "45% 40%" }} />
+      <div aria-hidden="true" style={{ position: "fixed", inset: 0, background: "linear-gradient(to bottom, rgba(10,10,12,.55) 0%, rgba(10,10,12,.12) 30%, rgba(10,10,12,.55) 60%, rgba(10,10,12,.88) 100%)" }} />
       <div style={{ position: "relative", zIndex: 1, minHeight: "100dvh", maxWidth: 480, margin: "0 auto", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "max(18px, env(safe-area-inset-top)) 22px max(26px, env(safe-area-inset-bottom))" }}>
         <span style={{ textAlign: "center" }}><Marca tamano={14} color="#fff" /></span>
         <h1 style={{ fontFamily: D, fontWeight: 800, fontSize: "clamp(40px,12vw,58px)", lineHeight: 0.86, letterSpacing: "-0.03em", textTransform: "uppercase", margin: "40px 0 0", textAlign: "center" }}>
