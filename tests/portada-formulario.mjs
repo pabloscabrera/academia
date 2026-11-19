@@ -88,6 +88,26 @@ try {
     if (errores.length) throw new Error("errores JS: " + errores.join(" | "));
     await ctx.close();
   }
+  // En pantalla táctil (iPad, móvil) no se marca ningún campo al entrar: iOS
+  // no deja escribir en un foco puesto sin un toque, así que salía marcado y
+  // no escribía. Tocar la foto sí lleva al nombre.
+  {
+    const ctx = await navegador.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true });
+    await ctx.addInitScript(() => Object.defineProperty(navigator, "maxTouchPoints", { get: () => 5 }));
+    await ctx.route("**/*.supabase.co/rest/**", (r) => r.fulfill({ status: 200, contentType: "application/json", headers: { "content-range": "0-0/0" }, body: "[]" }));
+    await ctx.route("**/*.supabase.co/auth/**", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
+    const p = await ctx.newPage();
+    await p.goto(`http://localhost:${PUERTO}/`, { waitUntil: "domcontentloaded" });
+    await p.getByPlaceholder("Nombre de usuario").waitFor({ timeout: 15000 });
+    await esperar(600);
+    const alEntrar = await p.evaluate(() => document.activeElement.tagName);
+    await p.touchscreen.tap(512, 140);
+    const trasTocar = await p.evaluate(() => document.activeElement.getAttribute("name"));
+    console.log(`táctil) al entrar -> ${alEntrar} · tocar la foto -> ${trasTocar}`);
+    if (alEntrar === "INPUT") throw new Error("en pantalla táctil sale un campo marcado al entrar");
+    if (trasTocar !== "username") throw new Error(`en pantalla táctil tocar la foto no lleva al nombre (${trasTocar})`);
+    await ctx.close();
+  }
   console.log("\nOK: la portada llena la pantalla sin desplazarse, y Tab e Intro pasan de campo");
 } catch (e) { fallo = e; } finally { await navegador.close(); servidor.kill(); }
 
