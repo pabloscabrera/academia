@@ -318,13 +318,20 @@ function PanelDepuracionTeclas() {
       setTimeout(() => anotar({ ev: e.type, key: e.key, code: e.code, kc: e.keyCode, cancelada: e.defaultPrevented, en: nombre(e.target), antes, despues: nombre(document.activeElement) }), 0);
     };
     const alFoco = (e) => anotar({ ev: e.type, en: nombre(e.target) });
+    // Por si el Tab llega disfrazado: como pulsación suelta o como algo que
+    // el campo intenta escribir.
+    const alEntrada = (e) => anotar({ ev: e.type, tipo: e.inputType, dato: JSON.stringify(e.data), en: nombre(e.target) });
     window.addEventListener("keydown", alTecla, true);
     window.addEventListener("keyup", alTecla, true);
+    window.addEventListener("keypress", alTecla, true);
+    window.addEventListener("beforeinput", alEntrada, true);
     window.addEventListener("focusin", alFoco, true);
     window.addEventListener("focusout", alFoco, true);
     return () => {
       window.removeEventListener("keydown", alTecla, true);
       window.removeEventListener("keyup", alTecla, true);
+      window.removeEventListener("keypress", alTecla, true);
+      window.removeEventListener("beforeinput", alEntrada, true);
       window.removeEventListener("focusin", alFoco, true);
       window.removeEventListener("focusout", alFoco, true);
     };
@@ -1783,6 +1790,17 @@ function AuthScreen({ onLogin, onSignup }) {
   // enfoca la propia app la borra antes, o su propio "quitar y poner" el foco
   // se tomaría por el Tab del iPad.
   const ultimaSalidaRef = useRef(null);
+  // Cinco toques seguidos en el logo abren el panel de diagnóstico del
+  // teclado. Hace falta porque desde el icono de la pantalla de inicio no se
+  // puede escribir `?depurar=teclas` en la dirección, y el Tab puede
+  // comportarse distinto ahí que en Safari (que tiene su propia barra).
+  const [verTeclas, setVerTeclas] = useState(false);
+  const toquesMarcaRef = useRef([]);
+  const tocarMarca = () => {
+    const ahora = Date.now();
+    toquesMarcaRef.current = [...toquesMarcaRef.current.filter((t) => ahora - t < 3000), ahora];
+    if (toquesMarcaRef.current.length >= 5) { toquesMarcaRef.current = []; setVerTeclas((v) => !v); }
+  };
 
   // La portada es una pantalla FIJA: va clavada a la ventana (`position:
   // fixed`), el documento no se desplaza, y un arrastre sobre ella no mueve
@@ -1901,11 +1919,12 @@ function AuthScreen({ onLogin, onSignup }) {
       if (destino) setTimeout(() => { if (cambiosFocoRef.current === marca && document.activeElement === origen) destino.focus(); }, 0);
       return;
     }
+    // Intro es "Entrar", desde cualquier campo, igual que el botón. Antes
+    // avanzaba al campo siguiente si estaba vacío; el usuario lo quiere solo
+    // para entrar ("Intro para convalidar con el botón de entrar").
     if (e.key === "Enter") {
       e.preventDefault();
-      const siguiente = campos[pos + 1];
-      if (siguiente && !siguiente.value) siguiente.focus();
-      else submit();
+      submit();
     }
   };
 
@@ -1963,11 +1982,11 @@ function AuthScreen({ onLogin, onSignup }) {
 
   return (
     <div ref={raizRef} onPointerDown={tocarFondo} style={{ position: "fixed", inset: 0, overflowX: "hidden", overflowY: "auto", overscrollBehavior: "none", background: "#111", fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", color: "#fff" }}>
-      {DEPURAR_TECLAS && <PanelDepuracionTeclas />}
+      {(DEPURAR_TECLAS || verTeclas) && <PanelDepuracionTeclas />}
       <img src="/img/portada.jpg" alt="" aria-hidden="true" style={{ position: "fixed", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "45% 40%" }} />
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, background: "linear-gradient(to bottom, rgba(10,10,12,.55) 0%, rgba(10,10,12,.12) 30%, rgba(10,10,12,.55) 60%, rgba(10,10,12,.88) 100%)" }} />
       <div style={{ position: "relative", zIndex: 1, minHeight: "100dvh", maxWidth: 480, margin: "0 auto", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "max(18px, env(safe-area-inset-top)) 22px max(26px, env(safe-area-inset-bottom))" }}>
-        <span style={{ textAlign: "center" }}><Marca tamano={14} color="#fff" /></span>
+        <span style={{ textAlign: "center" }}><span onClick={tocarMarca} style={{ display: "inline-block", padding: "8px 12px", margin: "-8px -12px" }}><Marca tamano={14} color="#fff" /></span></span>
         <h1 style={{ fontFamily: D, fontWeight: 800, fontSize: "clamp(40px,12vw,58px)", lineHeight: 0.86, letterSpacing: "-0.03em", textTransform: "uppercase", margin: "40px 0 0", textAlign: "center" }}>
           {modo === "login" ? <>Bienvenido<br />de nuevo</> : <>Crea tu<br />cuenta</>}
         </h1>
