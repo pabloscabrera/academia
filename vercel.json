@@ -41,6 +41,10 @@
     {
       "source": "/prueba",
       "destination": "/prueba-tab.html"
+    },
+    {
+      "source": "/vacia",
+      "destination": "/vacia.html"
     }
   ]
 }
