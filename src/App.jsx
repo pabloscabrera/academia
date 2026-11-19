@@ -295,6 +295,18 @@ const ESTILO_SALIR = {
 // paneles) vale `true`.
 const PestanaActiva = React.createContext(true);
 
+// Cuánto se aparta del borde de arriba lo primero de la pantalla. Desde el
+// icono de la pantalla de inicio la página empieza debajo del reloj y la
+// batería (`env(safe-area-inset-top)`), y iOS además DIFUMINA lo que queda
+// pegado a esa franja: la marca, las píldoras y los iconos de la cabecera
+// salían borrosos mientras las pestañas, un poco más abajo, se veían
+// nítidas. Así que con franja se deja otro tanto de margen (hasta 24 px) para
+// salir de la zona difuminada; sin franja (Safari, el ordenador) el
+// `calc(...)` vale 0 y manda el mínimo de siempre, o sea que ahí no cambia
+// nada.
+const huecoArriba = (minimo) =>
+  `max(${minimo}px, calc(env(safe-area-inset-top) + min(env(safe-area-inset-top), 24px)))`;
+
 // Diagnóstico del trackpad: con `?depurar=trackpad` en la dirección se pinta
 // un panel con lo que llega de la rueda y lo que se decide con cada evento.
 // Existe porque el iPad no se puede probar desde aquí (solo hay Chromium) y
@@ -1730,7 +1742,7 @@ function BarraAviso({ texto, esperando }) {
       style={{
         position: "fixed", left: 0, right: 0, top: 0, zIndex: 60,
         background: esperando ? AVISO : ACENTO, color: "#fff",
-        paddingTop: "max(12px, env(safe-area-inset-top))",
+        paddingTop: huecoArriba(12),
         paddingBottom: 12, paddingLeft: 14, paddingRight: 14,
         display: "flex", alignItems: "center", gap: 12,
         fontSize: 13.5, lineHeight: 1.45, boxShadow: SOMBRA_SUAVE,
@@ -1986,7 +1998,7 @@ function AuthScreen({ onLogin, onSignup }) {
       {(DEPURAR_TECLAS || verTeclas) && <PanelDepuracionTeclas />}
       <img src="/img/portada.jpg" alt="" aria-hidden="true" style={{ position: "fixed", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "45% 40%" }} />
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, background: "linear-gradient(to bottom, rgba(10,10,12,.55) 0%, rgba(10,10,12,.12) 30%, rgba(10,10,12,.55) 60%, rgba(10,10,12,.88) 100%)" }} />
-      <div style={{ position: "relative", zIndex: 1, minHeight: "100dvh", maxWidth: 480, margin: "0 auto", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: "max(18px, env(safe-area-inset-top)) 22px max(26px, env(safe-area-inset-bottom))" }}>
+      <div style={{ position: "relative", zIndex: 1, minHeight: "100dvh", maxWidth: 480, margin: "0 auto", boxSizing: "border-box", display: "flex", flexDirection: "column", padding: `${huecoArriba(18)} 22px max(26px, env(safe-area-inset-bottom))` }}>
         <span style={{ textAlign: "center" }}><span onClick={tocarMarca} style={{ display: "inline-block", padding: "8px 12px", margin: "-8px -12px" }}><Marca tamano={14} color="#fff" /></span></span>
         <h1 style={{ fontFamily: D, fontWeight: 800, fontSize: "clamp(40px,12vw,58px)", lineHeight: 0.86, letterSpacing: "-0.03em", textTransform: "uppercase", margin: "40px 0 0", textAlign: "center" }}>
           {modo === "login" ? <>Bienvenido<br />de nuevo</> : <>Crea tu<br />cuenta</>}
@@ -7307,7 +7319,7 @@ const styles = {
   // con un `paddingTop` suelto dispara el aviso de React sobre shorthand y
   // longhand al redibujar. `env(safe-area-inset-top)` reserva la franja del
   // reloj en modo pantalla de inicio; en navegador vale 0 y manda el 18.
-  header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", paddingTop: "max(14px, env(safe-area-inset-top))", paddingRight: 20, paddingBottom: 4, paddingLeft: 24 },
+  header: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", paddingTop: huecoArriba(14), paddingRight: 20, paddingBottom: 4, paddingLeft: 24 },
   // Cabecera y pestañas van juntas y se quedan arriba al desplazar, como
   // antes del rediseño. La cabecera ya reserva la franja del reloj de iOS,
   // así que al quedarse pegadas las pestañas no se meten debajo de la hora.
@@ -7362,7 +7374,7 @@ const styles = {
   // desde el icono de la pantalla de inicio el botón de cerrar caía DEBAJO del
   // reloj y la batería, y desde fuera eso es "he entrado en el Ranking y no
   // puedo salir". Mismo arreglo que en la barra de aviso.
-  pantallaCompletaCierre: { display: "flex", justifyContent: "flex-end", paddingTop: "max(14px, env(safe-area-inset-top))", paddingRight: 18, paddingBottom: 0, paddingLeft: 18 },
+  pantallaCompletaCierre: { display: "flex", justifyContent: "flex-end", paddingTop: huecoArriba(14), paddingRight: 18, paddingBottom: 0, paddingLeft: 18 },
   modalCard: { background: "var(--superficie)", borderRadius: 18, padding: 24, maxWidth: 340, width: "100%", boxShadow: "0 12px 40px rgba(30,28,24,0.20)" },
   escalaBtn: { flex: 1, padding: "10px 0", borderRadius: 10, border: `1.5px solid ${RAYA}`, background: "var(--superficie)", color: TINTA, fontWeight: 700, cursor: "pointer" },
   escalaBtnActivo: { borderColor: TINTA, background: TINTA, color: "var(--sobre-negro)" },
