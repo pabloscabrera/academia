@@ -1745,14 +1745,15 @@ function AuthScreen({ onLogin, onSignup }) {
     return () => document.documentElement.classList.remove("sin-rebote");
   }, []);
 
-  // Se escribe nada más entrar, sin tener que tocar el campo. El autoFocus
-  // no basta en el iPad: desde el icono de la pantalla de inicio el campo
-  // sale marcado pero las teclas no le llegan, porque iOS no da el teclado a
-  // un foco puesto sin un toque. Así que: (1) se vuelve a enfocar cuando la
-  // app pasa a primer plano; (2) una tecla que llega a la página y no a un
-  // campo se escribe en el campo que toca; (3) tocar cualquier parte de la
-  // portada que no sea un botón o un campo lleva al campo, y como eso sí es
+  // Con ratón y teclado (un ordenador) se escribe nada más entrar: el campo
+  // sale enfocado, se vuelve a enfocar cuando la app pasa a primer plano, y
+  // una tecla que cae en la página va al campo que toca. En una pantalla
+  // táctil (iPad, móvil) NO se enfoca nada al entrar: iOS no da el teclado a
+  // un foco puesto sin un toque, así que el campo salía marcado sin dejar
+  // escribir, que es peor que no marcarlo ("no tiene sentido"). Ahí basta
+  // tocar cualquier parte de la portada para ir al campo, y como eso sí es
   // un toque, iOS abre el teclado.
+  const tactil = typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
   const campoQueToca = () => {
     const campos = camposRef.current.filter(Boolean);
     return campos.find((c) => !c.value) || campos[campos.length - 1] || null;
@@ -1776,6 +1777,10 @@ function AuthScreen({ onLogin, onSignup }) {
       const poner = [setUsername, setPassword, setPassword2, setCodigo][i];
       if (poner) poner((v) => v + e.key);
     };
+    if (tactil) {
+      document.addEventListener("keydown", alTeclear);
+      return () => document.removeEventListener("keydown", alTeclear);
+    }
     const t = setTimeout(enfocar, 60);
     window.addEventListener("focus", enfocar);
     window.addEventListener("pageshow", enfocar);
@@ -1874,7 +1879,7 @@ function AuthScreen({ onLogin, onSignup }) {
           </div>
         ) : (
           <div>
-            <input ref={(el) => { camposRef.current[0] = el; }} value={username} onChange={(e) => setUsername(e.target.value)} onKeyDown={teclaCampo(0)} placeholder="Nombre de usuario" name="username" autoComplete="username" style={{ ...inputPortada, marginBottom: 10 }} autoCapitalize="none" autoCorrect="off" autoFocus />
+            <input ref={(el) => { camposRef.current[0] = el; }} value={username} onChange={(e) => setUsername(e.target.value)} onKeyDown={teclaCampo(0)} placeholder="Nombre de usuario" name="username" autoComplete="username" style={{ ...inputPortada, marginBottom: 10 }} autoCapitalize="none" autoCorrect="off" autoFocus={!tactil} />
             <input ref={(el) => { camposRef.current[1] = el; }} value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={teclaCampo(1)} placeholder="Contraseña" type="password" name="password" autoComplete={modo === "login" ? "current-password" : "new-password"} style={{ ...inputPortada, marginBottom: 10 }} />
             {modo === "signup" && (
               <>
