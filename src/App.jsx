@@ -1772,8 +1772,36 @@ function AuthScreen({ onLogin, onSignup, sesion, onContinuar, onCambiarCuenta })
   const [error, setError] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [cuentaCreada, setCuentaCreada] = useState(false);
+  // Los campos del formulario, en orden, para que el tabulador y el Intro
+  // pasen de uno a otro sin depender de cómo lo haga cada navegador.
+  const camposRef = useRef([]);
+
+  // Mientras se ve la portada la página no rebota: es una pantalla fija.
+  useEffect(() => {
+    document.documentElement.classList.add("sin-rebote");
+    return () => document.documentElement.classList.remove("sin-rebote");
+  }, []);
 
   const cambiarModo = (m) => { setModo(m); setError(null); setCuentaCreada(false); };
+
+  // Tab va al campo siguiente (Mayúsculas+Tab al anterior) e Intro también
+  // avanza, salvo en el último, donde entra. En el iPad con teclado el Tab no
+  // pasaba del nombre a la contraseña.
+  const teclaCampo = (i) => (e) => {
+    const campos = camposRef.current.filter(Boolean);
+    const pos = campos.indexOf(e.currentTarget);
+    if (e.key === "Tab") {
+      const destino = campos[pos + (e.shiftKey ? -1 : 1)];
+      if (destino) { e.preventDefault(); destino.focus(); }
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const siguiente = campos[pos + 1];
+      if (siguiente && !siguiente.value) siguiente.focus();
+      else submit();
+    }
+  };
 
   const submit = async () => {
     if (cargando) return;
@@ -1844,12 +1872,12 @@ function AuthScreen({ onLogin, onSignup, sesion, onContinuar, onCambiarCuenta })
           </div>
         ) : (
           <div>
-            <input value={username} onChange={(e) => setUsername(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Nombre de usuario" style={{ ...inputPortada, marginBottom: 10 }} autoCapitalize="none" autoCorrect="off" autoFocus />
-            <input value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Contraseña" type="password" style={{ ...inputPortada, marginBottom: 10 }} />
+            <input ref={(el) => { camposRef.current[0] = el; }} value={username} onChange={(e) => setUsername(e.target.value)} onKeyDown={teclaCampo(0)} placeholder="Nombre de usuario" name="username" autoComplete="username" style={{ ...inputPortada, marginBottom: 10 }} autoCapitalize="none" autoCorrect="off" autoFocus />
+            <input ref={(el) => { camposRef.current[1] = el; }} value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={teclaCampo(1)} placeholder="Contraseña" type="password" name="password" autoComplete={modo === "login" ? "current-password" : "new-password"} style={{ ...inputPortada, marginBottom: 10 }} />
             {modo === "signup" && (
               <>
-                <input value={password2} onChange={(e) => setPassword2(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Repite la contraseña" type="password" style={{ ...inputPortada, marginBottom: 10 }} />
-                <input value={codigo} onChange={(e) => setCodigo(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="Código de invitación" style={{ ...inputPortada, marginBottom: 6 }} autoCapitalize="none" autoCorrect="off" />
+                <input ref={(el) => { camposRef.current[2] = el; }} value={password2} onChange={(e) => setPassword2(e.target.value)} onKeyDown={teclaCampo(2)} placeholder="Repite la contraseña" type="password" autoComplete="new-password" style={{ ...inputPortada, marginBottom: 10 }} />
+                <input ref={(el) => { camposRef.current[3] = el; }} value={codigo} onChange={(e) => setCodigo(e.target.value)} onKeyDown={teclaCampo(3)} placeholder="Código de invitación" style={{ ...inputPortada, marginBottom: 6 }} autoCapitalize="none" autoCorrect="off" />
                 <p style={{ fontSize: 12.5, color: "rgba(255,255,255,0.75)", margin: "4px 2px 6px", lineHeight: 1.45 }}>
                   {codigoDelEnlace() ? "Código cogido del enlace de invitación." : "Sin código no se puede crear la cuenta. Pídeselo a Pablo."}
                 </p>
