@@ -121,6 +121,21 @@ try {
     if (arrastre.posicion !== "fixed") throw new Error("la portada no está clavada a la ventana");
     if (arrastre.desplazable || arrastre.overflow !== "hidden") throw new Error("el documento se puede desplazar bajo la portada");
     if (arrastre.fondo !== "rgb(17, 17, 17)") throw new Error("si rebota asoma el fondo claro: " + arrastre.fondo);
+    // Con un campo activo iOS desplaza la página para dejar sitio a la barra
+    // del teclado aunque no haya nada que desplazar. Aquí se imita haciendo
+    // el documento más alto y desplazándolo: tiene que volver solo a 0.
+    const desplazado = await p.evaluate(async () => {
+      const relleno = document.createElement("div");
+      relleno.style.height = "3000px";
+      document.documentElement.appendChild(relleno);
+      window.scrollTo(0, 300);
+      await new Promise((r) => setTimeout(r, 150));
+      const y = window.scrollY;
+      relleno.remove();
+      return y;
+    });
+    console.log(`táctil) desplazada a 300 -> ${desplazado}`);
+    if (desplazado !== 0) throw new Error("la portada se queda desplazada (como al activar un campo en el iPad): " + desplazado);
     if (trasTocar !== "username") throw new Error(`en pantalla táctil tocar la foto no lleva al nombre (${trasTocar})`);
     await ctx.close();
   }
