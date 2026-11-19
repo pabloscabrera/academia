@@ -1763,6 +1763,9 @@ function codigoDelEnlace() {
   }
 }
 
+// Cuánto puede tardar el iPad entre sacar el foco de un campo y devolvérselo
+// para que cuente como su Tab (ver `alEnfocarCampo`). En la medida fueron 0 ms.
+const MS_HUELLA_TAB = 80;
 function AuthScreen({ onLogin, onSignup }) {
   const [codigo, setCodigo] = useState(codigoDelEnlace);
   const [modo, setModo] = useState(() => (codigoDelEnlace() ? "signup" : "login"));
@@ -1776,6 +1779,10 @@ function AuthScreen({ onLogin, onSignup }) {
   // pasen de uno a otro sin depender de cómo lo haga cada navegador.
   const camposRef = useRef([]);
   const cambiosFocoRef = useRef(0);
+  // La última vez que un campo perdió el foco (ver `alEnfocarCampo`). Lo que
+  // enfoca la propia app la borra antes, o su propio "quitar y poner" el foco
+  // se tomaría por el Tab del iPad.
+  const ultimaSalidaRef = useRef(null);
 
   // La portada es una pantalla FIJA: va clavada a la ventana (`position:
   // fixed`), el documento no se desplaza, y un arrastre sobre ella no mueve
@@ -1830,6 +1837,7 @@ function AuthScreen({ onLogin, onSignup }) {
     const enfocar = () => {
       const a = document.activeElement;
       if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return;
+      ultimaSalidaRef.current = null;
       campoQueToca()?.focus();
     };
     const alTeclear = (e) => {
@@ -1840,6 +1848,7 @@ function AuthScreen({ onLogin, onSignup }) {
       const campo = campoQueToca();
       if (!campo) return;
       e.preventDefault();
+      ultimaSalidaRef.current = null;
       campo.focus();
       const i = camposRef.current.indexOf(campo);
       const poner = [setUsername, setPassword, setPassword2, setCodigo][i];
@@ -1866,7 +1875,7 @@ function AuthScreen({ onLogin, onSignup }) {
   const tocarFondo = (e) => {
     if (e.target.closest("button, input, textarea, select, a")) return;
     const campo = campoQueToca();
-    if (campo) { e.preventDefault(); campo.focus(); }
+    if (campo) { e.preventDefault(); ultimaSalidaRef.current = null; campo.focus(); }
   };
 
   const cambiarModo = (m) => { setModo(m); setError(null); setCuentaCreada(false); };
@@ -1898,6 +1907,27 @@ function AuthScreen({ onLogin, onSignup }) {
       if (siguiente && !siguiente.value) siguiente.focus();
       else submit();
     }
+  };
+
+  // El Tab del iPad, por fin medido (`?depurar=teclas`): **no llega a la
+  // página**. Las letras sí llegan como keydown, pero el Tab no: el iPad se
+  // lo queda para su propia navegación con teclado, saca el foco de la web y
+  // lo devuelve AL MISMO CAMPO en el mismo milisegundo (focusout y focusin
+  // del nombre, t:9056 los dos). Esa huella es lo único que recibe la página,
+  // así que se reconoce y se trata como un Tab: perder y recuperar el foco
+  // del mismo campo casi a la vez lleva al campo siguiente. No hay forma de
+  // distinguir Mayúsculas+Tab, que también va hacia delante; en el último
+  // campo no hace nada. Volver de otra app también hace focusout/focusin del
+  // mismo campo, pero con segundos de por medio, y no cuenta.
+  const alDesenfocarCampo = (e) => { ultimaSalidaRef.current = { campo: e.target, t: performance.now() }; };
+  const alEnfocarCampo = (e) => {
+    cambiosFocoRef.current += 1;
+    const salida = ultimaSalidaRef.current;
+    ultimaSalidaRef.current = null;
+    if (!salida || salida.campo !== e.target || performance.now() - salida.t > MS_HUELLA_TAB) return;
+    const campos = camposRef.current.filter(Boolean);
+    const siguiente = campos[campos.indexOf(e.target) + 1];
+    if (siguiente) setTimeout(() => siguiente.focus(), 0);
   };
 
   const submit = async () => {
@@ -1957,7 +1987,7 @@ function AuthScreen({ onLogin, onSignup }) {
             </button>
           </div>
         ) : (
-          <form onSubmit={(e) => { e.preventDefault(); submit(); }} onFocus={() => { cambiosFocoRef.current += 1; }} noValidate>
+          <form onSubmit={(e) => { e.preventDefault(); submit(); }} onFocus={alEnfocarCampo} onBlur={alDesenfocarCampo} noValidate>
             <input ref={(el) => { camposRef.current[0] = el; }} value={username} onChange={(e) => setUsername(e.target.value)} onKeyDown={teclaCampo(0)} placeholder="Nombre de usuario" name="username" autoComplete="username" style={{ ...inputPortada, marginBottom: 10 }} autoCapitalize="none" autoCorrect="off" autoFocus={!tactil} />
             <input ref={(el) => { camposRef.current[1] = el; }} value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={teclaCampo(1)} placeholder="Contraseña" type="password" name="password" autoComplete={modo === "login" ? "current-password" : "new-password"} style={{ ...inputPortada, marginBottom: 10 }} />
             {modo === "signup" && (
