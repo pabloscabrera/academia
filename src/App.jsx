@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { flushSync } from "react-dom";
-import { Activity, ArrowDownUp, Award, Baby, BookOpen, Bookmark, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, FileText, Flag, Flame, Folder, FolderOpen, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, MoreHorizontal, FolderPlus, Palette, Pencil, Percent, Plus, Puzzle, RotateCw, Search, Settings, Sparkles, Star, Stethoscope, Tag, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
+import { Activity, ArrowDownUp, Award, Baby, BookOpen, Bookmark, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, FileText, Flag, Flame, Folder, FolderOpen, Gem, Heart, Layers, ListChecks, Loader2, Medal, MessageCircle, Microscope, MoreHorizontal, FolderPlus, Palette, Pencil, Percent, Plus, Puzzle, RotateCw, Search, Sparkles, Star, Stethoscope, Tag, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
 import { colaVacia, esFalloDeRed, leerCola, escribirCola, contarCola, conFila, sinFila, filasPendientes, CONFLICTO } from "./colaPendientes";
@@ -2261,6 +2261,67 @@ const FRASES_MOTIVADORAS = [
   "El PIR se prepara con constancia aburrida, no con motivación bonita. Y hoy toca constancia.",
 ];
 
+// Iconos de la cabecera, dibujados a propósito en vez de los de lucide de la
+// web anterior: trazo de 1,4 sobre 24, puntas redondas y formas geométricas
+// sencillas, del mismo peso que la raya de las pestañas, para que acompañen a
+// Cabinet/Switzer. `currentColor` y el color por `style` (no por atributo),
+// porque `var()` no funciona en atributos de presentación SVG y así siguen
+// al modo noche solos.
+function GlifoCabecera({ nombre, tamano = 19 }) {
+  const comun = {
+    width: tamano, height: tamano, viewBox: "0 0 24 24", fill: "none",
+    stroke: "currentColor", strokeWidth: 1.4, strokeLinecap: "round", strokeLinejoin: "round",
+    "aria-hidden": true, style: { display: "block" },
+  };
+  if (nombre === "ranking") {
+    // Un podio: el segundo, el primero y el tercero.
+    return (
+      <svg {...comun}>
+        <path d="M3.5 19.5V13H9V6.5H15V15.5H20.5V19.5Z" />
+        <path d="M9 19.5V13M15 19.5V15.5" />
+      </svg>
+    );
+  }
+  if (nombre === "banco") {
+    // Un taco de fichas: la de delante con dos renglones.
+    return (
+      <svg {...comun}>
+        <path d="M7.5 4.5h9" />
+        <rect x="4.5" y="7.5" width="15" height="12" rx="2" />
+        <path d="M8 12h8M8 15.5h5" />
+      </svg>
+    );
+  }
+  if (nombre === "frase") {
+    // Unas comillas de apertura, como las de un texto citado.
+    return (
+      <svg {...comun}>
+        <circle cx="8" cy="14.5" r="2.3" style={{ fill: "currentColor", stroke: "none" }} />
+        <circle cx="16" cy="14.5" r="2.3" style={{ fill: "currentColor", stroke: "none" }} />
+        <path d="M5.8 14.2C5.8 11 7.3 8.6 10 7.4" />
+        <path d="M13.8 14.2C13.8 11 15.3 8.6 18 7.4" />
+      </svg>
+    );
+  }
+  if (nombre === "ajustes") {
+    // Dos deslizadores, que es lo que hay dentro (tamaño, fondo, tema).
+    return (
+      <svg {...comun}>
+        <path d="M4 8.5h16M4 15.5h16" />
+        <circle cx="9" cy="8.5" r="2.3" style={{ fill: "var(--fondo)" }} />
+        <circle cx="15" cy="15.5" r="2.3" style={{ fill: "var(--fondo)" }} />
+      </svg>
+    );
+  }
+  // Salir: una puerta abierta y una flecha que sale.
+  return (
+    <svg {...comun}>
+      <path d="M10 4.5H6.5a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2H10" />
+      <path d="M9.5 12h10M16 8.5l3.5 3.5-3.5 3.5" />
+    </svg>
+  );
+}
+
 function Header({
   user, onLogout, miRacha, onAjustes,
   questions, onAddQuestion, onUpdateQuestion, onDeleteQuestion, favoritos, onToggleFavorito,
@@ -2323,16 +2384,16 @@ function Header({
           </span>
         )}
       </div>
-      <div className="cabecera-iconos" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <button type="button" onClick={() => setMostrarRanking(true)} style={styles.iconBtn} title="Ranking">
-          <Trophy size={15} strokeWidth={1.7} color="#17171B" />
+      <div className="cabecera-iconos" style={{ display: "flex", alignItems: "center", gap: 2 }}>
+        <button type="button" onClick={() => setMostrarRanking(true)} className="boton-icono" style={styles.botonIcono} title="Ranking" aria-label="Ranking">
+          <GlifoCabecera nombre="ranking" />
         </button>
-        <button type="button" onClick={() => setMostrarBanco(true)} style={styles.iconBtn} title="Banco de preguntas">
-          <ListChecks size={15} strokeWidth={1.7} color="#17171B" />
+        <button type="button" onClick={() => setMostrarBanco(true)} className="boton-icono" style={styles.botonIcono} title="Banco de preguntas" aria-label="Banco de preguntas">
+          <GlifoCabecera nombre="banco" />
         </button>
         <div style={{ position: "relative" }}>
-          <button type="button" onClick={nuevaFrase} style={styles.iconBtn} title="Frase motivadora">
-            <Lightbulb size={15} strokeWidth={1.7} color="#17171B" />
+          <button type="button" onClick={nuevaFrase} className="boton-icono" style={styles.botonIcono} title="Frase motivadora" aria-label="Frase motivadora">
+            <GlifoCabecera nombre="frase" />
           </button>
           {mostrarFrase && (
             <>
@@ -2346,11 +2407,14 @@ function Header({
             </>
           )}
         </div>
-        <button type="button" onClick={onAjustes} style={styles.iconBtn} title="Ajustes">
-          <Settings size={15} strokeWidth={1.7} color="#17171B" />
+        <button type="button" onClick={onAjustes} className="boton-icono" style={styles.botonIcono} title="Ajustes" aria-label="Ajustes">
+          <GlifoCabecera nombre="ajustes" />
         </button>
-        <button type="button" onClick={onLogout} style={styles.iconBtn} title="Salir">
-          <LogOut size={15} strokeWidth={1.7} color="#17171B" />
+        {/* Salir cierra la sesión: va aparte, tras una raya fina como las de
+            las pestañas, para que no se pulse por error al buscar Ajustes. */}
+        <span aria-hidden="true" className="cabecera-raya" style={{ width: 1, height: 16, background: "var(--linea)", margin: "0 6px" }} />
+        <button type="button" onClick={onLogout} className="boton-icono" style={styles.botonIcono} title="Salir" aria-label="Salir">
+          <GlifoCabecera nombre="salir" />
         </button>
       </div>
       {mostrarRanking && (
@@ -7414,6 +7478,7 @@ const styles = {
   botonCerrarPantalla: { background: "var(--superficie)", color: TINTA, border: `1.5px solid ${RAYA_FUERTE}`, borderRadius: 999, padding: "0 16px", height: 44, fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "inherit" },
   btnSecondary: { background: "var(--superficie)", color: TINTA, border: `1.5px solid ${RAYA}`, borderRadius: 12, padding: "12px 18px", fontSize: 15, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center" },
   iconBtn: { background: "none", border: "none", cursor: "pointer", padding: 6, display: "inline-flex" },
+  botonIcono: { width: 36, height: 36, boxSizing: "border-box", padding: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", background: "none", border: "none", borderRadius: 10, cursor: "pointer", color: "var(--humo)", transition: "background .18s ease, color .18s ease" },
   chip: { border: "1.5px solid", borderRadius: 22, padding: "9px 18px", fontSize: 16, cursor: "pointer" },
   chipEtiqueta: { border: `1.5px solid ${RAYA}`, borderRadius: 20, padding: "5px 12px", fontSize: 12.5, fontWeight: 600, background: "var(--superficie)", color: TINTA_SUAVE, cursor: "pointer" },
   chipEtiquetaActiva: { background: TINTA, borderColor: TINTA, color: "var(--sobre-negro)" },
