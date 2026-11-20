@@ -166,6 +166,16 @@ test("Intro NO pasa de pregunta mientras no hayas contestado", () => {
   assert.deepEqual(accionDeTecla("Enter", { revelada: true, numOpciones: 4 }), { tipo: "siguiente" });
 });
 
+test("el espacio hace lo mismo que Intro: pasa solo con la pregunta contestada", () => {
+  assert.equal(accionDeTecla(" ", { revelada: false, numOpciones: 4 }), null);
+  assert.deepEqual(accionDeTecla(" ", { revelada: true, numOpciones: 4 }), { tipo: "siguiente" });
+  assert.deepEqual(accionDeTecla("Spacebar", { revelada: true, numOpciones: 4 }), { tipo: "siguiente" });
+});
+
+test("1-4 son A-D, en ese orden", () => {
+  ["1", "2", "3", "4"].forEach((t, i) => assert.deepEqual(accionDeTecla(t, { revelada: false, numOpciones: 4 }), { tipo: "elegir", indice: i }));
+});
+
 test("con la pregunta ya revelada, los números no cambian la respuesta", () => {
   assert.equal(accionDeTecla("1", { revelada: true, numOpciones: 4 }), null);
   assert.equal(accionDeTecla("3", { revelada: true, numOpciones: 4 }), null);
