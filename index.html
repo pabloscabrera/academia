@@ -51,6 +51,12 @@
         --velo: rgba(255,255,255,0.93); --velo-claro: rgba(255,255,255,0.85); --velo-vacio: rgba(255,255,255,0.5); --velo-sel: rgba(12,12,13,0.8);
         --velo-foto: rgba(0,0,0,0); --pestana-hover: #F3F2EF; --pestana-activa: #E3E2DD;
         --velo-encima: rgba(226,225,220,0.94);
+        /* La tarjeta de la pregunta en una tirada: tiene que despegarse del
+           fondo para concentrarse en ella. Con --bloque (#F3F2EF sobre
+           blanco) se confundía con la página. */
+        --tarjeta-pregunta: #E6E5DF; --borde-pregunta: rgba(12,12,13,0.07);
+        --sombra-pregunta: 0 22px 48px -28px rgba(12,12,13,0.45), 0 2px 6px rgba(12,12,13,0.05);
+        --boton-apagado: rgba(12,12,13,0.07);
       }
       html[data-tema="oscuro"] {
         color-scheme: dark;
@@ -64,6 +70,9 @@
         --velo-foto: rgba(8,8,10,0.55); --pestana-hover: #222226; --pestana-activa: #34343A;
         --velo-encima: rgba(58,58,64,0.94);
         background: #111113;
+        --tarjeta-pregunta: #2A2A30; --borde-pregunta: rgba(255,255,255,0.07);
+        --sombra-pregunta: 0 22px 48px -28px rgba(0,0,0,0.8);
+        --boton-apagado: rgba(255,255,255,0.07);
       }
       html[data-tema="oscuro"] body { background: #111113; }
       /* Los iconos de lucide reciben el color como ATRIBUTO (stroke="#…"),

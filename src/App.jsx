@@ -3153,7 +3153,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
             <div style={{ height: "100%", background: E.negro, width: `${(idx / totalPool) * 100}%`, transition: "width .3s" }} />
           </div>
         )}
-        <div style={{ marginTop: 16, background: "var(--bloque)", borderRadius: 24, padding: "clamp(20px, 4vw, 38px)" }}>
+        <div style={{ marginTop: 16, background: "var(--tarjeta-pregunta)", border: "1px solid var(--borde-pregunta)", boxShadow: "var(--sombra-pregunta)", borderRadius: 24, padding: "clamp(20px, 4vw, 38px)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
             <span style={{ fontWeight: 600, fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", color: E.niebla }}>{etiquetaOrigen(q)}</span>
             {onToggleFavorito && <FavoritoBtn pregunta={q} favoritos={favoritos} onToggle={onToggleFavorito} />}
@@ -3220,7 +3220,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
             disabled={!revealed}
             style={{
               display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", marginTop: 24,
-              background: revealed ? E.negro : "var(--linea)", color: revealed ? "var(--sobre-negro)" : E.niebla,
+              background: revealed ? E.negro : "var(--boton-apagado)", color: revealed ? "var(--sobre-negro)" : E.humo,
               padding: "18px 20px", borderRadius: 14, border: "none",
               fontWeight: 600, fontSize: 15, cursor: revealed ? "pointer" : "default", transition: "background-color .2s, color .2s",
             }}
