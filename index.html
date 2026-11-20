@@ -49,7 +49,7 @@
         --oro: #93711F; --aviso: #9C5A1F; --aviso-suave: #FBEEE0; --cautela: #8A6D1F; --cautela-suave: #FBF3DE;
         --mal: #9E2B20; --mal-suave: #FBEFED; --bien: #1B6B4F; --bien-suave: #ECF5F1;
         --velo: rgba(255,255,255,0.93); --velo-claro: rgba(255,255,255,0.85); --velo-vacio: rgba(255,255,255,0.5); --velo-sel: rgba(12,12,13,0.8);
-        --velo-foto: rgba(0,0,0,0); --pestana-hover: #F3F2EF; --pestana-activa: #E3E2DD;
+        --velo-foto: rgba(0,0,0,0); --pestana-hover: #F3F2EF; --pestana-activa: #E3E2DD; --icono-encima: #FFFFFF;
         --velo-encima: rgba(226,225,220,0.94);
         /* La tarjeta de la pregunta en una tirada: tiene que despegarse del
            fondo para concentrarse en ella. Con --bloque (#F3F2EF sobre
@@ -67,7 +67,7 @@
         --oro: #D6B25E; --aviso: #DB975F; --aviso-suave: #33261A; --cautela: #D3BA5E; --cautela-suave: #302A17;
         --mal: #D4675A; --mal-suave: #38201D; --bien: #43A97D; --bien-suave: #162B23;
         --velo: rgba(27,27,30,0.9); --velo-claro: rgba(27,27,30,0.84); --velo-vacio: rgba(27,27,30,0.55); --velo-sel: rgba(244,244,245,0.94);
-        --velo-foto: rgba(8,8,10,0.55); --pestana-hover: #222226; --pestana-activa: #34343A;
+        --velo-foto: rgba(8,8,10,0.55); --pestana-hover: #222226; --pestana-activa: #34343A; --icono-encima: #34343A;
         --velo-encima: rgba(58,58,64,0.94);
         background: #111113;
         --tarjeta-pregunta: #2A2A30; --borde-pregunta: rgba(255,255,255,0.07);
@@ -172,9 +172,9 @@
            que quepan los botones, que son lo que sí hace algo. */
         .cabecera-nombre { display: none !important; }
         .cabecera-marca { gap: 6px !important; }
-        .cabecera-iconos { gap: 0 !important; flex-shrink: 0; }
-        .cabecera-iconos button { padding: 0 !important; width: 34px !important; height: 34px !important; }
-        .cabecera-raya { margin: 0 3px !important; }
+        .cabecera-iconos { gap: 0 !important; flex-shrink: 0; padding: 2px !important; }
+        .cabecera-iconos button { padding: 0 !important; width: 31px !important; height: 31px !important; }
+        .cabecera-raya { margin: 0 2px !important; }
         .cabecera-marca { min-width: 0; flex-wrap: wrap; row-gap: 4px; }
         .nav-app { padding-left: 8px !important; padding-right: 8px !important; gap: 4px !important; }
         .nav-app button { padding: 9px 1px !important; font-size: clamp(9.5px, 2.8vw, 11.5px) !important; letter-spacing: 0 !important; text-transform: none !important; gap: 6px !important; border-radius: 8px !important; min-width: 0; }
@@ -195,14 +195,15 @@
         .cabecera-iconos, .cabecera-iconos > div { position: static !important; }
         .desplegable { left: 0 !important; right: 0 !important; width: auto !important; max-width: none !important; }
       }
-      /* Iconos de la cabecera: se oscurecen y toman el mismo bloque gris que
-         una pestaña al pasar el ratón. `any-hover` y no `hover`, porque en el
-         iPad con trackpad la entrada PRINCIPAL es táctil y `hover` no casa. */
+      /* Iconos de la cabecera: el círculo se ilumina con la superficie y una
+         sombra mínima al pasar el ratón, como la pieza elegida de un control
+         segmentado. `any-hover` y no `hover`, porque en el iPad con trackpad
+         la entrada PRINCIPAL es táctil y `hover` no casa. */
       @media (any-hover: hover) {
-        .boton-icono:hover { background: var(--pestana-hover) !important; color: var(--negro) !important; }
+        .boton-icono:hover { background: var(--icono-encima) !important; box-shadow: 0 1px 3px rgba(0,0,0,0.10); }
       }
       .boton-icono:focus-visible { outline: 1.5px solid var(--negro); outline-offset: 1px; }
-      .boton-icono:active { background: var(--pestana-activa) !important; color: var(--negro) !important; }
+      .boton-icono:active { background: var(--icono-encima) !important; box-shadow: 0 1px 3px rgba(0,0,0,0.10); }
     </style>
 
     <script>
