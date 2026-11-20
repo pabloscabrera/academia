@@ -173,7 +173,8 @@
         .cabecera-nombre { display: none !important; }
         .cabecera-marca { gap: 6px !important; }
         .cabecera-iconos { gap: 0 !important; flex-shrink: 0; }
-        .cabecera-iconos button { padding: 6px 5px !important; }
+        .cabecera-iconos button { padding: 0 !important; width: 34px !important; height: 34px !important; }
+        .cabecera-raya { margin: 0 3px !important; }
         .cabecera-marca { min-width: 0; flex-wrap: wrap; row-gap: 4px; }
         .nav-app { padding-left: 8px !important; padding-right: 8px !important; gap: 4px !important; }
         .nav-app button { padding: 9px 1px !important; font-size: clamp(9.5px, 2.8vw, 11.5px) !important; letter-spacing: 0 !important; text-transform: none !important; gap: 6px !important; border-radius: 8px !important; min-width: 0; }
@@ -194,6 +195,14 @@
         .cabecera-iconos, .cabecera-iconos > div { position: static !important; }
         .desplegable { left: 0 !important; right: 0 !important; width: auto !important; max-width: none !important; }
       }
+      /* Iconos de la cabecera: se oscurecen y toman el mismo bloque gris que
+         una pestaña al pasar el ratón. `any-hover` y no `hover`, porque en el
+         iPad con trackpad la entrada PRINCIPAL es táctil y `hover` no casa. */
+      @media (any-hover: hover) {
+        .boton-icono:hover { background: var(--pestana-hover) !important; color: var(--negro) !important; }
+      }
+      .boton-icono:focus-visible { outline: 1.5px solid var(--negro); outline-offset: 1px; }
+      .boton-icono:active { background: var(--pestana-activa) !important; color: var(--negro) !important; }
     </style>
 
     <script>

@@ -117,7 +117,10 @@ try {
   if (nav.arriba > 120) fallos.push("las pestañas no se quedan arriba al desplazar");
   if (!nav.mismaFila) fallos.push("los iconos no van en la fila de la marca");
   if (nav.iconosDerecha > 20) fallos.push("los iconos no van a la derecha");
-  if (nav.icono > 16) fallos.push("los iconos de la cabecera no son pequeños");
+  // Los glifos propios (GlifoCabecera) van en una caja de 19 px, pero el
+  // dibujo deja margen dentro de su lienzo de 24 y ocupa ~16, lo mismo que
+  // los de lucide de 15 px de antes. Lo que se vigila es que no crezcan.
+  if (nav.icono > 20) fallos.push("los iconos de la cabecera no son pequeños");
   if (nav.ancho > nav.vista) fallos.push("la página se ensancha");
   // 5) La pantalla de carga, con el JavaScript bloqueado para que se quede:
   // las letras de AUTOPIR (PIR fino) y una raya que barre; sin texto ni
