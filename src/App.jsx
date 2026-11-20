@@ -2957,6 +2957,16 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
   // lo que lee tumba la app entera (ver la regla de los hooks en CLAUDE.md).
   // Qué hace cada tecla lo decide `accionDeTecla`, que se prueba sola; aquí
   // solo quedan las guardas del navegador.
+  //
+  // Va igual que el Intro de las flashcards, que es el que se arregló para el
+  // iPad: en el iPad el foco se queda en el último botón tocado (la pestaña,
+  // "Empezar", una opción…), y la versión anterior se apartaba ante un botón
+  // con Intro para no pisarlo — así que en el iPad Intro no pasaba de
+  // pregunta. Ahora el oyente va en CAPTURA, se queda la tecla, le quita el
+  // foco al botón (si no, ese mismo Intro o espacio lo pulsaría y pasaría
+  // dos preguntas) y solo se aparta si el foco está en otra pantalla abierta
+  // encima (el Banco, el Ranking, un panel).
+  const tiradaRef = useRef(null);
   useEffect(() => {
     if (state !== "running" || !activa) return undefined;
     const alPulsar = (e) => {
@@ -2967,19 +2977,20 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
       // cantidad o de una búsqueda contestaría la pregunta.
       if (etiqueta === "input" || etiqueta === "textarea" || etiqueta === "select") return;
       if (d && d.isContentEditable) return;
-      // Con Intro sobre un botón, que lo haga el botón: si no, el mismo
-      // Intro pasaría de pregunta dos veces.
-      if (e.key === "Enter" && etiqueta === "button") return;
+      const capa = d && d.closest ? d.closest("[data-sin-deslizar]") : null;
+      if (capa && tiradaRef.current && capa !== tiradaRef.current) return;
       const q = pool[idx];
       if (!q) return;
       const accion = accionDeTecla(e.key, { revelada: revealed, numOpciones: q.opciones.length });
       if (!accion) return;
       e.preventDefault();
+      e.stopPropagation();
+      if (etiqueta === "button" && d.blur) d.blur();
       if (accion.tipo === "elegir") elegir(accion.indice);
       else next();
     };
-    window.addEventListener("keydown", alPulsar);
-    return () => window.removeEventListener("keydown", alPulsar);
+    window.addEventListener("keydown", alPulsar, true);
+    return () => window.removeEventListener("keydown", alPulsar, true);
   }, [state, activa, revealed, pool, idx, elegir, next]);
 
   if (questions.length === 0) {
@@ -3088,7 +3099,7 @@ function Simulacros({ questions, user, onStreakAnswer, onProgresoDiario, onFallo
       return E.linea;
     };
     return (
-      <div data-sin-deslizar="" style={{ fontFamily: E.texto, color: E.tinta }}>
+      <div ref={tiradaRef} data-sin-deslizar="" style={{ fontFamily: E.texto, color: E.tinta }}>
         <style>{`
           @keyframes acertarPulso {
             0% { box-shadow: 0 0 0 0 rgba(27,107,79,0.45); }

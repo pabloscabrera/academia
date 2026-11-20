@@ -20,7 +20,7 @@ await esperar(4000);
 
 // La correcta SIEMPRE es la A (índice 0), así que el test decide a voluntad
 // si acierta (tecla "1") o falla (tecla "3").
-const PREGUNTAS = Array.from({ length: 5 }, (_, i) => ({
+const PREGUNTAS = Array.from({ length: 8 }, (_, i) => ({
   id: "q" + i,
   curso: "PIR 25",
   tema: "T" + i,
@@ -79,7 +79,7 @@ const revelada = (pagina) => pagina.evaluate(`/¡Correcto!|Incorrecto\\./.test(d
 
 try {
   const { ctx, pagina, errores } = await abrir();
-  await pagina.getByLabel("Cuántas preguntas").fill("5");
+  await pagina.getByLabel("Cuántas preguntas").fill("8");
   await pagina.getByLabel("Cuántas preguntas").blur();
   await esperar(300);
   await pagina.getByRole("button", { name: "Empezar", exact: true }).click();
@@ -135,6 +135,36 @@ try {
   if (trasF !== antesF + 1) {
     throw new Error(`F) el Intro con foco en el botón saltó ${trasF - antesF} preguntas, no 1`);
   }
+
+  // --- F2) el espacio hace de Intro: no pasa sin contestar, sí después ---
+  const antesF2 = await numeroDePregunta(pagina);
+  await pagina.keyboard.press(" ");
+  await esperar(400);
+  if ((await numeroDePregunta(pagina)) !== antesF2) throw new Error("F2) el espacio pasó de pregunta sin contestar");
+  await pagina.keyboard.press("1");
+  await esperar(300);
+  await pagina.keyboard.press(" ");
+  await esperar(600);
+  const trasF2 = await numeroDePregunta(pagina);
+  console.log(`F2) espacio tras contestar: ${antesF2} -> ${trasF2}`);
+  if (trasF2 !== antesF2 + 1) throw new Error(`F2) el espacio no pasó de pregunta (${antesF2} -> ${trasF2})`);
+
+  // --- F3) como en el iPad: el foco se queda en una pestaña de arriba. Los
+  // números y el Intro tienen que seguir yendo a la pregunta, y el Intro NO
+  // puede pulsar la pestaña (eso cambiaría de sección).
+  await pagina.locator("nav.nav-app button", { hasText: "Flashcards" }).focus();
+  const antesF3 = await numeroDePregunta(pagina);
+  await pagina.keyboard.press("1");
+  await esperar(300);
+  const reveladaF3 = /¡Correcto!/.test(await pagina.evaluate("document.body.innerText"));
+  await pagina.keyboard.press("Enter");
+  await esperar(700);
+  const trasF3 = await numeroDePregunta(pagina);
+  const seccionF3 = await pagina.evaluate(() => document.querySelector("nav.nav-app button.activa")?.textContent);
+  console.log(`F3) con el foco en una pestaña: "1" ${reveladaF3 ? "contesta" : "NO contesta"}, Intro ${antesF3} -> ${trasF3}, sección ${seccionF3}`);
+  if (!reveladaF3) throw new Error('F3) con el foco en una pestaña, "1" no contestó');
+  if (trasF3 !== antesF3 + 1) throw new Error(`F3) con el foco en una pestaña, Intro no pasó una pregunta (${antesF3} -> ${trasF3})`);
+  if (!/Exámenes/i.test(seccionF3 || "")) throw new Error(`F3) el Intro pulsó la pestaña y cambió de sección: ${seccionF3}`);
 
   // --- G) escribir en un campo sigue escribiendo, no contesta ---
   // El Banco se abre ENCIMA de la tirada (`pantallaCompleta`), así que el

@@ -178,8 +178,10 @@ export function aplicarFiltroPedido(filtro, { cursos, temas }) {
 //    de tres) se ignora en vez de elegir la última.
 export const TECLAS_OPCION = ["1", "2", "3", "4"];
 
+// Intro o espacio pasan de pregunta, y solo con la pregunta ya contestada.
+export const TECLAS_SIGUIENTE = ["Enter", " ", "Spacebar"];
 export function accionDeTecla(tecla, { revelada, numOpciones }) {
-  if (tecla === "Enter") return revelada ? { tipo: "siguiente" } : null;
+  if (TECLAS_SIGUIENTE.includes(tecla)) return revelada ? { tipo: "siguiente" } : null;
   const i = TECLAS_OPCION.indexOf(tecla);
   if (i < 0 || i >= (numOpciones || 0)) return null;
   return revelada ? null : { tipo: "elegir", indice: i };
