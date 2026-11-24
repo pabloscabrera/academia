@@ -25,6 +25,7 @@ import {
   calificacionDeTecla, MS_PULSACION,
   tomarPreguntas, rgbDeHex, rankingExamenes, esBancoComoExamen,
   pestanaVecina, conResistencia, decidirPaso, umbralTrackpad, ejeDelGesto,
+  BUCKET_APUNTES, TIPOS_APUNTE, medidasReducidas, hayQueReducir, rutaApunte, apuntesDeMazo,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -409,6 +410,9 @@ export default function AcademiaPIR() {
   const [favoritos, setFavoritos] = useState([]);
   const [flashcards, setFlashcards] = useState([]);
   const [estilosMazo, setEstilosMazo] = useState([]);
+  // Las imágenes de apuntes de cada mazo (solo la ficha: mazo y ruta en el
+  // bucket; la imagen se pide al abrir el panel). Ver `supabase-apuntes.sql`.
+  const [apuntes, setApuntes] = useState([]);
   const [flashcardsProgreso, setFlashcardsProgreso] = useState([]);
   // Lo que ha fallado al guardar, para enseñarlo. Antes no había nada de esto
   // y por eso la estrella de favoritos "no funcionaba": el servidor rechazaba
@@ -469,11 +473,12 @@ export default function AcademiaPIR() {
     // la anterior, y con datos móviles eso son cuatro idas y vueltas
     // encadenadas antes de poder pintar nada.
     const cargarDatosApp = async () => {
-      const [qData, rachasRes, flashcardsRes, estilosRes] = await Promise.all([
+      const [qData, rachasRes, flashcardsRes, estilosRes, apuntesRes] = await Promise.all([
         obtenerPreguntas(),
         supabase.from("rachas").select("*"),
         fetchTodasFlashcards(),
         supabase.from("mazos_estilo").select("*"),
+        supabase.from("apuntes_mazo").select("*").order("created_at", { ascending: true }),
       ]);
       setQuestions(qData || []);
       setRachas(rachasRes.data || []);
@@ -482,6 +487,9 @@ export default function AcademiaPIR() {
       // tabla todavía no existe (migración sin ejecutar) esto llega con error y
       // se queda vacío: los mazos se ven como siempre y nada más se rompe.
       setEstilosMazo(estilosRes.error ? [] : (estilosRes.data || []));
+      // Igual: sin la migración de los apuntes esto llega con error y el botón
+      // sale sin imágenes, sin romper nada más.
+      setApuntes(apuntesRes.error ? [] : (apuntesRes.data || []));
     };
 
     let sesionAlCargar = false;
@@ -1228,19 +1236,24 @@ export default function AcademiaPIR() {
   //  - un rechazo del servidor se tragaba en un `if (!error)` y no se contaba
   //    a nadie, que es exactamente "la estrella no se pone amarilla".
   // El aviso dice qué se estaba intentando y de quién es el problema.
-  const escribir = async (queIba, consulta) => {
+  // `espera` y `avisarEspera` solo los cambia la subida de imágenes de los
+  // apuntes: una imagen de medio mega tarda más que una fila, y su panel ya
+  // dice él mismo "Subiendo 1 de 3…", así que el cartel de arriba sobra.
+  const escribir = async (queIba, consulta, { espera = ESPERA_MAX_ESCRITURA_MS, avisarEspera = true } = {}) => {
     // A los 3 s se dice que sigue en marcha. Sin esto, una escritura lenta son
     // diez segundos de botón gris sin una palabra, que por fuera es idéntico a
     // que la app se haya colgado. Va aquí y no en cada botón porque `escribir`
     // es el único sitio por donde pasan todas las escrituras.
-    const relojAviso = setTimeout(
-      () => setAviso({ texto: mensajeDeEspera(queIba), red: false, esperando: true }),
-      ESPERA_AVISO_ESCRITURA_MS
-    );
+    const relojAviso = avisarEspera
+      ? setTimeout(
+          () => setAviso({ texto: mensajeDeEspera(queIba), red: false, esperando: true }),
+          ESPERA_AVISO_ESCRITURA_MS
+        )
+      : null;
     try {
       const res = await conTiempoLimite(
         Promise.resolve(consulta),
-        ESPERA_MAX_ESCRITURA_MS,
+        espera,
         "El servidor está tardando demasiado"
       );
       if (res && res.error) throw res.error;
@@ -1255,7 +1268,7 @@ export default function AcademiaPIR() {
       setAviso({ texto: mensajeDeEscritura(err, queIba), red: esFalloDeRed(err) });
       return { ok: false, error: err };
     } finally {
-      clearTimeout(relojAviso);
+      if (relojAviso) clearTimeout(relojAviso);
     }
   };
 
@@ -1513,6 +1526,15 @@ export default function AcademiaPIR() {
       if (mover) await guardarEstiloMazo(destino, estilo);
       setEstilosMazo((prev) => prev.filter((e) => e.mazo !== viejo));
       supabase.from("mazos_estilo").delete().eq("mazo", viejo).then(() => {}, () => {});
+      // Los apuntes también siguen al mazo. Solo se pide si tiene alguno: sin
+      // la migración hecha, pedirlo siempre sacaría un aviso en cada renombrado.
+      if (apuntes.some((a) => a.mazo === viejo)) {
+        const movidos = await escribir(
+          `Mover los apuntes de "${viejo}"`,
+          supabase.from("apuntes_mazo").update({ mazo: destino }).eq("mazo", viejo)
+        );
+        if (movidos.ok) setApuntes((prev) => prev.map((a) => (a.mazo === viejo ? { ...a, mazo: destino } : a)));
+      }
       return true;
     } catch (err) {
       console.error("No se pudo renombrar el mazo:", err);
@@ -1533,6 +1555,14 @@ export default function AcademiaPIR() {
       // fila huérfana que nadie lee mientras no vuelva a existir ese nombre.
       setEstilosMazo((prev) => prev.filter((e) => e.mazo !== nombre));
       supabase.from("mazos_estilo").delete().eq("mazo", nombre).then(() => {}, () => {});
+      // Y sus apuntes: la ficha y la imagen. Como el estilo, sin esperar: si
+      // fallara quedaría una imagen que nadie ve, no un error en pantalla.
+      const suyos = apuntes.filter((a) => a.mazo === nombre);
+      if (suyos.length > 0) {
+        setApuntes((prev) => prev.filter((a) => a.mazo !== nombre));
+        supabase.from("apuntes_mazo").delete().eq("mazo", nombre).then(() => {}, () => {});
+        supabase.storage.from(BUCKET_APUNTES).remove(suyos.map((a) => a.ruta)).then(() => {}, () => {});
+      }
       // flashcards_progreso.flashcard_id ya no es una FK a flashcards(id)
       // (no puede serlo: grupo_id se repite entre las copias de una misma
       // tarjeta), así que ya no hay "on delete cascade" automático — solo se
@@ -1549,6 +1579,68 @@ export default function AcademiaPIR() {
       setFlashcardsProgreso((prev) => prev.filter((p) => !gruposHuerfanos.includes(p.flashcard_id)));
     }
     return !error;
+  };
+
+  // Sube imágenes a los apuntes de un mazo, una detrás de otra. Cada una son
+  // dos escrituras: el fichero al bucket y su ficha en `apuntes_mazo`. Si la
+  // ficha falla se borra el fichero recién subido, para no dejar imágenes que
+  // nadie ve. Para al primer fallo (el aviso ya ha salido) y devuelve cuántas
+  // entraron.
+  const subirApuntes = async (mazo, archivos, alProgresar) => {
+    const lista = Array.from(archivos || []);
+    if (!mazo || lista.length === 0) return 0;
+    // La ruta tiene que empezar por el id del usuario (lo exigen las políticas
+    // de Storage), y `user` no lo lleva: sale de la sesión.
+    let uid = null;
+    try {
+      const { data } = await supabase.auth.getSession();
+      uid = data && data.session && data.session.user && data.session.user.id;
+    } catch (err) {
+      console.error("Sin sesión para subir apuntes:", err);
+    }
+    if (!uid) {
+      setAviso({ texto: "Subir la imagen: no se encuentra la sesión. Prueba a salir y volver a entrar.", red: false });
+      return 0;
+    }
+    let subidas = 0;
+    for (let i = 0; i < lista.length; i++) {
+      if (alProgresar) alProgresar(i + 1, lista.length);
+      let imagen;
+      try {
+        imagen = await prepararImagenApunte(lista[i]);
+      } catch (err) {
+        console.error("No se pudo leer la imagen:", err);
+        setAviso({ texto: `"${lista[i].name || "La imagen"}" no se ha podido leer. Prueba con una captura de pantalla o una foto en JPG o PNG.`, red: false });
+        break;
+      }
+      const id = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : `${Date.now()}-${i}`;
+      const ruta = rutaApunte(uid, id, imagen.type);
+      const subida = await escribir(
+        "Subir la imagen",
+        supabase.storage.from(BUCKET_APUNTES).upload(ruta, imagen, { contentType: imagen.type, upsert: false }),
+        { espera: 90000, avisarEspera: false }
+      );
+      if (!subida.ok) break;
+      const ficha = await escribir("Guardar el apunte", supabase.from("apuntes_mazo").insert([{ id, mazo, ruta }]).select());
+      if (!ficha.ok) {
+        supabase.storage.from(BUCKET_APUNTES).remove([ruta]).then(() => {}, () => {});
+        break;
+      }
+      const fila = (ficha.data && ficha.data[0]) || { id, mazo, ruta, created_at: new Date().toISOString() };
+      setApuntes((prev) => [...prev, fila]);
+      subidas++;
+    }
+    return subidas;
+  };
+
+  const borrarApunte = async (apunte) => {
+    if (!apunte) return false;
+    const { ok } = await escribir("Borrar la imagen", supabase.from("apuntes_mazo").delete().eq("id", apunte.id));
+    if (!ok) return false;
+    setApuntes((prev) => prev.filter((a) => a.id !== apunte.id));
+    // El fichero, sin esperar: si se quedara, sería una imagen que nadie ve.
+    supabase.storage.from(BUCKET_APUNTES).remove([apunte.ruta]).then(() => {}, () => {});
+    return true;
   };
 
   let contenido;
@@ -1626,6 +1718,9 @@ export default function AcademiaPIR() {
               onCopiarFlashcard={copiarFlashcard}
               estilosMazo={estilosMazo}
               onEstiloMazo={guardarEstiloMazo}
+              apuntes={apuntes}
+              onSubirApuntes={subirApuntes}
+              onBorrarApunte={borrarApunte}
             />
             </PestanaActiva.Provider>
             </div>
@@ -5302,7 +5397,7 @@ function GrupoEstadistica({ titulo, filas }) {
   );
 }
 
-function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo, onCopiarMazo, onCopiarFlashcard, estilosMazo, onEstiloMazo }) {
+function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepaso, onUpdate, onAdd, onAddBulk, onDelete, onRenombrarMazo, onEliminarMazo, onCopiarMazo, onCopiarFlashcard, estilosMazo, onEstiloMazo, apuntes, onSubirApuntes, onBorrarApunte }) {
   const activa = React.useContext(PestanaActiva);
   const hoy = new Date().toISOString().slice(0, 10);
   // Mismo techo que se aplicará al pulsar, para que lo que anuncia el botón
@@ -6221,6 +6316,17 @@ function Flashcards({ user, flashcards, progreso, repasos, fechaObjetivo, onRepa
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
               <NuevaFlashcard onAdd={onAdd} mazoFijo={mazoActivo || undefined} etiquetasExistentes={todasLasEtiquetas} />
               <ImportarFlashcards onAddBulk={onAddBulk} mazoFijo={mazoActivo || undefined} etiquetasExistentes={todasLasEtiquetas} />
+              {/* Solo dentro de un mazo: en "Todas las tarjetas" no hay un
+                  mazo al que colgarle la imagen. */}
+              {mazoActivo && (
+                <ApuntesMazo
+                  key={mazoActivo}
+                  mazo={mazoActivo}
+                  apuntes={apuntesDeMazo(apuntes, mazoActivo)}
+                  onSubir={onSubirApuntes}
+                  onBorrar={onBorrarApunte}
+                />
+              )}
             </div>
             <div style={{ position: "relative", marginBottom: 14 }}>
               <Search size={16} color="#A2A2AB" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
@@ -6931,6 +7037,250 @@ function ImportarFlashcards({ onAddBulk, mazoFijo, etiquetasExistentes }) {
         <button type="button" onClick={() => { setTexto(""); setResultado(null); setAbierto(false); }} style={styles.btnSecondary}>Cancelar</button>
       </div>
     </Card>
+  );
+}
+
+// ---------- Apuntes de un mazo ----------
+// La imagen de la tabla o diapositiva de la que salen las tarjetas, para
+// repasar mirando la fuente y memorizar la tabla entera, no solo tarjeta a
+// tarjeta. Van en un bucket PRIVADO (son diapositivas de una academia): cada
+// imagen se pide con una URL firmada que caduca. Ver `supabase-apuntes.sql`.
+
+// Seis horas: da para una tarde de estudio con el panel abierto. Al cerrarlo
+// se olvidan, así que al reabrirlo se firman de nuevo.
+const DURACION_FIRMA_APUNTES = 6 * 3600;
+
+async function firmarApuntes(rutas) {
+  const { data, error } = await conTiempoLimite(
+    supabase.storage.from(BUCKET_APUNTES).createSignedUrls(rutas, DURACION_FIRMA_APUNTES),
+    ESPERA_MAX_CARGA_MS,
+    "El servidor está tardando demasiado"
+  );
+  if (error) throw error;
+  const urls = {};
+  for (const fila of data || []) {
+    if (fila && !fila.error && fila.path && fila.signedUrl) urls[fila.path] = fila.signedUrl;
+  }
+  return urls;
+}
+
+function cargarImagen(archivo) {
+  return new Promise((resolver, rechazar) => {
+    const url = URL.createObjectURL(archivo);
+    const img = new window.Image();
+    img.onload = () => resolver({ img, url });
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      rechazar(new Error("El navegador no puede leer esta imagen"));
+    };
+    img.src = url;
+  });
+}
+
+// Deja la imagen lista para subir. Una captura pequeña en PNG va tal cual (es
+// una tabla con letra y en JPEG se emborrona); lo que pesa mucho, es enorme o
+// viene en un formato que el bucket no admite (el HEIC de la cámara) se pasa
+// a JPEG con el lado mayor en MAX_LADO_APUNTE. Ver `hayQueReducir`.
+async function prepararImagenApunte(archivo) {
+  let cargada;
+  try {
+    cargada = await cargarImagen(archivo);
+  } catch (err) {
+    // Si no se puede pintar no se puede reducir; si al menos el bucket la
+    // admite, se sube como viene.
+    if (TIPOS_APUNTE.includes(archivo.type)) return archivo;
+    throw err;
+  }
+  const { img, url } = cargada;
+  try {
+    const ancho = img.naturalWidth;
+    const alto = img.naturalHeight;
+    if (!hayQueReducir({ tipo: archivo.type, bytes: archivo.size, ancho, alto })) return archivo;
+    const medidas = medidasReducidas(ancho, alto);
+    if (!medidas) throw new Error("La imagen no tiene medidas");
+    const lienzo = document.createElement("canvas");
+    lienzo.width = medidas.ancho;
+    lienzo.height = medidas.alto;
+    const ctx = lienzo.getContext("2d");
+    // Fondo blanco: un PNG con transparencias pasado a JPEG saldría en negro.
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, medidas.ancho, medidas.alto);
+    ctx.drawImage(img, 0, 0, medidas.ancho, medidas.alto);
+    const blob = await new Promise((resolver) => lienzo.toBlob(resolver, "image/jpeg", 0.9));
+    if (blob) return blob;
+    if (TIPOS_APUNTE.includes(archivo.type)) return archivo;
+    throw new Error("No se pudo convertir la imagen");
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function ApuntesMazo({ mazo, apuntes, onSubir, onBorrar }) {
+  const [abierto, setAbierto] = useState(false);
+  const [urls, setUrls] = useState({});
+  const [errorCarga, setErrorCarga] = useState(false);
+  const [intento, setIntento] = useState(0);
+  const [progreso, setProgreso] = useState(null); // { hecho, total } mientras sube
+  const [confirmar, setConfirmar] = useState(null); // id de la imagen a borrar
+  const [borrando, setBorrando] = useState(false);
+  const [ampliado, setAmpliado] = useState(null);
+  const selectorRef = useRef(null);
+  const claveRutas = apuntes.map((a) => a.ruta).join("|");
+
+  // Las URLs se piden al abrir el panel, no al cargar la app: firmar todas las
+  // imágenes de todos los mazos en cada arranque sería pagar por lo que no se
+  // mira.
+  useEffect(() => {
+    if (!abierto) return undefined;
+    const faltan = apuntes.map((a) => a.ruta).filter((r) => !urls[r]);
+    if (faltan.length === 0) return undefined;
+    let vivo = true;
+    setErrorCarga(false);
+    firmarApuntes(faltan).then(
+      (nuevas) => { if (vivo) setUrls((prev) => ({ ...prev, ...nuevas })); },
+      (err) => {
+        console.error("No se pudieron cargar los apuntes:", err);
+        if (vivo) setErrorCarga(true);
+      }
+    );
+    return () => { vivo = false; };
+    // `urls` fuera a propósito: lo que cambia `urls` es esta misma petición.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abierto, claveRutas, intento]);
+
+  const elegirArchivos = async (e) => {
+    const archivos = Array.from(e.target.files || []);
+    // Vaciado para que elegir otra vez la misma imagen vuelva a avisar.
+    e.target.value = "";
+    if (archivos.length === 0) return;
+    setProgreso({ hecho: 1, total: archivos.length });
+    try {
+      await onSubir(mazo, archivos, (hecho, total) => setProgreso({ hecho, total }));
+    } finally {
+      setProgreso(null);
+    }
+  };
+
+  const borrar = async (apunte) => {
+    const ok = await conBandera(setBorrando, () => onBorrar(apunte));
+    if (ok) setConfirmar(null);
+  };
+
+  const cerrar = () => {
+    setAbierto(false);
+    setConfirmar(null);
+    setUrls({});
+  };
+
+  if (!abierto) {
+    return (
+      <button type="button" onClick={() => setAbierto(true)} style={styles.btnSecondary}>
+        <FileText size={14} style={{ marginRight: 4 }} /> Apuntes{apuntes.length > 0 ? ` (${apuntes.length})` : ""}
+      </button>
+    );
+  }
+
+  const urlAmpliada = ampliado && urls[ampliado.ruta];
+  return (
+    <Card style={{ marginBottom: 14, borderLeft: "3px solid #8A5A9E", width: "100%" }}>
+      <FieldLabel>Apuntes de este mazo</FieldLabel>
+      <p style={{ fontSize: 12.5, color: TINTA_SUAVE, margin: "0 0 12px" }}>
+        {apuntes.length === 0
+          ? "Todavía no hay ninguna imagen. Añade la captura de la tabla de la que salen estas tarjetas y la tendrás aquí al repasar."
+          : "La tabla de la que salen estas tarjetas. Tócala para verla en grande."}
+      </p>
+      {errorCarga && (
+        <p style={{ fontSize: 13, color: ACENTO, margin: "0 0 12px" }}>
+          No se han podido cargar las imágenes. Comprueba la conexión.{" "}
+          <button type="button" onClick={() => setIntento((n) => n + 1)} style={{ ...styles.linkBtn, padding: 0 }}>Reintentar</button>
+        </p>
+      )}
+      {apuntes.map((a) => (
+        <figure key={a.id} style={{ margin: "0 0 16px" }}>
+          {urls[a.ruta] ? (
+            <img
+              src={urls[a.ruta]}
+              alt={`Apunte del mazo ${mazo}`}
+              loading="lazy"
+              onClick={() => setAmpliado(a)}
+              style={{ width: "100%", display: "block", borderRadius: 10, border: `1px solid ${RAYA}`, background: "#ffffff", cursor: "zoom-in" }}
+            />
+          ) : (
+            <div style={{ height: 160, borderRadius: 10, background: "var(--bloque)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: TINTA_SUAVE }}>
+              {errorCarga ? "Sin cargar" : "Cargando…"}
+            </div>
+          )}
+          <figcaption style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginTop: 6, fontSize: 13 }}>
+            {confirmar === a.id ? (
+              <>
+                <span style={{ color: TINTA_SUAVE }}>¿Borrar esta imagen?</span>
+                <button type="button" disabled={borrando} onClick={() => borrar(a)} style={{ ...styles.linkBtn, padding: 0 }}>
+                  {borrando ? "Borrando…" : "Sí, borrar"}
+                </button>
+                <button type="button" onClick={() => setConfirmar(null)} style={{ ...styles.linkBtn, padding: 0, color: TINTA_SUAVE }}>No</button>
+              </>
+            ) : (
+              <button type="button" onClick={() => setConfirmar(a.id)} style={{ ...styles.linkBtn, padding: 0, color: TINTA_SUAVE, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <Trash2 size={13} /> Borrar imagen
+              </button>
+            )}
+          </figcaption>
+        </figure>
+      ))}
+      <input ref={selectorRef} type="file" accept="image/*" multiple onChange={elegirArchivos} style={{ display: "none" }} />
+      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+        <button
+          type="button"
+          onClick={() => selectorRef.current && selectorRef.current.click()}
+          disabled={!!progreso}
+          style={{ ...styles.btnPrimary, flex: 1, opacity: progreso ? 0.6 : 1 }}
+        >
+          {progreso
+            ? `Subiendo ${progreso.hecho} de ${progreso.total}…`
+            : <><Plus size={15} style={{ marginRight: 4 }} /> Añadir imagen</>}
+        </button>
+        <button type="button" onClick={cerrar} style={styles.btnSecondary}>Cerrar</button>
+      </div>
+      {urlAmpliada && <VisorApunte url={urlAmpliada} titulo={`Apunte del mazo ${mazo}`} onCerrar={() => setAmpliado(null)} />}
+    </Card>
+  );
+}
+
+// La imagen en grande, a pantalla completa. Tocarla alterna entre verla
+// entera y verla al doble para leer la letra pequeña (desplazándose); en el
+// iPad además se puede pellizcar. Lleva `data-sin-deslizar` para que arrastrar
+// por la imagen no cambie de pestaña.
+function VisorApunte({ url, titulo, onCerrar }) {
+  const [ampliada, setAmpliada] = useState(false);
+  useEffect(() => {
+    const alPulsar = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCerrar();
+      }
+    };
+    window.addEventListener("keydown", alPulsar);
+    return () => window.removeEventListener("keydown", alPulsar);
+  }, [onCerrar]);
+  return (
+    <div data-sin-deslizar role="dialog" aria-label={titulo} style={{ position: "fixed", inset: 0, zIndex: 55, background: "rgba(12, 12, 13, 0.94)", display: "flex", flexDirection: "column" }}>
+      <div style={{ ...styles.pantallaCompletaCierre, justifyContent: "space-between", alignItems: "center", paddingBottom: 10 }}>
+        <span style={{ color: "#ffffff", fontSize: 13, opacity: 0.75 }}>{ampliada ? "Toca para verla entera" : "Toca para ampliar"}</span>
+        <button type="button" onClick={onCerrar} style={styles.botonCerrarPantalla}>
+          <X size={17} /> Cerrar
+        </button>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, overflow: "auto", WebkitOverflowScrolling: "touch", display: ampliada ? "block" : "flex", alignItems: "center", justifyContent: "center", padding: "0 12px 16px" }}>
+        <img
+          src={url}
+          alt={titulo}
+          onClick={() => setAmpliada((v) => !v)}
+          style={ampliada
+            ? { width: "200%", maxWidth: "none", display: "block", cursor: "zoom-out", background: "#ffffff" }
+            : { maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block", cursor: "zoom-in", background: "#ffffff" }}
+        />
+      </div>
+    </div>
   );
 }
 
