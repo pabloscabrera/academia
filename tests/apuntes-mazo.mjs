@@ -99,13 +99,36 @@ assert.equal(await imgs.count(), 1, "no se ve la imagen guardada");
 assert.match(await imgs.first().getAttribute("src"), /object\/sign\/apuntes\/u1\/ap0\.png\?token=t/);
 assert.ok(await imgs.first().evaluate((i) => i.complete && i.naturalWidth > 0), "la imagen no llegó a cargar");
 
-// 3. Verla en grande y cerrar con Escape.
+// 3. Verla en grande: tocarla NO amplía (eso es pellizcar), el trackpad sí,
+//    arrastrarla hacia abajo la cierra, y Escape también.
+const dialogo = pagina.getByRole("dialog");
+const escalaVisor = () => pagina.evaluate(() => {
+  const m = /scale\(([-\d.e]+)\)/.exec(document.querySelector('[role="dialog"] img').style.transform);
+  return m ? Number(m[1]) : null;
+});
 await imgs.first().click();
+await esperar(400);
+assert.equal(await dialogo.count(), 1, "no se abre la imagen en grande");
+await pagina.mouse.click(500, 500);
 await esperar(300);
-assert.equal(await pagina.getByRole("dialog").count(), 1, "no se abre la imagen en grande");
+assert.equal(await escalaVisor(), 1, "tocar la imagen la ha ampliado");
+assert.equal(await dialogo.count(), 1, "tocar la imagen la ha cerrado");
+for (let i = 0; i < 8; i++) {
+  await pagina.evaluate(() => document.querySelector('[role="dialog"]').dispatchEvent(
+    new WheelEvent("wheel", { bubbles: true, cancelable: true, clientX: 500, clientY: 500, deltaY: -20, ctrlKey: true })));
+}
+assert.ok((await escalaVisor()) > 1.5, "el pellizco del trackpad no amplía");
 await pagina.keyboard.press("Escape");
-await esperar(300);
-assert.equal(await pagina.getByRole("dialog").count(), 0, "Escape no cierra la imagen en grande");
+await esperar(400);
+assert.equal(await dialogo.count(), 0, "Escape no cierra la imagen en grande");
+await imgs.first().click();
+await esperar(400);
+await pagina.mouse.move(500, 400);
+await pagina.mouse.down();
+for (let i = 1; i <= 10; i++) { await pagina.mouse.move(500, 400 + i * 30); await esperar(16); }
+await pagina.mouse.up();
+await esperar(400);
+assert.equal(await dialogo.count(), 0, "arrastrar hacia abajo no cierra la imagen en grande");
 
 // 4. Subir otra: un PNG pequeño va tal cual, a la carpeta del usuario, y su
 //    ficha lleva el mazo.

@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { flushSync } from "react-dom";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { flushSync, createPortal } from "react-dom";
 import { Activity, ArrowDownUp, Award, Baby, BookOpen, Bookmark, Brain, Check, ChevronDown, ChevronLeft, ChevronRight, Clock, CloudOff, Compass, Copy, Crown, Eye, FileText, Flag, Flame, Folder, FolderOpen, Gem, Heart, Layers, Lightbulb, ListChecks, Loader2, LogOut, Medal, MessageCircle, Microscope, MoreHorizontal, FolderPlus, Palette, Pencil, Percent, Plus, Puzzle, RotateCw, Search, Settings, Sparkles, Star, Stethoscope, Tag, Sword, Swords, Target, Trash2, Trophy, User, Users, X, Zap } from "lucide-react";
 import { supabase } from "./supabaseClient";
 import { leerPreguntasCache, guardarPreguntasCache, borrarPreguntasCache } from "./cachePreguntas";
@@ -26,6 +26,8 @@ import {
   tomarPreguntas, rgbDeHex, rankingExamenes, esBancoComoExamen,
   pestanaVecina, conResistencia, decidirPaso, umbralTrackpad, ejeDelGesto,
   BUCKET_APUNTES, TIPOS_APUNTE, medidasReducidas, hayQueReducir, rutaApunte, apuntesDeMazo,
+  encajarImagen, vistaDePellizco, zoomAlrededor, encuadrarVista, vistaDeArrastre, opacidadFondoVisor, cierraVisor,
+  leerMedidasApuntes, conMedidaApunte, urlFirmadaVigente, ESCALA_MAX_VISOR, ESCALA_MIN_GESTO_VISOR,
 } from "./logica";
 
 const ADMIN_NAME = "pabloadmin";
@@ -1605,14 +1607,15 @@ export default function AcademiaPIR() {
     let subidas = 0;
     for (let i = 0; i < lista.length; i++) {
       if (alProgresar) alProgresar(i + 1, lista.length);
-      let imagen;
+      let preparada;
       try {
-        imagen = await prepararImagenApunte(lista[i]);
+        preparada = await prepararImagenApunte(lista[i]);
       } catch (err) {
         console.error("No se pudo leer la imagen:", err);
         setAviso({ texto: `"${lista[i].name || "La imagen"}" no se ha podido leer. Prueba con una captura de pantalla o una foto en JPG o PNG.`, red: false });
         break;
       }
+      const imagen = preparada.datos;
       const id = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : `${Date.now()}-${i}`;
       const ruta = rutaApunte(uid, id, imagen.type);
       const subida = await escribir(
@@ -1626,6 +1629,8 @@ export default function AcademiaPIR() {
         supabase.storage.from(BUCKET_APUNTES).remove([ruta]).then(() => {}, () => {});
         break;
       }
+      // Con sus medidas apuntadas, el panel le reserva el hueco y no salta.
+      guardarMedidaApunte(ruta, preparada.ancho, preparada.alto);
       const fila = (ficha.data && ficha.data[0]) || { id, mazo, ruta, created_at: new Date().toISOString() };
       setApuntes((prev) => [...prev, fila]);
       subidas++;
@@ -7046,9 +7051,18 @@ function ImportarFlashcards({ onAddBulk, mazoFijo, etiquetasExistentes }) {
 // tarjeta. Van en un bucket PRIVADO (son diapositivas de una academia): cada
 // imagen se pide con una URL firmada que caduca. Ver `supabase-apuntes.sql`.
 
-// Seis horas: da para una tarde de estudio con el panel abierto. Al cerrarlo
-// se olvidan, así que al reabrirlo se firman de nuevo.
+// Seis horas: da para una tarde de estudio.
 const DURACION_FIRMA_APUNTES = 6 * 3600;
+
+// Las URLs firmadas se guardan aquí mientras sigan valiendo, y no en el
+// estado del panel: así, al volver a abrirlo, la imagen sale al momento (el
+// navegador ya la tiene con esa misma URL) en vez de pasar otra vez por
+// "Cargando…".
+const URLS_APUNTES = new Map(); // ruta → { url, caduca }
+
+function urlApunte(ruta) {
+  return urlFirmadaVigente(URLS_APUNTES.get(ruta), Date.now());
+}
 
 async function firmarApuntes(rutas) {
   const { data, error } = await conTiempoLimite(
@@ -7057,11 +7071,49 @@ async function firmarApuntes(rutas) {
     "El servidor está tardando demasiado"
   );
   if (error) throw error;
+  const caduca = Date.now() + DURACION_FIRMA_APUNTES * 1000;
   const urls = {};
   for (const fila of data || []) {
-    if (fila && !fila.error && fila.path && fila.signedUrl) urls[fila.path] = fila.signedUrl;
+    if (fila && !fila.error && fila.path && fila.signedUrl) {
+      urls[fila.path] = fila.signedUrl;
+      URLS_APUNTES.set(fila.path, { url: fila.signedUrl, caduca });
+    }
   }
   return urls;
+}
+
+// Las medidas de cada imagen ya vista, en el aparato, para reservarle el
+// hueco antes de que llegue: sin eso el panel saltaba al abrirse ("Cargando…",
+// luego nada y luego la imagen). Ver `leerMedidasApuntes`.
+const CLAVE_MEDIDAS_APUNTES = "pir-apuntes-medidas";
+let medidasApuntes = null;
+
+function todasLasMedidasApuntes() {
+  if (medidasApuntes) return medidasApuntes;
+  try {
+    medidasApuntes = leerMedidasApuntes(window.localStorage.getItem(CLAVE_MEDIDAS_APUNTES));
+  } catch {
+    medidasApuntes = {};
+  }
+  return medidasApuntes;
+}
+
+function medidaApunte(ruta) {
+  return todasLasMedidasApuntes()[ruta] || null;
+}
+
+// Devuelve true si ha cambiado algo (para volver a dibujar).
+function guardarMedidaApunte(ruta, ancho, alto) {
+  const antes = todasLasMedidasApuntes();
+  const despues = conMedidaApunte(antes, ruta, ancho, alto);
+  if (despues === antes) return false;
+  medidasApuntes = despues;
+  try {
+    window.localStorage.setItem(CLAVE_MEDIDAS_APUNTES, JSON.stringify(despues));
+  } catch {
+    // Sin almacenamiento (navegación privada…): se queda en memoria.
+  }
+  return true;
 }
 
 function cargarImagen(archivo) {
@@ -7077,10 +7129,11 @@ function cargarImagen(archivo) {
   });
 }
 
-// Deja la imagen lista para subir. Una captura pequeña en PNG va tal cual (es
-// una tabla con letra y en JPEG se emborrona); lo que pesa mucho, es enorme o
-// viene en un formato que el bucket no admite (el HEIC de la cámara) se pasa
-// a JPEG con el lado mayor en MAX_LADO_APUNTE. Ver `hayQueReducir`.
+// Deja la imagen lista para subir y dice sus medidas. Una captura pequeña en
+// PNG va tal cual (es una tabla con letra y en JPEG se emborrona); lo que pesa
+// mucho, es enorme o viene en un formato que el bucket no admite (el HEIC de
+// la cámara) se pasa a JPEG con el lado mayor en MAX_LADO_APUNTE. Ver
+// `hayQueReducir`.
 async function prepararImagenApunte(archivo) {
   let cargada;
   try {
@@ -7088,14 +7141,14 @@ async function prepararImagenApunte(archivo) {
   } catch (err) {
     // Si no se puede pintar no se puede reducir; si al menos el bucket la
     // admite, se sube como viene.
-    if (TIPOS_APUNTE.includes(archivo.type)) return archivo;
+    if (TIPOS_APUNTE.includes(archivo.type)) return { datos: archivo, ancho: null, alto: null };
     throw err;
   }
   const { img, url } = cargada;
   try {
     const ancho = img.naturalWidth;
     const alto = img.naturalHeight;
-    if (!hayQueReducir({ tipo: archivo.type, bytes: archivo.size, ancho, alto })) return archivo;
+    if (!hayQueReducir({ tipo: archivo.type, bytes: archivo.size, ancho, alto })) return { datos: archivo, ancho, alto };
     const medidas = medidasReducidas(ancho, alto);
     if (!medidas) throw new Error("La imagen no tiene medidas");
     const lienzo = document.createElement("canvas");
@@ -7107,8 +7160,8 @@ async function prepararImagenApunte(archivo) {
     ctx.fillRect(0, 0, medidas.ancho, medidas.alto);
     ctx.drawImage(img, 0, 0, medidas.ancho, medidas.alto);
     const blob = await new Promise((resolver) => lienzo.toBlob(resolver, "image/jpeg", 0.9));
-    if (blob) return blob;
-    if (TIPOS_APUNTE.includes(archivo.type)) return archivo;
+    if (blob) return { datos: blob, ancho: medidas.ancho, alto: medidas.alto };
+    if (TIPOS_APUNTE.includes(archivo.type)) return { datos: archivo, ancho, alto };
     throw new Error("No se pudo convertir la imagen");
   } finally {
     URL.revokeObjectURL(url);
@@ -7123,16 +7176,18 @@ function ApuntesMazo({ mazo, apuntes, onSubir, onBorrar }) {
   const [progreso, setProgreso] = useState(null); // { hecho, total } mientras sube
   const [confirmar, setConfirmar] = useState(null); // id de la imagen a borrar
   const [borrando, setBorrando] = useState(false);
-  const [ampliado, setAmpliado] = useState(null);
+  const [ampliado, setAmpliado] = useState(null); // { apunte, origen, medidas }
+  const [, setMedidasVersion] = useState(0);
   const selectorRef = useRef(null);
   const claveRutas = apuntes.map((a) => a.ruta).join("|");
+  const urlDe = (ruta) => urls[ruta] || urlApunte(ruta);
 
   // Las URLs se piden al abrir el panel, no al cargar la app: firmar todas las
   // imágenes de todos los mazos en cada arranque sería pagar por lo que no se
-  // mira.
+  // mira. Las que ya se firmaron y siguen valiendo no se vuelven a pedir.
   useEffect(() => {
     if (!abierto) return undefined;
-    const faltan = apuntes.map((a) => a.ruta).filter((r) => !urls[r]);
+    const faltan = apuntes.map((a) => a.ruta).filter((r) => !urlDe(r));
     if (faltan.length === 0) return undefined;
     let vivo = true;
     setErrorCarga(false);
@@ -7169,7 +7224,10 @@ function ApuntesMazo({ mazo, apuntes, onSubir, onBorrar }) {
   const cerrar = () => {
     setAbierto(false);
     setConfirmar(null);
-    setUrls({});
+  };
+
+  const medir = (ruta, ancho, alto) => {
+    if (guardarMedidaApunte(ruta, ancho, alto)) setMedidasVersion((n) => n + 1);
   };
 
   if (!abierto) {
@@ -7180,7 +7238,7 @@ function ApuntesMazo({ mazo, apuntes, onSubir, onBorrar }) {
     );
   }
 
-  const urlAmpliada = ampliado && urls[ampliado.ruta];
+  const urlAmpliada = ampliado && urlDe(ampliado.apunte.ruta);
   return (
     <Card style={{ marginBottom: 14, borderLeft: "3px solid #8A5A9E", width: "100%" }}>
       <FieldLabel>Apuntes de este mazo</FieldLabel>
@@ -7197,19 +7255,14 @@ function ApuntesMazo({ mazo, apuntes, onSubir, onBorrar }) {
       )}
       {apuntes.map((a) => (
         <figure key={a.id} style={{ margin: "0 0 16px" }}>
-          {urls[a.ruta] ? (
-            <img
-              src={urls[a.ruta]}
-              alt={`Apunte del mazo ${mazo}`}
-              loading="lazy"
-              onClick={() => setAmpliado(a)}
-              style={{ width: "100%", display: "block", borderRadius: 10, border: `1px solid ${RAYA}`, background: "#ffffff", cursor: "zoom-in" }}
-            />
-          ) : (
-            <div style={{ height: 160, borderRadius: 10, background: "var(--bloque)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: TINTA_SUAVE }}>
-              {errorCarga ? "Sin cargar" : "Cargando…"}
-            </div>
-          )}
+          <MiniaturaApunte
+            url={urlDe(a.ruta)}
+            medidas={medidaApunte(a.ruta)}
+            alt={`Apunte del mazo ${mazo}`}
+            error={errorCarga}
+            onMedir={(ancho, alto) => medir(a.ruta, ancho, alto)}
+            onAbrir={(img) => setAmpliado({ apunte: a, origen: img, medidas: [img.naturalWidth, img.naturalHeight] })}
+          />
           <figcaption style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginTop: 6, fontSize: 13 }}>
             {confirmar === a.id ? (
               <>
@@ -7241,46 +7294,501 @@ function ApuntesMazo({ mazo, apuntes, onSubir, onBorrar }) {
         </button>
         <button type="button" onClick={cerrar} style={styles.btnSecondary}>Cerrar</button>
       </div>
-      {urlAmpliada && <VisorApunte url={urlAmpliada} titulo={`Apunte del mazo ${mazo}`} onCerrar={() => setAmpliado(null)} />}
+      {urlAmpliada && (
+        <VisorApunte
+          url={urlAmpliada}
+          titulo={`Apunte del mazo ${mazo}`}
+          origen={ampliado.origen}
+          medidas={ampliado.medidas}
+          onCerrar={() => setAmpliado(null)}
+        />
+      )}
     </Card>
   );
 }
 
-// La imagen en grande, a pantalla completa. Tocarla alterna entre verla
-// entera y verla al doble para leer la letra pequeña (desplazándose); en el
-// iPad además se puede pellizcar. Lleva `data-sin-deslizar` para que arrastrar
-// por la imagen no cambie de pestaña.
-function VisorApunte({ url, titulo, onCerrar }) {
-  const [ampliada, setAmpliada] = useState(false);
+// La miniatura del panel. Su hueco se reserva con las medidas guardadas (o
+// apaisado mientras no se conocen), y la imagen aparece con un fundido cuando
+// ha llegado entera: nada se mueve de sitio al cargar.
+function MiniaturaApunte({ url, medidas, alt, error, onMedir, onAbrir }) {
+  const imgRef = useRef(null);
+  const [cargada, setCargada] = useState(false);
+  // Una imagen que el navegador ya tenía puede llegar antes de que se
+  // enganche el aviso de carga.
+  useLayoutEffect(() => {
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) {
+      setCargada(true);
+      onMedir(img.naturalWidth, img.naturalHeight);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url]);
+  const proporcion = medidas ? medidas[0] / medidas[1] : 16 / 9;
+  return (
+    <button
+      type="button"
+      onClick={() => { if (cargada && imgRef.current) onAbrir(imgRef.current); }}
+      aria-label="Ver la imagen en grande"
+      style={{ display: "block", position: "relative", width: "100%", aspectRatio: String(proporcion), padding: 0, border: `1px solid ${RAYA}`, borderRadius: 10, overflow: "hidden", background: cargada ? "#ffffff" : "var(--bloque)", cursor: cargada ? "zoom-in" : "default", fontFamily: "inherit" }}
+    >
+      {url && (
+        <img
+          ref={imgRef}
+          src={url}
+          alt={alt}
+          draggable={false}
+          onLoad={(e) => {
+            setCargada(true);
+            onMedir(e.currentTarget.naturalWidth, e.currentTarget.naturalHeight);
+          }}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "contain", opacity: cargada ? 1 : 0, transition: "opacity 0.2s ease" }}
+        />
+      )}
+      {!cargada && (
+        <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, color: TINTA_SUAVE }}>
+          {error ? "Sin cargar" : "Cargando…"}
+        </span>
+      )}
+    </button>
+  );
+}
+
+const MS_ABRIR_VISOR = 280;
+const MS_CERRAR_VISOR = 220;
+const MS_ASENTAR_VISOR = 240;
+const CURVA_VISOR = "cubic-bezier(0.2, 0.8, 0.2, 1)";
+const MARGEN_VISOR = 12;
+
+function prefiereSinMovimiento() {
+  try {
+    return !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  } catch {
+    return false;
+  }
+}
+
+// La imagen a pantalla completa, como en Fotos: se abre creciendo desde la
+// miniatura, se amplía PELLIZCANDO (con dos dedos o con el trackpad), se
+// mueve con un dedo cuando está ampliada y se cierra arrastrándola hacia
+// arriba o hacia abajo. Tocarla no hace nada a propósito: el "toca para
+// ampliar" de antes se cruzaba con el pellizco y lo hacía ir a tirones.
+//
+// Tres decisiones que no conviene deshacer:
+//  1. Todo el gesto lo lleva la página (`touch-action: none` en toda la capa,
+//     y `gesturestart` cancelado para Safari). Si se deja al navegador, el
+//     pellizco amplía la PÁGINA entera, no la imagen, y la capa fija se
+//     descoloca dejando ver lo de detrás (es lo que salía en el vídeo).
+//  2. La imagen se mueve tocando `el.style` y como mucho una vez por
+//     fotograma, sin estado de React: un render por cada `pointermove` no va
+//     fluido (lo mismo que con las pestañas).
+//  3. Va en un portal a `document.body`: un `transform` en un antepasado (el
+//     `<main>` mientras pasa de pestaña) volvería relativo el `position:
+//     fixed` y la capa no cubriría la pantalla.
+function VisorApunte({ url, titulo, origen, medidas, onCerrar }) {
+  const raizRef = useRef(null);
+  const cabeceraRef = useRef(null);
+  const escenarioRef = useRef(null);
+  const imgRef = useRef(null);
+  const cerrarRef = useRef(onCerrar);
+  cerrarRef.current = onCerrar;
+  const g = useRef(null);
+  if (!g.current) {
+    g.current = {
+      natural: medidas && medidas[0] > 0 && medidas[1] > 0 ? medidas : null,
+      base: null,
+      escenario: null,
+      vista: { escala: 1, x: 0, y: 0 },
+      fondo: 1,
+      punteros: new Map(),
+      modo: null,
+      inicio: null,
+      historia: [],
+      gesto: null,
+      rueda: null,
+      cerrando: false,
+      marco: 0,
+      pendiente: false,
+      reposo: 0,
+      temporizadores: [],
+    };
+  }
+
+  const pintar = (ms = 0) => {
+    const s = g.current;
+    const img = imgRef.current;
+    const raiz = raizRef.current;
+    if (!img || !raiz) return;
+    const v = s.vista;
+    img.style.transition = ms > 0 ? `transform ${ms}ms ${CURVA_VISOR}` : "none";
+    img.style.transform = `translate3d(${v.x}px, ${v.y}px, 0) scale(${v.escala})`;
+    // `will-change` solo mientras se mueve: con él puesto el navegador guarda
+    // la imagen al tamaño de antes de ampliar y, quieta a ×4, la letra sale
+    // borrosa. Al pararse se quita y se vuelve a dibujar nítida.
+    img.style.willChange = "transform";
+    clearTimeout(s.reposo);
+    s.reposo = setTimeout(() => {
+      if (imgRef.current && !s.punteros.size && !s.gesto && !s.rueda) imgRef.current.style.willChange = "auto";
+    }, ms + 150);
+    raiz.style.transition = ms > 0 ? `background-color ${ms}ms linear` : "none";
+    raiz.style.backgroundColor = `rgba(12, 12, 13, ${(0.94 * s.fondo).toFixed(3)})`;
+    if (cabeceraRef.current) {
+      cabeceraRef.current.style.transition = ms > 0 ? `opacity ${ms}ms linear` : "none";
+      cabeceraRef.current.style.opacity = String(s.fondo);
+    }
+  };
+
+  // Calcula dónde va la imagen entera y la deja ahí (sin la vista aplicada).
+  const colocar = () => {
+    const s = g.current;
+    const esc = escenarioRef.current;
+    const img = imgRef.current;
+    if (!esc || !img || !s.natural) return false;
+    const escenario = { ancho: esc.clientWidth, alto: esc.clientHeight };
+    const base = encajarImagen(escenario.ancho, escenario.alto, s.natural[0], s.natural[1], MARGEN_VISOR);
+    if (!base) return false;
+    s.escenario = escenario;
+    s.base = base;
+    img.style.left = `${base.x}px`;
+    img.style.top = `${base.y}px`;
+    img.style.width = `${base.ancho}px`;
+    img.style.height = `${base.alto}px`;
+    img.style.visibility = "visible";
+    return true;
+  };
+
+  // La vista que deja la imagen justo encima de la miniatura (que la pinta
+  // con `object-fit: contain`), para abrir y cerrar desde ella.
+  const vistaDeLaMiniatura = () => {
+    const s = g.current;
+    if (!origen || !origen.isConnected || !s.base || !s.natural || !escenarioRef.current) return null;
+    const r = origen.getBoundingClientRect();
+    const dentro = encajarImagen(r.width, r.height, s.natural[0], s.natural[1]);
+    if (!dentro) return null;
+    const e = escenarioRef.current.getBoundingClientRect();
+    return { escala: dentro.ancho / s.base.ancho, x: r.left + dentro.x - e.left - s.base.x, y: r.top + dentro.y - e.top - s.base.y };
+  };
+
+  const abrir = () => {
+    const s = g.current;
+    if (!colocar()) return;
+    const desde = !prefiereSinMovimiento() && vistaDeLaMiniatura();
+    if (desde) {
+      s.vista = desde;
+      s.fondo = 0;
+      pintar(0);
+      // Fija el punto de partida antes de animar hacia el final.
+      imgRef.current.getBoundingClientRect();
+    }
+    s.vista = { escala: 1, x: 0, y: 0 };
+    s.fondo = 1;
+    pintar(desde ? MS_ABRIR_VISOR : 0);
+  };
+
+  // hacia: 0 = volver a la miniatura (botón, Escape); 1 / -1 = salir por
+  // abajo / por arriba, siguiendo el arrastre.
+  const cerrar = (hacia = 0) => {
+    const s = g.current;
+    if (s.cerrando) return;
+    s.cerrando = true;
+    cancelAnimationFrame(s.marco);
+    if (prefiereSinMovimiento() || !s.base) {
+      cerrarRef.current();
+      return;
+    }
+    let destino = null;
+    if (hacia) destino = { ...s.vista, y: s.vista.y + hacia * (s.escenario.alto * 0.75) };
+    else destino = vistaDeLaMiniatura();
+    if (destino) {
+      s.vista = destino;
+    } else if (raizRef.current) {
+      raizRef.current.style.transition = `opacity ${MS_CERRAR_VISOR}ms linear`;
+      raizRef.current.style.opacity = "0";
+    }
+    s.fondo = 0;
+    pintar(MS_CERRAR_VISOR);
+    s.temporizadores.push(setTimeout(() => cerrarRef.current(), MS_CERRAR_VISOR));
+  };
+
+  // Al soltar: lo que no está ampliado vuelve a su sitio y lo ampliado no
+  // deja huecos.
+  const asentar = () => {
+    const s = g.current;
+    if (!s.base) return;
+    const v = s.vista.escala < 1.02 ? { escala: 1, x: 0, y: 0 } : encuadrarVista(s.vista, s.base, s.escenario);
+    const cambia = v.escala !== s.vista.escala || Math.abs(v.x - s.vista.x) > 0.5 || Math.abs(v.y - s.vista.y) > 0.5 || s.fondo !== 1;
+    s.vista = v;
+    s.fondo = 1;
+    if (cambia) pintar(MS_ASENTAR_VISOR);
+  };
+
+  useLayoutEffect(() => {
+    if (g.current.natural) abrir();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const alCargar = (e) => {
+    const s = g.current;
+    if (s.natural) return;
+    s.natural = [e.currentTarget.naturalWidth, e.currentTarget.naturalHeight];
+    abrir();
+  };
+
   useEffect(() => {
+    const s = g.current;
+    const esc = escenarioRef.current;
+    const raiz = raizRef.current;
+    if (!esc || !raiz) return undefined;
+
+    const relativo = (e) => {
+      const r = esc.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    };
+    const dosDedos = () => {
+      const [a, b] = [...s.punteros.values()];
+      return { d: Math.hypot(a.x - b.x, a.y - b.y), m: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+    };
+    const empezarUno = (p) => {
+      s.inicio = { x: p.x, y: p.y, vista: { ...s.vista } };
+      s.historia = [{ y: p.y, t: performance.now() }];
+      s.modo = s.vista.escala > 1.01 ? "mover" : "decidir";
+    };
+    const empezarPellizco = () => {
+      const { d, m } = dosDedos();
+      s.inicio = { d: Math.max(d, 1), m, vista: { ...s.vista } };
+      s.modo = "pellizco";
+    };
+
+    const aplicar = () => {
+      s.pendiente = false;
+      if (s.cerrando || !s.base) return;
+      if (s.modo === "pellizco" && s.punteros.size >= 2) {
+        const { d, m } = dosDedos();
+        const escala = Math.min(ESCALA_MAX_VISOR, Math.max(ESCALA_MIN_GESTO_VISOR, (s.inicio.vista.escala * d) / s.inicio.d));
+        let v = vistaDePellizco(s.inicio.vista, s.inicio.m, escala, m, s.base);
+        if (escala >= 1) v = encuadrarVista(v, s.base, s.escenario, 1 / 3);
+        s.vista = v;
+        s.fondo = 1;
+        pintar(0);
+      } else if (s.modo === "mover" && s.punteros.size === 1) {
+        const p = [...s.punteros.values()][0];
+        s.vista = encuadrarVista(
+          { escala: s.vista.escala, x: s.inicio.vista.x + p.x - s.inicio.x, y: s.inicio.vista.y + p.y - s.inicio.y },
+          s.base, s.escenario, 1 / 3
+        );
+        pintar(0);
+      } else if (s.modo === "cerrar" && s.punteros.size === 1) {
+        const p = [...s.punteros.values()][0];
+        const dy = p.y - s.inicio.y;
+        s.vista = vistaDeArrastre(dy, s.escenario.alto, s.base);
+        s.fondo = opacidadFondoVisor(dy, s.escenario.alto);
+        pintar(0);
+      }
+    };
+    const programar = () => {
+      if (s.pendiente) return;
+      s.pendiente = true;
+      s.marco = requestAnimationFrame(aplicar);
+    };
+
+    const alBajar = (e) => {
+      if (s.cerrando || (e.pointerType === "mouse" && e.button !== 0)) return;
+      if (e.target && e.target.closest && e.target.closest("button")) return;
+      if (e.pointerType === "mouse") e.preventDefault();
+      try { raiz.setPointerCapture(e.pointerId); } catch { /* sin captura también funciona */ }
+      s.punteros.set(e.pointerId, relativo(e));
+      if (s.punteros.size === 1) empezarUno(s.punteros.get(e.pointerId));
+      else if (s.punteros.size === 2) empezarPellizco();
+    };
+    const alMover = (e) => {
+      if (!s.punteros.has(e.pointerId) || s.cerrando) return;
+      const p = relativo(e);
+      s.punteros.set(e.pointerId, p);
+      if (s.modo === "decidir") {
+        const dx = p.x - s.inicio.x;
+        const dy = p.y - s.inicio.y;
+        if (Math.hypot(dx, dy) < 8) return;
+        // Solo el arrastre vertical cierra; el horizontal no hace nada.
+        s.modo = Math.abs(dy) > Math.abs(dx) ? "cerrar" : "nada";
+      }
+      if (s.modo === "cerrar") {
+        const t = performance.now();
+        s.historia.push({ y: p.y, t });
+        while (s.historia.length > 2 && t - s.historia[0].t > 100) s.historia.shift();
+      }
+      programar();
+    };
+    const alSubir = (e) => {
+      if (!s.punteros.has(e.pointerId)) return;
+      const ultimo = relativo(e);
+      s.punteros.delete(e.pointerId);
+      if (s.cerrando) return;
+      if (s.punteros.size === 1) {
+        // Se ha levantado un dedo del pellizco: el que queda sigue moviendo.
+        empezarUno([...s.punteros.values()][0]);
+        if (s.modo === "decidir") s.modo = s.vista.escala > 1.01 ? "mover" : "nada";
+        return;
+      }
+      if (s.punteros.size > 0) return;
+      cancelAnimationFrame(s.marco);
+      s.pendiente = false;
+      const modo = s.modo;
+      s.modo = null;
+      if (modo === "cerrar") {
+        const dy = ultimo.y - s.inicio.y;
+        const h = s.historia;
+        let velocidad = 0;
+        if (h.length >= 2 && h[h.length - 1].t > h[0].t) velocidad = (h[h.length - 1].y - h[0].y) / (h[h.length - 1].t - h[0].t);
+        // Si el dedo se ha parado antes de levantarse, ya no hay golpe.
+        if (h.length && performance.now() - h[h.length - 1].t > 80) velocidad = 0;
+        if (e.type !== "pointercancel" && cierraVisor({ dy, velocidad, alto: s.escenario.alto })) {
+          cerrar(Math.sign(dy));
+          return;
+        }
+      }
+      asentar();
+    };
+
+    const alRueda = (e) => {
+      e.preventDefault();
+      if (s.cerrando || !s.base || s.punteros.size) return;
+      const unidad = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? s.escenario.alto : 1;
+      const dx = e.deltaX * unidad;
+      const dy = e.deltaY * unidad;
+      if (e.ctrlKey) {
+        // Pellizco en el trackpad (Chrome y compañía lo mandan así).
+        const escala = Math.min(ESCALA_MAX_VISOR, Math.max(1, s.vista.escala * Math.exp(-dy * 0.01)));
+        s.vista = encuadrarVista(zoomAlrededor(s.vista, escala, relativo(e), s.base), s.base, s.escenario);
+        pintar(0);
+        return;
+      }
+      if (s.vista.escala > 1.01) {
+        s.vista = encuadrarVista({ ...s.vista, x: s.vista.x - dx, y: s.vista.y - dy }, s.base, s.escenario);
+        pintar(0);
+        return;
+      }
+      // Sin ampliar, dos dedos en vertical arrastran para cerrar, igual que
+      // el dedo. "Soltar" no es un evento con el trackpad, así que se cierra en
+      // cuanto se pasa el umbral y, si no se llega, vuelve cuando se calla.
+      if (Math.abs(dx) > Math.abs(dy) && !s.rueda) return;
+      if (!s.rueda) s.rueda = { acumulado: 0, ignorar: false, temporizador: 0 };
+      const r = s.rueda;
+      clearTimeout(r.temporizador);
+      r.temporizador = setTimeout(() => {
+        s.rueda = null;
+        if (!r.ignorar && !s.cerrando) asentar();
+      }, 160);
+      if (r.ignorar) return;
+      r.acumulado -= dy; // la imagen va con los dedos
+      s.vista = vistaDeArrastre(r.acumulado, s.escenario.alto, s.base);
+      s.fondo = opacidadFondoVisor(r.acumulado, s.escenario.alto);
+      pintar(0);
+      if (cierraVisor({ dy: r.acumulado, alto: s.escenario.alto })) {
+        r.ignorar = true;
+        cerrar(Math.sign(r.acumulado));
+      }
+    };
+
+    // Safari: pellizco con el trackpad. Con dos dedos en la pantalla también
+    // llegan estos eventos, pero ese pellizco ya lo llevan los punteros.
+    const centroDe = (e) => (Number.isFinite(e.clientX) && Number.isFinite(e.clientY)
+      ? relativo(e)
+      : { x: (s.escenario ? s.escenario.ancho : 0) / 2, y: (s.escenario ? s.escenario.alto : 0) / 2 });
+    const alGestoInicio = (e) => {
+      e.preventDefault();
+      if (s.punteros.size >= 2 || !s.base || s.cerrando) return;
+      s.gesto = { vista: { ...s.vista }, p: centroDe(e) };
+    };
+    const alGesto = (e) => {
+      e.preventDefault();
+      if (!s.gesto || s.punteros.size >= 2 || s.cerrando) return;
+      const escala = Math.min(ESCALA_MAX_VISOR, Math.max(ESCALA_MIN_GESTO_VISOR, s.gesto.vista.escala * (e.scale || 1)));
+      let v = zoomAlrededor(s.gesto.vista, escala, s.gesto.p, s.base);
+      if (escala >= 1) v = encuadrarVista(v, s.base, s.escenario, 1 / 3);
+      s.vista = v;
+      pintar(0);
+    };
+    const alGestoFin = (e) => {
+      e.preventDefault();
+      if (!s.gesto) return;
+      s.gesto = null;
+      if (!s.punteros.size && !s.cerrando) asentar();
+    };
+
+    // Ni desplazar ni ampliar la página de detrás.
+    const sinTocarLaPagina = (e) => { if (e.cancelable) e.preventDefault(); };
     const alPulsar = (e) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onCerrar();
+        cerrar(0);
       }
     };
+    const alRedimensionar = () => {
+      if (s.cerrando) return;
+      if (colocar()) {
+        s.vista = { escala: 1, x: 0, y: 0 };
+        s.fondo = 1;
+        pintar(0);
+      }
+    };
+
+    raiz.addEventListener("pointerdown", alBajar);
+    raiz.addEventListener("pointermove", alMover);
+    raiz.addEventListener("pointerup", alSubir);
+    raiz.addEventListener("pointercancel", alSubir);
+    raiz.addEventListener("wheel", alRueda, { passive: false });
+    raiz.addEventListener("touchmove", sinTocarLaPagina, { passive: false });
+    raiz.addEventListener("gesturestart", alGestoInicio);
+    raiz.addEventListener("gesturechange", alGesto);
+    raiz.addEventListener("gestureend", alGestoFin);
     window.addEventListener("keydown", alPulsar);
-    return () => window.removeEventListener("keydown", alPulsar);
-  }, [onCerrar]);
-  return (
-    <div data-sin-deslizar role="dialog" aria-label={titulo} style={{ position: "fixed", inset: 0, zIndex: 55, background: "rgba(12, 12, 13, 0.94)", display: "flex", flexDirection: "column" }}>
-      <div style={{ ...styles.pantallaCompletaCierre, justifyContent: "space-between", alignItems: "center", paddingBottom: 10 }}>
-        <span style={{ color: "#ffffff", fontSize: 13, opacity: 0.75 }}>{ampliada ? "Toca para verla entera" : "Toca para ampliar"}</span>
-        <button type="button" onClick={onCerrar} style={styles.botonCerrarPantalla}>
+    window.addEventListener("resize", alRedimensionar);
+    return () => {
+      raiz.removeEventListener("pointerdown", alBajar);
+      raiz.removeEventListener("pointermove", alMover);
+      raiz.removeEventListener("pointerup", alSubir);
+      raiz.removeEventListener("pointercancel", alSubir);
+      raiz.removeEventListener("wheel", alRueda);
+      raiz.removeEventListener("touchmove", sinTocarLaPagina);
+      raiz.removeEventListener("gesturestart", alGestoInicio);
+      raiz.removeEventListener("gesturechange", alGesto);
+      raiz.removeEventListener("gestureend", alGestoFin);
+      window.removeEventListener("keydown", alPulsar);
+      window.removeEventListener("resize", alRedimensionar);
+      cancelAnimationFrame(s.marco);
+      if (s.rueda) clearTimeout(s.rueda.temporizador);
+      s.temporizadores.forEach(clearTimeout);
+      clearTimeout(s.reposo);
+    };
+    // Se engancha una vez: lo que cambia vive en `g`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return createPortal(
+    <div
+      ref={raizRef}
+      data-sin-deslizar
+      role="dialog"
+      aria-label={titulo}
+      style={{ position: "fixed", inset: 0, zIndex: 55, backgroundColor: "rgba(12, 12, 13, 0.94)", display: "flex", flexDirection: "column", overflow: "hidden", touchAction: "none", overscrollBehavior: "none", userSelect: "none", WebkitUserSelect: "none" }}
+    >
+      {/* La cabecera deja pasar los dedos: el gesto se puede empezar en cualquier sitio menos en el botón. */}
+      <div ref={cabeceraRef} style={{ ...styles.pantallaCompletaCierre, position: "relative", zIndex: 2, paddingBottom: 10, pointerEvents: "none" }}>
+        <button type="button" onClick={() => cerrar(0)} style={{ ...styles.botonCerrarPantalla, pointerEvents: "auto" }}>
           <X size={17} /> Cerrar
         </button>
       </div>
-      <div style={{ flex: 1, minHeight: 0, overflow: "auto", WebkitOverflowScrolling: "touch", display: ampliada ? "block" : "flex", alignItems: "center", justifyContent: "center", padding: "0 12px 16px" }}>
+      <div ref={escenarioRef} style={{ position: "relative", flex: 1, minHeight: 0, touchAction: "none" }}>
         <img
+          ref={imgRef}
           src={url}
           alt={titulo}
-          onClick={() => setAmpliada((v) => !v)}
-          style={ampliada
-            ? { width: "200%", maxWidth: "none", display: "block", cursor: "zoom-out", background: "#ffffff" }
-            : { maxWidth: "100%", maxHeight: "100%", objectFit: "contain", display: "block", cursor: "zoom-in", background: "#ffffff" }}
+          draggable={false}
+          onLoad={alCargar}
+          style={{ position: "absolute", left: 0, top: 0, maxWidth: "none", visibility: "hidden", transformOrigin: "0 0", background: "#ffffff", userSelect: "none", WebkitUserSelect: "none", WebkitTouchCallout: "none", pointerEvents: "none" }}
         />
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

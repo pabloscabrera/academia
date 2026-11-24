@@ -1613,3 +1613,136 @@ export function apuntesDeMazo(apuntes, mazo) {
     .slice()
     .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")) || String(a.id).localeCompare(String(b.id)));
 }
+
+// ---------- Visor de apuntes ----------
+// La imagen a pantalla completa se amplía pellizcando (no tocando: el toque
+// para ampliar se quitó porque al pellizcar se cruzaba con él) y se cierra
+// arrastrándola hacia arriba o hacia abajo, como en Fotos. Aquí va la
+// geometría; quien mueve la imagen es `VisorApunte`, en App.jsx.
+//
+// La "vista" es { escala, x, y }: la imagen se dibuja encajada en `base`
+// ({ x, y, ancho, alto }, en coordenadas del escenario) y encima se le aplica
+// `translate(x, y) scale(escala)` con el origen en su esquina superior
+// izquierda. Con { escala: 1, x: 0, y: 0 } se ve entera y centrada.
+
+export const ESCALA_MAX_VISOR = 5;
+// Durante el pellizco se deja bajar un poco de 1 para que se note el tope; al
+// soltar vuelve a 1.
+export const ESCALA_MIN_GESTO_VISOR = 0.7;
+// Arrastrar más de esta parte del alto cierra al soltar…
+export const UMBRAL_CIERRE_VISOR = 0.15;
+// …y un golpe rápido también, aunque sea corto (px/ms).
+export const VELOCIDAD_CIERRE_VISOR = 0.5;
+
+// Dónde va la imagen para verse entera y centrada dentro del escenario,
+// dejando `margen` a cada lado. Agranda si hace falta: es una tabla y se
+// quiere leer. Devuelve null si alguna medida no vale.
+export function encajarImagen(anchoEscenario, altoEscenario, anchoImg, altoImg, margen = 0) {
+  const w = anchoEscenario - 2 * margen;
+  const h = altoEscenario - 2 * margen;
+  if (!(w > 0) || !(h > 0) || !(anchoImg > 0) || !(altoImg > 0)) return null;
+  const k = Math.min(w / anchoImg, h / altoImg);
+  const ancho = anchoImg * k;
+  const alto = altoImg * k;
+  return { x: (anchoEscenario - ancho) / 2, y: (altoEscenario - alto) / 2, ancho, alto };
+}
+
+// La vista con la nueva `escala` que deja el punto de la imagen que estaba
+// bajo `puntoInicial` (con `vistaInicial`) justo debajo de `punto`. Es el
+// pellizco: el sitio entre los dos dedos se queda entre los dos dedos, y si
+// los dedos se mueven a la vez, la imagen va con ellos.
+export function vistaDePellizco(vistaInicial, puntoInicial, escala, punto, base) {
+  const lx = (puntoInicial.x - base.x - vistaInicial.x) / vistaInicial.escala;
+  const ly = (puntoInicial.y - base.y - vistaInicial.y) / vistaInicial.escala;
+  return { escala, x: punto.x - base.x - lx * escala, y: punto.y - base.y - ly * escala };
+}
+
+// Ampliar o reducir dejando quieto el punto que hay bajo `punto` (la rueda
+// del trackpad, o un pellizco sin desplazar).
+export function zoomAlrededor(vista, escala, punto, base) {
+  return vistaDePellizco(vista, punto, escala, punto, base);
+}
+
+// Que la imagen ampliada no se salga más de la cuenta: en cada eje, si cabe
+// se centra y, si no cabe, no puede dejar hueco por ningún lado. Con
+// `resistencia` < 1 lo que se pasa del borde se mueve solo esa fracción (el
+// tope elástico mientras se arrastra); con 0 se queda en el borde (al soltar).
+export function encuadrarVista(vista, base, escenario, resistencia = 0) {
+  const eje = (desp, tam, total, origen) => {
+    if (tam <= total) return (total - tam) / 2 - origen;
+    const min = total - tam - origen;
+    const max = -origen;
+    if (desp > max) return max + (desp - max) * resistencia;
+    if (desp < min) return min + (desp - min) * resistencia;
+    return desp;
+  };
+  return {
+    escala: vista.escala,
+    x: eje(vista.x, base.ancho * vista.escala, escenario.ancho, base.x),
+    y: eje(vista.y, base.alto * vista.escala, escenario.alto, base.y),
+  };
+}
+
+// Mientras se arrastra para cerrar: la imagen sigue al dedo en vertical y
+// encoge un poco desde su centro, como en Fotos.
+export function vistaDeArrastre(dy, alto, base) {
+  const escala = 1 - Math.min(Math.abs(dy) / (alto > 0 ? alto : 1), 1) * 0.15;
+  return { escala, x: (base.ancho * (1 - escala)) / 2, y: (base.alto * (1 - escala)) / 2 + dy };
+}
+
+// Cuánto se ve el fondo oscuro según lo arrastrado: se aclara al alejarse,
+// que es lo que avisa de que al soltar se va a cerrar.
+export function opacidadFondoVisor(dy, alto) {
+  if (!(alto > 0)) return 1;
+  return Math.max(0.2, 1 - Math.abs(dy) / (alto * 0.5));
+}
+
+// Al soltar: ¿se cierra? Por distancia, o por un golpe rápido hacia el mismo
+// lado al que se ha arrastrado (volver el dedo al final no cuenta).
+export function cierraVisor({ dy, velocidad = 0, alto }) {
+  if (!(alto > 0) || !dy) return false;
+  if (Math.abs(dy) >= alto * UMBRAL_CIERRE_VISOR) return true;
+  return Math.abs(dy) >= 24 && Math.abs(velocidad) >= VELOCIDAD_CIERRE_VISOR && Math.sign(velocidad) === Math.sign(dy);
+}
+
+// Las medidas de cada imagen ya vista, guardadas en el aparato para reservar
+// su hueco antes de que llegue: sin eso, el panel salta al cargar (de
+// "Cargando…" a nada y de nada a la imagen). Se guarda poco y se valida al
+// leer: lo que no tenga forma de [ancho, alto] se descarta.
+export const MAX_MEDIDAS_APUNTES = 300;
+
+export function leerMedidasApuntes(texto) {
+  let datos;
+  try {
+    datos = JSON.parse(texto || "{}");
+  } catch {
+    return {};
+  }
+  if (!datos || typeof datos !== "object" || Array.isArray(datos)) return {};
+  const limpio = {};
+  for (const [ruta, m] of Object.entries(datos)) {
+    if (Array.isArray(m) && m.length === 2 && m[0] > 0 && m[1] > 0) limpio[ruta] = [m[0], m[1]];
+  }
+  return limpio;
+}
+
+export function conMedidaApunte(mapa, ruta, ancho, alto) {
+  if (!ruta || !(ancho > 0) || !(alto > 0)) return mapa;
+  const previa = mapa[ruta];
+  if (previa && previa[0] === ancho && previa[1] === alto) return mapa;
+  const nuevo = { ...mapa };
+  delete nuevo[ruta];
+  nuevo[ruta] = [ancho, alto];
+  const claves = Object.keys(nuevo);
+  // Las más antiguas fuera (el orden de inserción es el de un objeto).
+  for (let i = 0; i < claves.length - MAX_MEDIDAS_APUNTES; i++) delete nuevo[claves[i]];
+  return nuevo;
+}
+
+// Una URL firmada sirve mientras le quede margen: reusarla al volver a abrir
+// el panel es lo que hace que la imagen salga al momento (el navegador ya la
+// tiene) en vez de pasar otra vez por "Cargando…".
+export function urlFirmadaVigente(entrada, ahora, margenMs = 10 * 60 * 1000) {
+  if (!entrada || !entrada.url || !(entrada.caduca > 0)) return null;
+  return entrada.caduca - margenMs > ahora ? entrada.url : null;
+}
