@@ -656,6 +656,11 @@ export function mensajeDeEscritura(error, queIba = "") {
   if (codigo === "42P01" || codigo === "42703" || /does not exist|no existe/i.test(texto)) {
     return di("falta algo en la base de datos (una tabla o una columna sin crear). Esto lo tiene que mirar Pablo.");
   }
+  // El bucket de los apuntes sin crear (`supabase-apuntes.sql` sin ejecutar).
+  // Storage no manda código de Postgres, solo el texto.
+  if (/bucket not found/i.test(texto)) {
+    return di("falta crear en el servidor el sitio donde se guardan las imágenes. Esto lo tiene que mirar Pablo.");
+  }
   if (codigo === "23505" || /duplicate key|already exists/i.test(texto)) {
     return di("eso ya estaba guardado.");
   }
@@ -1559,4 +1564,52 @@ export const ZONA_MUERTA_EJE = 12;
 export function ejeDelGesto(sumaX, sumaY) {
   if (Math.abs(sumaX) + Math.abs(sumaY) < ZONA_MUERTA_EJE) return null;
   return Math.abs(sumaX) > Math.abs(sumaY) * 2 ? "lado" : "vertical";
+}
+
+// ---------- Apuntes de un mazo ----------
+// La imagen de la tabla o diapositiva de la que salen las tarjetas de un mazo,
+// para repasar mirando la fuente. Las imágenes van a un bucket privado de
+// Supabase Storage (`supabase-apuntes.sql`) bajo la carpeta de su dueño, y la
+// tabla `apuntes_mazo` dice a qué mazo pertenece cada una.
+export const BUCKET_APUNTES = "apuntes";
+export const TIPOS_APUNTE = ["image/jpeg", "image/png", "image/webp"];
+// A la pantalla le sobra con esto en el lado mayor (una captura del iPad
+// mide 2388 × 1668), y por encima de este peso merece la pena reducirla.
+export const MAX_LADO_APUNTE = 2400;
+export const MAX_BYTES_SIN_REDUCIR = 900 * 1024;
+
+// Las medidas a las que se reduce una imagen: el lado mayor a `maximo` y el
+// otro en proporción. Nunca agranda. Devuelve null si las medidas no valen.
+export function medidasReducidas(ancho, alto, maximo = MAX_LADO_APUNTE) {
+  if (!(ancho > 0) || !(alto > 0)) return null;
+  const escala = Math.min(1, maximo / Math.max(ancho, alto));
+  return { ancho: Math.max(1, Math.round(ancho * escala)), alto: Math.max(1, Math.round(alto * escala)) };
+}
+
+// ¿Hay que volver a codificar la imagen antes de subirla? Una captura pequeña
+// en PNG se sube tal cual a propósito: es una tabla con letra, y pasarla a
+// JPEG la emborrona sin ganar nada. Solo se toca si el formato no lo admite el
+// bucket (HEIC de la cámara, por ejemplo), si pesa mucho o si es enorme.
+export function hayQueReducir({ tipo, bytes, ancho, alto }) {
+  if (!TIPOS_APUNTE.includes(tipo)) return true;
+  if (bytes > MAX_BYTES_SIN_REDUCIR) return true;
+  if (ancho > 0 && alto > 0 && Math.max(ancho, alto) > MAX_LADO_APUNTE) return true;
+  return false;
+}
+
+// Dónde se guarda en el bucket: la primera carpeta TIENE que ser el id del
+// usuario, porque es lo que miran las políticas de Storage para dejar subir,
+// ver o borrar.
+export function rutaApunte(userId, id, tipo = "image/jpeg") {
+  if (!userId || !id) return null;
+  const extension = tipo === "image/png" ? "png" : tipo === "image/webp" ? "webp" : "jpg";
+  return `${userId}/${id}.${extension}`;
+}
+
+// Los apuntes de un mazo, en el orden en que se subieron.
+export function apuntesDeMazo(apuntes, mazo) {
+  return (apuntes || [])
+    .filter((a) => a && a.mazo === mazo)
+    .slice()
+    .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")) || String(a.id).localeCompare(String(b.id)));
 }
