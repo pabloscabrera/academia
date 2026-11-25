@@ -7824,6 +7824,9 @@ const styles = {
   daypoFeedback: { fontFamily: "'Switzer', 'Helvetica Neue', Arial, sans-serif", fontSize: 14.5, fontWeight: 600, padding: "13px 16px", borderRadius: 14, marginTop: 10 },
   daypoFeedbackOk: { background: CORRECTO_SUAVE, color: CORRECTO },
   daypoFeedbackMal: { background: ACENTO_SUAVE, color: ACENTO },
-  opcion: { display: "block", width: "100%", textAlign: "left", padding: "11px 14px", borderRadius: 10, border: `1px solid ${RAYA}`, marginBottom: 8, fontSize: 14, cursor: "pointer", color: TINTA },
+  // `boxSizing` no es cosmética: con `width: 100%` más padding y borde, y sin un
+  // `border-box` global en el proyecto, cada fila medía 30 px más que su tarjeta
+  // y se salía por la derecha (Banco, ruleta y Favoritas/Falladas de Perfil).
+  opcion: { boxSizing: "border-box", display: "block", width: "100%", textAlign: "left", padding: "11px 14px", borderRadius: 10, border: `1px solid ${RAYA}`, marginBottom: 8, fontSize: 14, cursor: "pointer", color: TINTA },
   opcionCorrectaLegacy: { borderColor: CORRECTO, background: CORRECTO_SUAVE, display: "flex", alignItems: "center", gap: 8 },
 };
