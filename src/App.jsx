@@ -3733,7 +3733,7 @@ function PreguntaCard({ q, isAdmin, onUpdate, onDelete, favoritos, onToggleFavor
       {open && (
         <div style={{ marginTop: 12 }}>
           {q.opciones.map((op, i) => (
-            <div key={i} style={{ ...styles.opcion, cursor: "default", ...(mostrarCorrecta && i === q.correcta ? styles.opcionCorrectaLegacy : {}) }}>
+            <div key={i} style={{ ...styles.opcion, cursor: "default", background: "var(--superficie)", boxShadow: "0 1px 2px rgba(0,0,0,.04)", ...(mostrarCorrecta && i === q.correcta ? { ...styles.opcionCorrectaLegacy, boxShadow: "none" } : {}) }}>
               {mostrarCorrecta && i === q.correcta && <Check size={13} color="currentColor" style={{ color: CORRECTO }} />}
               {op}
             </div>
