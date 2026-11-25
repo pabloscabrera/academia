@@ -121,6 +121,28 @@ async function fetchTodasFlashcards() {
   return todas;
 }
 
+// Lo mismo para las tablas personales (progreso, repasos, fallos…), que se
+// pedían de una sola vez y por eso también se quedaban en 1000 filas sin un
+// error: con 2679 repasos de flashcards en 90 días llegaban 1000, y los mazos
+// cuyos repasos caían fuera se quedaban sin estadísticas. `construir` devuelve
+// la consulta ya filtrada (sin orden ni rango) y `orden` es una clave ÚNICA
+// dentro de ese filtro, por la misma razón que el `order("id")` de arriba.
+// Devuelve `{ data, error }` como supabase-js para no cambiar a quien llama;
+// si falla una página no se devuelve la lista a medias: una lista incompleta
+// en silencio es justo el fallo que se arregla aquí.
+async function leerTodasLasPaginas(construir, orden) {
+  const TAM_PAGINA = 1000;
+  let todas = [];
+  for (let desde = 0; ; desde += TAM_PAGINA) {
+    const { data, error } = await construir()
+      .order(orden, { ascending: true })
+      .range(desde, desde + TAM_PAGINA - 1);
+    if (error) return { data: null, error };
+    todas = todas.concat(data || []);
+    if (!data || data.length < TAM_PAGINA) return { data: todas, error: null };
+  }
+}
+
 async function fetchTodasPreguntas() {
   const TAM_PAGINA = 1000;
   let desde = 0;
@@ -624,15 +646,21 @@ export default function AcademiaPIR() {
       // crecería sin techo y no se usa para nada.
       const desde = new Date(Date.now() - 90 * 86400000).toISOString();
       const [fRes, favRes, progresoRes, preguntasProgresoRes, repasosRes] = await Promise.all([
-        supabase.from("fallos").select("*").eq("name", user.name),
-        supabase.from("favoritos").select("*").eq("name", user.name),
-        supabase.from("flashcards_progreso").select("*").eq("name", user.name),
-        supabase.from("preguntas_progreso").select("*").eq("name", user.name),
+        // Por páginas: el servidor corta en 1000 filas sin avisar (ver
+        // `leerTodasLasPaginas`). El orden es la clave única de cada tabla
+        // dentro de un mismo usuario.
+        leerTodasLasPaginas(() => supabase.from("fallos").select("*").eq("name", user.name), "pregunta_id"),
+        leerTodasLasPaginas(() => supabase.from("favoritos").select("*").eq("name", user.name), "pregunta_id"),
+        leerTodasLasPaginas(() => supabase.from("flashcards_progreso").select("*").eq("name", user.name), "flashcard_id"),
+        leerTodasLasPaginas(() => supabase.from("preguntas_progreso").select("*").eq("name", user.name), "pregunta_id"),
         // `flashcard_id` y `calidad` son para la cuadrícula de Estadísticas (colorear
         // cada tarjeta por el último botón pulsado); van en la misma consulta, así
-        // que no cuestan otra ida y vuelta.
-        supabase.from("flashcards_repasos").select("flashcard_id, calidad, acierto, intervalo_antes, creado_en").eq("name", user.name).gte("creado_en", desde),
+        // que no cuestan otra ida y vuelta. Esta es la que pasó de 1000 primero.
+        leerTodasLasPaginas(() => supabase.from("flashcards_repasos").select("id, flashcard_id, calidad, acierto, intervalo_antes, creado_en").eq("name", user.name).gte("creado_en", desde), "id"),
       ]);
+      for (const [tabla, res] of [["fallos", fRes], ["favoritos", favRes], ["flashcards_progreso", progresoRes], ["flashcards_repasos", repasosRes]]) {
+        if (res.error) console.error(`No se pudo cargar ${tabla}:`, res.error.message);
+      }
       if (preguntasProgresoRes.error) console.error("No se pudo cargar preguntas_progreso:", preguntasProgresoRes.error.message);
       if (!activo) return;
       const cola = leerCola(user.name);
