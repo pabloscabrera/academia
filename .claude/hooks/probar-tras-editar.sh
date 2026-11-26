@@ -2,7 +2,12 @@
 # PostToolUse (Edit|Write): corre `npm test` si lo editado puede romper algo que
 # las pruebas vigilan. Si falla, sale con código 2: Claude Code le devuelve el
 # error a Claude y no puede seguir como si nada.
-f=$(jq -r '.tool_input.file_path // .tool_response.filePath // empty')
+entrada=$(cat)
+f=$(printf '%s' "$entrada" | jq -r '.tool_input.file_path // .tool_response.filePath // empty' 2>/dev/null)
+# Sin jq no se apaga en silencio: se saca la ruta del JSON en crudo.
+if [ -z "$f" ]; then
+  f=$(printf '%s' "$entrada" | grep -Eo '"file_path" *: *"[^"]*"' | head -1 | sed 's/.*: *"//; s/"$//')
+fi
 [ -z "$f" ] && exit 0
 raiz="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 rel="${f#"$raiz"/}"

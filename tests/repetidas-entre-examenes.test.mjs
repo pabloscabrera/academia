@@ -94,12 +94,13 @@ test("la lectura de los ficheros encuentra las preguntas de los exámenes transc
   const por = {};
   for (const p of filas) por[p.curso] = (por[p.curso] || 0) + 1;
   // Si el formato de una fila cambia y el lector deja de verla, la prueba de
-  // abajo pasaría "en vacío": esto lo impide.
-  assert.equal(por["PIR 15"], 226);
-  assert.equal(por["PIR 16"], 228);
-  assert.equal(por["PIR 18"], 235);
-  assert.equal(por["PIR 19"], 180);
-  assert.equal(por["PIR 20"], 198);
+  // abajo pasaría "en vacío". `leerPreguntas` ya falla si un fichero tiene filas
+  // que no entiende; aquí basta con que estén los cinco exámenes. NO se fijan los
+  // recuentos exactos: corregir una fila de una transcripción es legítimo y no
+  // debe romper esto.
+  for (const curso of ["PIR 15", "PIR 16", "PIR 18", "PIR 19", "PIR 20"]) {
+    assert.ok((por[curso] || 0) > 100, `${curso}: el lector apenas ve preguntas (${por[curso] || 0})`);
+  }
 });
 
 test("no hay ninguna pregunta repetida entre exámenes que no esté apuntada y revisada", () => {
