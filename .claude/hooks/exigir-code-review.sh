@@ -4,7 +4,7 @@
 # `.claude/.code-review-ok` y guarda el SHA revisado: cualquier commit nuevo la
 # invalida, así que una revisión vieja no vale para código nuevo.
 cmd=$(jq -r '.tool_input.command // empty')
-echo "$cmd" | grep -Eq 'gh +api[^|;&]*repos/[^ ]+/pulls/[^ ]+/merge' || exit 0
+echo "$cmd" | grep -Eq '(^|[;&|])[[:space:]]*gh[[:space:]]+api[^|;&]*repos/[^[:space:]]+/pulls/[^[:space:]]+/merge' || exit 0
 raiz="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 marca="$raiz/.claude/.code-review-ok"
 head=$(git -C "$raiz" rev-parse HEAD 2>/dev/null)
