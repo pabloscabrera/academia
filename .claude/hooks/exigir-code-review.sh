@@ -141,5 +141,6 @@ fi
   echo "2) Solo entonces anota el SHA en .claude/.code-review-ok."
   echo "3) Vuelve a lanzar la fusión."
   echo "(La marca es un recordatorio y no una prueba: escribirla sin haber revisado es saltarse el paso.)"
+  echo "(Si esto era solo TEXTO que menciona una fusión —un commit, un echo—, es un falso positivo conocido: escribe ese texto con la herramienta de ficheros.)"
 } >&2
 exit 2
