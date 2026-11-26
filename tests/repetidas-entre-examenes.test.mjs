@@ -22,15 +22,20 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
 
 const RAIZ = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 // Estado de cada coincidencia conocida.
 //   "pendiente": no se ha comprobado contra los cuadernillos oficiales.
 //   "verificada": se miró el cuadernillo de los dos años y la repetición es real.
+//
+// La clave lleva un HASH del enunciado y no el `tema`: el tema de PIR 20 es texto
+// libre ("Psicología Clínica") y corregirlo habría renombrado el par sin que
+// cambiara nada del duplicado.
 const CONOCIDAS = {
-  "PIR 16 #39 = PIR 19 #94": "pendiente", // 16PF; el texto de las opciones difiere en la forma
-  "PIR 18 #115 = PIR 20 #Psicología Clínica": "pendiente", // PIR 20 sale de un documento de APIR ya mezclado
+  "PIR 16 = PIR 19 :: 381e1bfe": "pendiente", // 16PF; el texto de las opciones difiere en la forma
+  "PIR 18 = PIR 20 :: 18a30a2a": "pendiente", // PIR 20 sale de un documento de APIR ya mezclado
 };
 
 // Sin tildes, sin mayúsculas y sin puntuación, PERO conservando `+ - % / < > =`:
@@ -46,16 +51,26 @@ const MIN_LONGITUD = 60; // por debajo, "En la bulimia nerviosa:" aparece en tod
 export function leerPreguntas() {
   const filas = [];
   for (const f of readdirSync(RAIZ).filter((n) => /^supabase-pir\d+-preguntas\.sql$/.test(n)).sort()) {
-    for (const linea of readFileSync(join(RAIZ, f), "utf8").split("\n")) {
+    const lineas = readFileSync(join(RAIZ, f), "utf8").split("\n");
+    // Se cuenta por otro criterio que el del lector (cada fila lleva un `'::jsonb`):
+    // una fila partida en dos líneas o con otro formato no la vería el lector, pero sí este recuento.
+    const esperadas = lineas.filter((l) => l.startsWith("('PIR ") || /^\(\s*'PIR/.test(l) || (/'::jsonb/.test(l) && !l.trimStart().startsWith("--"))).length;
+    let leidas = 0;
+    for (const linea of lineas) {
       const m = FILA.exec(linea);
       if (!m) continue;
+      leidas += 1;
       filas.push({ curso: m[1], tema: m[2].replace(/''/g, "'"), pregunta: m[3].replace(/''/g, "'"), opciones: JSON.parse(m[4]), fichero: f });
     }
+    // Una fila que el lector no entiende NO se salta en silencio: se perdería de
+    // la comprobación sin que nadie lo notara (un fichero nuevo con otro formato).
+    assert.ok(esperadas > 0, `${f}: no tiene ninguna fila "('PIR …"`);
+    assert.equal(leidas, esperadas, `${f}: ${esperadas - leidas} fila(s) no encajan con el formato que lee esta prueba`);
   }
   return filas;
 }
 
-const etiqueta = (p) => `${p.curso} #${p.tema.replace(/^Pregunta /, "")}`;
+const hash = (k) => createHash("sha1").update(k).digest("hex").slice(0, 8);
 
 export function coincidenciasEntreCursos(filas) {
   const porClave = new Map();
@@ -66,12 +81,16 @@ export function coincidenciasEntreCursos(filas) {
     porClave.get(k).push(p);
   }
   const pares = [];
-  for (const grupo of porClave.values()) {
+  for (const [k, grupo] of porClave) {
     for (let i = 0; i < grupo.length; i += 1) for (let j = i + 1; j < grupo.length; j += 1) {
-      if (grupo[i].curso !== grupo[j].curso) pares.push(`${etiqueta(grupo[i])} = ${etiqueta(grupo[j])}`);
+      if (grupo[i].curso === grupo[j].curso) continue;
+      const [a, b] = [grupo[i].curso, grupo[j].curso].sort();
+      pares.push(`${a} = ${b} :: ${hash(k)}`);
     }
   }
-  return pares.sort();
+  // Una pregunta en tres exámenes, o dos veces en uno, repite la misma cadena: sin
+  // duplicados el mensaje de fallo no cuenta pares de más.
+  return [...new Set(pares)].sort();
 }
 
 test("la lectura de los ficheros encuentra las preguntas de los exámenes transcritos", () => {
@@ -79,12 +98,13 @@ test("la lectura de los ficheros encuentra las preguntas de los exámenes transc
   const por = {};
   for (const p of filas) por[p.curso] = (por[p.curso] || 0) + 1;
   // Si el formato de una fila cambia y el lector deja de verla, la prueba de
-  // abajo pasaría "en vacío": esto lo impide.
-  assert.equal(por["PIR 15"], 226);
-  assert.equal(por["PIR 16"], 228);
-  assert.equal(por["PIR 18"], 235);
-  assert.equal(por["PIR 19"], 180);
-  assert.equal(por["PIR 20"], 198);
+  // abajo pasaría "en vacío". `leerPreguntas` ya falla si un fichero tiene filas
+  // que no entiende; aquí basta con que estén los cinco exámenes. NO se fijan los
+  // recuentos exactos: corregir una fila de una transcripción es legítimo y no
+  // debe romper esto.
+  for (const curso of ["PIR 15", "PIR 16", "PIR 18", "PIR 19", "PIR 20"]) {
+    assert.ok((por[curso] || 0) > 100, `${curso}: el lector apenas ve preguntas (${por[curso] || 0})`);
+  }
 });
 
 test("no hay ninguna pregunta repetida entre exámenes que no esté apuntada y revisada", () => {
