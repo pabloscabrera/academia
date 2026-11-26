@@ -16,7 +16,8 @@ case "$rel" in
   *) exit 0 ;;
 esac
 cd "$raiz" || exit 0
-salida=$(timeout 100 npm test 2>&1)
+limite=""; command -v timeout >/dev/null 2>&1 && limite="timeout 100"
+salida=$($limite npm test 2>&1)
 codigo=$?
 if [ $codigo -ne 0 ]; then
   echo "npm test FALLA tras editar $rel (código $codigo). No sigas hasta arreglarlo:" >&2

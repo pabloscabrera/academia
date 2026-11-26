@@ -20,11 +20,15 @@ fi
 inicio='(^|[;&|(`'"'"'"\\])[[:space:]]*([A-Za-z_]+=[^[:space:]]*[[:space:]]+|sudo[[:space:]]+|command[[:space:]]+)*'
 rest_api="${inicio}gh[[:space:]]+api[^|;&]*repos/[^[:space:]]+/pulls/[^[:space:]]+/merge"
 graphql="${inicio}gh[[:space:]]+api[[:space:]]+graphql[^|;&]*mergePullRequest"
-porcli="${inicio}gh[[:space:]]+pr[[:space:]]+merge"
-es_fusion=""
-for p in "$rest_api" "$graphql" "$porcli"; do
-  printf '%s' "$cmd" | grep -Eq "$p" && es_fusion=1
-done
+# Tras `merge` tiene que venir un espacio o el final de la orden: "`gh pr merge` y…"
+# en un texto (comilla inversa pegada) no es una orden.
+porcli="${inicio}gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|\$|[;&|)])"
+conurl="${inicio}(curl|wget)[^|;&]*repos/[^[:space:]]+/pulls/[^[:space:]]+/merge"
+es_fusion=""; es_cli=""; es_graphql=""
+printf '%s' "$cmd" | grep -Eq "$rest_api" && es_fusion=1
+printf '%s' "$cmd" | grep -Eq "$conurl" && es_fusion=1
+printf '%s' "$cmd" | grep -Eq "$porcli" && { es_fusion=1; es_cli=1; }
+printf '%s' "$cmd" | grep -Eq "$graphql" && { es_fusion=1; es_graphql=1; }
 [ -z "$es_fusion" ] && exit 0
 
 raiz="${CLAUDE_PROJECT_DIR:-$(pwd)}"
@@ -53,6 +57,27 @@ if [ -n "$ruta" ]; then
   fi
 fi
 
+# `gh pr merge [n|url|rama]` y la mutación GraphQL no traen la ruta REST: sin
+# resolver QUÉ PR es se caería al HEAD local, que es justo el hueco de revisar la
+# rama A y fusionar el PR B. El de la CLI se resuelve con `gh pr view` (acepta
+# número, url, rama o nada = la rama actual); el GraphQL trae un id opaco y no se
+# puede, así que se bloquea y se pide la ruta REST con el número.
+if [ -n "$es_graphql" ]; then
+  echo "BLOQUEADO: la fusión por GraphQL no dice qué PR es. Usa la ruta REST con el número del PR." >&2
+  exit 2
+fi
+if [ -n "$es_cli" ]; then
+  arg=$(printf '%s' "$cmd" | sed -E 's/.*gh[[:space:]]+pr[[:space:]]+merge[[:space:]]*//' | tr -s '[:space:]' '\n' | grep -Ev '^-|^$' | head -1)
+  limite=""; command -v timeout >/dev/null 2>&1 && limite="timeout 8"
+  sha_pr=$($limite gh pr view $arg --json headRefOid --jq .headRefOid 2>/dev/null)
+  if printf '%s' "$sha_pr" | grep -Eq '^[0-9a-f]{40}$'; then
+    objetivo="$sha_pr"
+  else
+    echo "BLOQUEADO: no he podido averiguar la cabeza del PR de \`gh pr merge $arg\`; sin ella no se puede comprobar la revisión." >&2
+    exit 2
+  fi
+fi
+
 if [ -z "$objetivo" ]; then
   echo "BLOQUEADO: no he podido leer el commit a fusionar, y sin él no se puede comprobar la revisión." >&2
   exit 2
@@ -63,9 +88,10 @@ if [ -n "$marcado" ] && [ "$marcado" = "$objetivo" ]; then
   exit 0
 fi
 {
-  echo "BLOQUEADO: falta pasar /code-review sobre el commit a fusionar ($objetivo)."
+  echo "BLOQUEADO: no consta una revisión de código del commit a fusionar ($objetivo)."
   echo "1) Ejecuta /code-review sobre el cambio y arregla lo que encuentre."
-  echo "2) Solo entonces: echo $objetivo > .claude/.code-review-ok"
+  echo "2) Solo entonces anota el SHA en .claude/.code-review-ok."
   echo "3) Vuelve a lanzar la fusión."
+  echo "(La marca es un recordatorio y no una prueba: escribirla sin haber revisado es saltarse el paso.)"
 } >&2
 exit 2

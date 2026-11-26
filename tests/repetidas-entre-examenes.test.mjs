@@ -52,7 +52,9 @@ export function leerPreguntas() {
   const filas = [];
   for (const f of readdirSync(RAIZ).filter((n) => /^supabase-pir\d+-preguntas\.sql$/.test(n)).sort()) {
     const lineas = readFileSync(join(RAIZ, f), "utf8").split("\n");
-    const esperadas = lineas.filter((l) => l.startsWith("('PIR ")).length;
+    // Se cuenta por otro criterio que el del lector (cada fila lleva un `'::jsonb`):
+    // una fila partida en dos líneas o con otro formato no la vería el lector, pero sí este recuento.
+    const esperadas = (lineas.join("\n").match(/'::jsonb/g) || []).length;
     let leidas = 0;
     for (const linea of lineas) {
       const m = FILA.exec(linea);
