@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# PreToolUse (Bash): bloquea fusionar un PR si no se ha pasado /code-review sobre
-# el commit que se va a fusionar. La marca es `.claude/.code-review-ok` y guarda
+# PreToolUse (Bash): bloquea fusionar un PR si no consta una revisión de código
+# del commit que se va a fusionar. La marca es `.claude/.code-review-ok` y guarda
 # un SHA: cualquier commit nuevo la invalida.
 #
-# Falla CERRADO: si no puede leer el commit, si la marca está vacía o si hay un
-# número de PR que no puede resolver, bloquea. No depende de `jq`.
+# Es un FRENO, no una cerradura: la marca la puede escribir cualquiera y hay
+# formas de fusionar que esto no ve (un alias, una función de shell, una consulta
+# GraphQL en una variable). Falla CERRADO donde sí mira: si no puede leer el
+# commit, si la marca está vacía o si hay un PR que no puede resolver, bloquea.
+# No depende de `jq`.
 entrada=$(cat)
 cmd=$(printf '%s' "$entrada" | jq -r '.tool_input.command // empty' 2>/dev/null)
 if [ -z "$cmd" ]; then
@@ -13,17 +16,19 @@ if [ -z "$cmd" ]; then
   cmd=$(printf '%s' "$entrada" | sed 's/\\n/\n/g; s/\\"/"/g')
 fi
 
-# Una orden de fusión REAL: `gh api` / `gh pr merge` al inicio de una orden (tras
-# ; & | ( ` ' " o un salto de línea, y admitiendo VAR=x, sudo o command delante).
-# Que el TEXTO de un commit o de una nota mencione la ruta no basta: ese fue el
-# falso positivo que cazó la primera versión.
-inicio='(^|[;&|(`'"'"'"\\])[[:space:]]*([A-Za-z_]+=[^[:space:]]*[[:space:]]+|sudo[[:space:]]+|command[[:space:]]+)*'
-rest_api="${inicio}gh[[:space:]]+api[^|;&]*repos/[^[:space:]]+/pulls/[^[:space:]]+/merge"
-graphql="${inicio}gh[[:space:]]+api[[:space:]]+graphql[^|;&]*mergePullRequest"
+# Una orden de fusión REAL, no el texto de un commit o de una nota que la nombra
+# (ese fue el falso positivo que cazó la primera versión, cuatro veces).
+#  - inicio: tras ; & | ( ` ' " \ o un salto de línea, admitiendo VAR=x, sudo,
+#    command, env o xargs delante.
+#  - gh: con o sin ruta (/usr/bin/gh) y con opciones globales (-R o/r, --repo o/r).
+inicio='(^|[;&|(`'"'"'"\\])[[:space:]]*([A-Za-z_]+=[^[:space:]]*[[:space:]]+|sudo[[:space:]]+|command[[:space:]]+|env[[:space:]]+|xargs[[:space:]]+)*'
+gh='([^[:space:]]*/)?gh([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?)*'
+rest_api="${inicio}${gh}[[:space:]]+api[^|;&]*repos/[^[:space:]]+/pulls/[^[:space:]]+/merge"
+conurl="${inicio}(curl|wget)[^|;&]*repos/[^[:space:]]+/pulls/[^[:space:]]+/merge"
+graphql="${inicio}${gh}[[:space:]]+api[[:space:]]+graphql[^|;&]*mergePullRequest"
 # Tras `merge` tiene que venir un espacio o el final de la orden: "`gh pr merge` y…"
 # en un texto (comilla inversa pegada) no es una orden.
-porcli="${inicio}gh[[:space:]]+pr[[:space:]]+merge([[:space:]]|\$|[;&|)])"
-conurl="${inicio}(curl|wget)[^|;&]*repos/[^[:space:]]+/pulls/[^[:space:]]+/merge"
+porcli="${inicio}${gh}[[:space:]]+pr[[:space:]]+merge([[:space:]]|\$|[;&|)])"
 es_fusion=""; es_cli=""; es_graphql=""
 printf '%s' "$cmd" | grep -Eq "$rest_api" && es_fusion=1
 printf '%s' "$cmd" | grep -Eq "$conurl" && es_fusion=1
@@ -34,6 +39,8 @@ printf '%s' "$cmd" | grep -Eq "$graphql" && { es_fusion=1; es_graphql=1; }
 raiz="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 marca="$raiz/.claude/.code-review-ok"
 local_head=$(git -C "$raiz" rev-parse HEAD 2>/dev/null)
+limite=""; command -v timeout >/dev/null 2>&1 && limite="timeout 8"
+es_sha() { printf '%s' "$1" | grep -Eq '^[0-9a-f]{40}$'; }
 
 # Si la orden da el NÚMERO del PR se compara con la cabeza REAL de ese PR (revisar
 # la rama A y fusionar el PR B no puede valer). Admite {owner}/{repo}, que `gh`
@@ -46,10 +53,8 @@ if [ -n "$ruta" ]; then
     echo "BLOQUEADO: la orden fusiona un PR concreto y no encuentro \`gh\` para saber su cabeza." >&2
     exit 2
   fi
-  limite=""; command -v timeout >/dev/null 2>&1 && limite="timeout 8"
   sha_pr=$($limite gh api "${ruta%/merge}" --jq .head.sha 2>/dev/null)
-  # Solo vale un SHA de verdad (40 hex): un error o un "null" no sustituye a nada.
-  if printf '%s' "$sha_pr" | grep -Eq '^[0-9a-f]{40}$'; then
+  if es_sha "$sha_pr"; then
     objetivo="$sha_pr"
   else
     echo "BLOQUEADO: no he podido averiguar la cabeza del PR de la orden ($ruta); sin ella no se puede comprobar la revisión." >&2
@@ -57,23 +62,42 @@ if [ -n "$ruta" ]; then
   fi
 fi
 
-# `gh pr merge [n|url|rama]` y la mutación GraphQL no traen la ruta REST: sin
-# resolver QUÉ PR es se caería al HEAD local, que es justo el hueco de revisar la
-# rama A y fusionar el PR B. El de la CLI se resuelve con `gh pr view` (acepta
-# número, url, rama o nada = la rama actual); el GraphQL trae un id opaco y no se
-# puede, así que se bloquea y se pide la ruta REST con el número.
+# La mutación GraphQL trae un id opaco: no se puede saber qué PR es. Se bloquea y
+# se pide la ruta REST con el número.
 if [ -n "$es_graphql" ]; then
   echo "BLOQUEADO: la fusión por GraphQL no dice qué PR es. Usa la ruta REST con el número del PR." >&2
   exit 2
 fi
+
+# `gh pr merge [n|url|rama]` no trae la ruta REST: sin resolver QUÉ PR es se caería
+# al HEAD local. Se saca el argumento (saltando las opciones y sus valores, y
+# recortando en el primer ; & | )) y, si es un número, se resuelve por REST (que
+# funciona aunque GraphQL esté vedado); si no, con `gh pr view`.
 if [ -n "$es_cli" ]; then
-  arg=$(printf '%s' "$cmd" | sed -E 's/.*gh[[:space:]]+pr[[:space:]]+merge[[:space:]]*//' | tr -s '[:space:]' '\n' | grep -Ev '^-|^$' | head -1)
-  limite=""; command -v timeout >/dev/null 2>&1 && limite="timeout 8"
-  sha_pr=$($limite gh pr view $arg --json headRefOid --jq .headRefOid 2>/dev/null)
-  if printf '%s' "$sha_pr" | grep -Eq '^[0-9a-f]{40}$'; then
+  seg=$(printf '%s' "$cmd" | sed -nE 's/.*pr[[:space:]]+merge[[:space:]]*([^;&|)]*).*/\1/p' | head -1)
+  repo=""; arg=""; salto=""
+  for tok in $seg; do
+    if [ -n "$salto" ]; then [ "$salto" = repo ] && repo="$tok"; salto=""; continue; fi
+    case "$tok" in
+      -R|--repo) salto=repo ;;
+      -b|--body|-t|--subject|-F|--body-file|-A|--author-email|--match-head-commit) salto=otro ;;
+      -*) ;;
+      *) [ -z "$arg" ] && arg="$tok" ;;
+    esac
+  done
+  sha_pr=""
+  if printf '%s' "$arg" | grep -Eq '^[0-9]+$'; then
+    ph='{owner}/{repo}'
+    sha_pr=$($limite gh api "repos/${repo:-$ph}/pulls/$arg" --jq .head.sha 2>/dev/null)
+  fi
+  if ! es_sha "$sha_pr"; then
+    if [ -n "$repo" ]; then sha_pr=$($limite gh pr view ${arg:+"$arg"} -R "$repo" --json headRefOid --jq .headRefOid 2>/dev/null)
+    else sha_pr=$($limite gh pr view ${arg:+"$arg"} --json headRefOid --jq .headRefOid 2>/dev/null); fi
+  fi
+  if es_sha "$sha_pr"; then
     objetivo="$sha_pr"
   else
-    echo "BLOQUEADO: no he podido averiguar la cabeza del PR de \`gh pr merge $arg\`; sin ella no se puede comprobar la revisión." >&2
+    echo "BLOQUEADO: no he podido averiguar la cabeza del PR de la fusión por CLI (${arg:-la rama actual}); sin ella no se puede comprobar la revisión." >&2
     exit 2
   fi
 fi
