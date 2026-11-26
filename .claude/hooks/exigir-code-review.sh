@@ -88,7 +88,15 @@ fi
 if [ -n "$es_cli" ]; then
   linea=$(printf '%s' "$cmd" | grep -E "$porcli" | head -1)
   seg=$(printf '%s' "$linea" | sed -nE 's/.*pr[[:space:]]+merge[[:space:]]*([^;&|)]*).*/\1/p' | head -1)
+  # Si el tramo trae comillas, expansiones o comodines, adivinar qué es opción y
+  # qué es el PR es justo como se despista un analizador de texto (`--body "a 99 b" 7`
+  # se leería como el PR 99). Ante esa ambigüedad no se adivina: se bloquea.
+  if printf '%s' "$seg" | grep -Eq '["'"'"'`$*?\\]'; then
+    echo "BLOQUEADO: la fusión por CLI lleva comillas o caracteres que no sé interpretar. Lánzala sin ellos (número de PR y -R, nada más)." >&2
+    exit 2
+  fi
   repo=""; arg=""; salto=""
+  set -f
   for tok in $seg; do
     if [ -n "$salto" ]; then [ "$salto" = repo ] && repo="$tok"; salto=""; continue; fi
     case "$tok" in

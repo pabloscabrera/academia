@@ -54,7 +54,7 @@ export function leerPreguntas() {
     const lineas = readFileSync(join(RAIZ, f), "utf8").split("\n");
     // Se cuenta por otro criterio que el del lector (cada fila lleva un `'::jsonb`):
     // una fila partida en dos líneas o con otro formato no la vería el lector, pero sí este recuento.
-    const esperadas = (lineas.join("\n").match(/'::jsonb/g) || []).length;
+    const esperadas = lineas.filter((l) => l.startsWith("('PIR ") || /^\(\s*'PIR/.test(l) || (/'::jsonb/.test(l) && !l.trimStart().startsWith("--"))).length;
     let leidas = 0;
     for (const linea of lineas) {
       const m = FILA.exec(linea);
