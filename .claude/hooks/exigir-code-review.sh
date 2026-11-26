@@ -21,7 +21,7 @@ fi
 #  - inicio: tras ; & | ( ` ' " \ o un salto de línea, admitiendo VAR=x, sudo,
 #    command, env o xargs delante.
 #  - gh: con o sin ruta (/usr/bin/gh) y con opciones globales (-R o/r, --repo o/r).
-inicio='(^|[;&|(`'"'"'"\\])[[:space:]]*([A-Za-z_]+=[^[:space:]]*[[:space:]]+|sudo[[:space:]]+|command[[:space:]]+|env[[:space:]]+|xargs[[:space:]]+)*'
+inicio='(^|[;&|(`'"'"'"\\])[[:space:]]*([A-Za-z_]+=[^[:space:]]*[[:space:]]+|sudo[[:space:]]+|command[[:space:]]+|env[[:space:]]+|xargs[[:space:]]+|exec[[:space:]]+|time[[:space:]]+|then[[:space:]]+|do[[:space:]]+|else[[:space:]]+|elif[[:space:]]+|![[:space:]]+|\{[[:space:]]+)*'
 gh='([^[:space:]]*/)?gh([[:space:]]+-[^[:space:]]+([[:space:]]+[^-[:space:]][^[:space:]]*)?)*'
 rest_api="${inicio}${gh}[[:space:]]+api[^|;&]*repos/[^[:space:]]+/pulls/[^[:space:]]+/merge"
 conurl="${inicio}(curl|wget)[^|;&]*repos/[^[:space:]]+/pulls/[^[:space:]]+/merge"
@@ -35,6 +35,14 @@ printf '%s' "$cmd" | grep -Eq "$conurl" && es_fusion=1
 printf '%s' "$cmd" | grep -Eq "$porcli" && { es_fusion=1; es_cli=1; }
 printf '%s' "$cmd" | grep -Eq "$graphql" && { es_fusion=1; es_graphql=1; }
 [ -z "$es_fusion" ] && exit 0
+
+# Una sola fusión por orden: el hook comprueba UN PR, así que con dos (`a; b`) la
+# segunda pasaría sin que nadie mirase su cabeza. Se bloquea y se pide una a una.
+n=$(printf '%s' "$cmd" | grep -Eo "$rest_api|$conurl|$porcli|$graphql" | wc -l)
+if [ "$n" -gt 1 ]; then
+  echo "BLOQUEADO: la orden fusiona más de un PR a la vez; el hook solo comprueba uno. Lánzalas por separado." >&2
+  exit 2
+fi
 
 raiz="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 marca="$raiz/.claude/.code-review-ok"
