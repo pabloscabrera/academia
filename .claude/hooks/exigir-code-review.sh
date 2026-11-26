@@ -16,6 +16,10 @@ if [ -z "$cmd" ]; then
   cmd=$(printf '%s' "$entrada" | sed 's/\\n/\n/g; s/\\"/"/g')
 fi
 
+# Las continuaciones con barra invertida al final de línea se unen: una fusión
+# escrita en varias líneas así es UNA sola orden.
+cmd=$(printf '%s' "$cmd" | sed -e ':a' -e '/\\$/N; s/\\\n/ /; ta')
+
 # Una orden de fusión REAL, no el texto de un commit o de una nota que la nombra
 # (ese fue el falso positivo que cazó la primera versión, cuatro veces).
 #  - inicio: tras ; & | ( ` ' " \ o un salto de línea, admitiendo VAR=x, sudo,
@@ -82,7 +86,8 @@ fi
 # recortando en el primer ; & | )) y, si es un número, se resuelve por REST (que
 # funciona aunque GraphQL esté vedado); si no, con `gh pr view`.
 if [ -n "$es_cli" ]; then
-  seg=$(printf '%s' "$cmd" | sed -nE 's/.*pr[[:space:]]+merge[[:space:]]*([^;&|)]*).*/\1/p' | head -1)
+  linea=$(printf '%s' "$cmd" | grep -E "$porcli" | head -1)
+  seg=$(printf '%s' "$linea" | sed -nE 's/.*pr[[:space:]]+merge[[:space:]]*([^;&|)]*).*/\1/p' | head -1)
   repo=""; arg=""; salto=""
   for tok in $seg; do
     if [ -n "$salto" ]; then [ "$salto" = repo ] && repo="$tok"; salto=""; continue; fi
