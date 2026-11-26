@@ -7,16 +7,19 @@ f=$(jq -r '.tool_input.file_path // .tool_response.filePath // empty')
 raiz="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 rel="${f#"$raiz"/}"
 case "$rel" in
-  src/*|tests/*|supabase-pir*-preguntas.sql|CLAUDE.md) ;;
+  src/*|tests/*.test.mjs|supabase-pir*-preguntas.sql) ;;
   *) exit 0 ;;
 esac
-# CLAUDE.md no cambia código: no hace falta probarlo.
-[ "$rel" = "CLAUDE.md" ] && exit 0
 cd "$raiz" || exit 0
-salida=$(npm test 2>&1)
-if [ $? -ne 0 ]; then
-  echo "npm test FALLA tras editar $rel. No sigas hasta arreglarlo:" >&2
-  echo "$salida" | grep -E "^not ok|^# (tests|pass|fail)|Error|expected|actual" | head -40 >&2
+salida=$(timeout 100 npm test 2>&1)
+codigo=$?
+if [ $codigo -ne 0 ]; then
+  echo "npm test FALLA tras editar $rel (código $codigo). No sigas hasta arreglarlo:" >&2
+  [ $codigo -eq 124 ] && echo "(se agotó el plazo de 100 s)" >&2
+  filtrado=$(echo "$salida" | grep -E "^not ok|^# (tests|pass|fail)|Error|expected|actual" | head -40)
+  # Un fallo sin ninguna de esas palabras (un runner que no arranca, una opción
+  # mala) no puede llegar mudo: se enseña el final de la salida tal cual.
+  if [ -n "$filtrado" ]; then echo "$filtrado" >&2; else echo "$salida" | tail -25 >&2; fi
   exit 2
 fi
 exit 0
