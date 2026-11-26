@@ -88,7 +88,9 @@ export function coincidenciasEntreCursos(filas) {
       pares.push(`${a} = ${b} :: ${hash(k)}`);
     }
   }
-  return pares.sort();
+  // Una pregunta en tres exámenes, o dos veces en uno, repite la misma cadena: sin
+  // duplicados el mensaje de fallo no cuenta pares de más.
+  return [...new Set(pares)].sort();
 }
 
 test("la lectura de los ficheros encuentra las preguntas de los exámenes transcritos", () => {

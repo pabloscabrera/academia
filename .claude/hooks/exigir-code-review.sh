@@ -80,6 +80,9 @@ if [ -n "$es_cli" ]; then
     if [ -n "$salto" ]; then [ "$salto" = repo ] && repo="$tok"; salto=""; continue; fi
     case "$tok" in
       -R|--repo) salto=repo ;;
+      --repo=*) repo="${tok#--repo=}" ;;
+      -R=*) repo="${tok#-R=}" ;;
+      -R?*) repo="${tok#-R}" ;;
       -b|--body|-t|--subject|-F|--body-file|-A|--author-email|--match-head-commit) salto=otro ;;
       -*) ;;
       *) [ -z "$arg" ] && arg="$tok" ;;
