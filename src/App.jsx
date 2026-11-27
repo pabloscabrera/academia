@@ -792,7 +792,11 @@ export default function AcademiaPIR() {
     window.scrollTo(0, 0);
   };
   const irASeccion = (nueva) => {
-    if (nueva === seccionRef.current) { reiniciarSeccion(nueva); return; }
+    // Mientras la página sale (170 ms) `seccionRef` aún es la vieja: un toque ahí
+    // no es "volver al inicio" sino un tercero a mitad de la animación, y
+    // reiniciar esa sección mientras el temporizador ya la está cambiando
+    // dejaría la app en una pestaña que acabas de abandonar.
+    if (nueva === seccionRef.current) { if (!animandoRef.current) reiniciarSeccion(nueva); return; }
     const i = ORDEN_PESTANAS.indexOf(seccionRef.current);
     const j = ORDEN_PESTANAS.indexOf(nueva);
     if (i === -1 || j === -1) { setSection(nueva); return; }
