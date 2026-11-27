@@ -417,6 +417,9 @@ export default function AcademiaPIR() {
   // de ahí solo se esconden. Cambiar de pestaña (con el dedo, el trackpad, una
   // flecha o un toque) no se lleva por delante lo que estabas haciendo.
   const [visitadas, setVisitadas] = useState(["simulacros"]);
+  // Cuántas veces se ha pulsado "volver al inicio" en cada pestaña. Cambia la
+  // `key` de esa sección, que vuelve a montarse con su estado de fábrica.
+  const [reinicios, setReinicios] = useState({});
   if (!visitadas.includes(section)) setVisitadas((v) => (v.includes(section) ? v : [...v, section]));
   // Y cada una vuelve a la altura en que la dejaste.
   const scrollPorSeccion = useRef({});
@@ -773,7 +776,23 @@ export default function AcademiaPIR() {
     }, SALIDA_MS);
   };
   // Pulsar una pestaña también desliza, hacia el lado en que está.
+  // Pulsar la pestaña en la que YA estás te saca de donde estés metido y te
+  // lleva al menú de esa sección, como el botón de inicio de X o Twitter. Nada
+  // se pierde: la tirada se guarda con cada respuesta (queda como "Te quedaste
+  // a medias"), cada tarjeta de un repaso se guardó al puntuarla, y un duelo
+  // en espera se cancela al desmontarse. Lo único que no se puede deshacer
+  // tan fácil es abandonar un combate en curso contra otra persona, y ahí se
+  // pregunta antes.
+  const reiniciarSeccion = (id) => {
+    if (id === "duelo" && document.querySelector('[data-pestana="duelo"] [data-sin-deslizar]')) {
+      if (!window.confirm("Hay un duelo en marcha. ¿Salir de él?")) return;
+    }
+    scrollPorSeccion.current[id] = 0;
+    setReinicios((r) => ({ ...r, [id]: (r[id] || 0) + 1 }));
+    window.scrollTo(0, 0);
+  };
   const irASeccion = (nueva) => {
+    if (nueva === seccionRef.current) { reiniciarSeccion(nueva); return; }
     const i = ORDEN_PESTANAS.indexOf(seccionRef.current);
     const j = ORDEN_PESTANAS.indexOf(nueva);
     if (i === -1 || j === -1) { setSection(nueva); return; }
@@ -1727,7 +1746,7 @@ export default function AcademiaPIR() {
         )}
         <main ref={mainRef} style={styles.main} className="main-app">
           {visitadas.includes("flashcards") && (
-            <div hidden={section !== "flashcards"} data-pestana="flashcards">
+            <div key={`flashcards-${reinicios.flashcards || 0}`} hidden={section !== "flashcards"} data-pestana="flashcards">
             <PestanaActiva.Provider value={section === "flashcards"}>
             <Flashcards
               user={user}
@@ -1754,7 +1773,7 @@ export default function AcademiaPIR() {
             </div>
           )}
           {visitadas.includes("estadisticas") && (
-            <div hidden={section !== "estadisticas"} data-pestana="estadisticas">
+            <div key={`estadisticas-${reinicios.estadisticas || 0}`} hidden={section !== "estadisticas"} data-pestana="estadisticas">
             <PestanaActiva.Provider value={section === "estadisticas"}>
             <Estadisticas
               miRacha={rachas.find((r) => r.name === user.name)}
@@ -1767,7 +1786,7 @@ export default function AcademiaPIR() {
             </div>
           )}
           {visitadas.includes("perfil") && (
-            <div hidden={section !== "perfil"} data-pestana="perfil">
+            <div key={`perfil-${reinicios.perfil || 0}`} hidden={section !== "perfil"} data-pestana="perfil">
             <PestanaActiva.Provider value={section === "perfil"}>
             <MiPerfil
               user={user}
@@ -1784,7 +1803,7 @@ export default function AcademiaPIR() {
             </div>
           )}
           {visitadas.includes("simulacros") && (
-            <div hidden={section !== "simulacros"} data-pestana="simulacros">
+            <div key={`simulacros-${reinicios.simulacros || 0}`} hidden={section !== "simulacros"} data-pestana="simulacros">
             <PestanaActiva.Provider value={section === "simulacros"}>
             <Simulacros
               questions={questions}
@@ -1805,7 +1824,7 @@ export default function AcademiaPIR() {
             </div>
           )}
           {visitadas.includes("duelo") && (
-            <div hidden={section !== "duelo"} data-pestana="duelo">
+            <div key={`duelo-${reinicios.duelo || 0}`} hidden={section !== "duelo"} data-pestana="duelo">
             <PestanaActiva.Provider value={section === "duelo"}>
             <Duelo
               user={user}
